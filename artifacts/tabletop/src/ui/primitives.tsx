@@ -6,6 +6,7 @@
 
 import React from "react";
 import { Sword, Wand2, Shield, Footprints } from "lucide-react";
+import { resolveAsset } from "@/assets/registry";
 
 export const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap');`;
 
@@ -45,7 +46,11 @@ export function CharacterPanel({ c, isCurrent, isSelected, onSelect }) {
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <ClassIcon icon={c.icon} size={14} className="" />
+          {/* Resolve visual asset if registered; fall back to icon placeholder. */}
+          {resolveAsset(`character.${c.defId}`)
+            ? <img src={resolveAsset(`character.${c.defId}`).src} alt={resolveAsset(`character.${c.defId}`).alt ?? c.name} width={14} height={14} style={{ objectFit: "cover", borderRadius: 2, flexShrink: 0 }} />
+            : <ClassIcon icon={c.icon} size={14} className="" />
+          }
           <span style={{ fontFamily: "Cinzel, serif", fontSize: 13, color: "#e8dcc0", letterSpacing: 0.3 }}>
             {c.name}
           </span>

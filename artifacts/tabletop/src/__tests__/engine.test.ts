@@ -22,6 +22,14 @@ import {
 } from "@/engine/content";
 
 import {
+  registerAsset,
+  resolveAsset,
+  hasAsset,
+  listAssets,
+  clearRegistry,
+} from "@/assets/registry";
+
+import {
   isWall,
   isPillar,
   isBlocked,
@@ -845,5 +853,121 @@ describe("Encounter regression — Ruined Crypt", () => {
     const status = checkEncounterStatus(state);
     expect(["victory", "defeat"]).toContain(status);
     expect(rounds).toBeLessThan(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Asset Registry
+// ---------------------------------------------------------------------------
+describe("Asset Registry", () => {
+  // Clean up any assets registered within this suite after each test so the
+  // module-level Map does not pollute unrelated tests.
+  afterEach(() => {
+    clearRegistry();
+  });
+
+  it("resolveAsset returns undefined for an unknown ID", () => {
+    expect(resolveAsset("character.nonexistent")).toBeUndefined();
+  });
+
+  it("hasAsset returns false for an unknown ID", () => {
+    expect(hasAsset("character.nonexistent")).toBe(false);
+  });
+
+  it("registerAsset makes an asset resolvable", () => {
+    registerAsset({ id: "character.fighter", kind: "character", src: "/art/fighter.png", alt: "Aldric" });
+    const asset = resolveAsset("character.fighter");
+    expect(asset).toBeDefined();
+    expect(asset!.src).toBe("/art/fighter.png");
+    expect(asset!.kind).toBe("character");
+    expect(asset!.alt).toBe("Aldric");
+  });
+
+  it("hasAsset returns true after registration", () => {
+    registerAsset({ id: "character.wizard", kind: "character", src: "/art/wizard.png" });
+    expect(hasAsset("character.wizard")).toBe(true);
+  });
+
+  it("resolveAsset returns undefined for a different, unregistered ID", () => {
+    registerAsset({ id: "character.fighter", kind: "character", src: "/art/fighter.png" });
+    expect(resolveAsset("character.goblin")).toBeUndefined();
+  });
+
+  it("registerAsset overwrites a duplicate ID without throwing", () => {
+    registerAsset({ id: "character.fighter", kind: "character", src: "/art/fighter-v1.png" });
+    registerAsset({ id: "character.fighter", kind: "character", src: "/art/fighter-v2.png" });
+    expect(resolveAsset("character.fighter")!.src).toBe("/art/fighter-v2.png");
+  });
+
+  it("listAssets returns all registered assets when no kind filter is given", () => {
+    registerAsset({ id: "character.fighter", kind: "character", src: "/art/fighter.png" });
+    registerAsset({ id: "terrain.crypt.floor", kind: "terrain", src: "/art/floor.png" });
+    expect(listAssets().length).toBe(2);
+  });
+
+  it("listAssets filters by kind correctly", () => {
+    registerAsset({ id: "character.fighter", kind: "character", src: "/art/fighter.png" });
+    registerAsset({ id: "terrain.crypt.floor", kind: "terrain", src: "/art/floor.png" });
+    const chars = listAssets("character");
+    expect(chars.length).toBe(1);
+    expect(chars[0].id).toBe("character.fighter");
+    const terrain = listAssets("terrain");
+    expect(terrain.length).toBe(1);
+    expect(terrain[0].id).toBe("terrain.crypt.floor");
+  });
+
+  // --- Content definition coupling ---
+
+  it("COMBATANT_DEFS reference visualAssetIds as logical strings, not file paths", () => {
+    expect(COMBATANT_DEFS.fighter.visualAssetId).toBe("character.fighter");
+    expect(COMBATANT_DEFS.wizard.visualAssetId).toBe("character.wizard");
+    expect(COMBATANT_DEFS.goblin.visualAssetId).toBe("character.goblin");
+    expect(COMBATANT_DEFS.orc.visualAssetId).toBe("character.orc");
+    // IDs must not be raw file paths
+    for (const def of Object.values(COMBATANT_DEFS)) {
+      if (def.visualAssetId) {
+        expect(def.visualAssetId).not.toMatch(/\.(png|jpg|jpeg|svg|webp|gif)$/);
+        expect(def.visualAssetId).not.toMatch(/^\//);
+        expect(def.visualAssetId).not.toMatch(/^https?:\/\//);
+      }
+    }
+  });
+
+  it("MAP_DEFS reference visualAssets as logical strings, not file paths", () => {
+    expect(MAP_DEFS.crypt.visualAssets?.floor).toBe("terrain.crypt.floor");
+    expect(MAP_DEFS.crypt.visualAssets?.wall).toBe("terrain.crypt.wall");
+    expect(MAP_DEFS.crypt.visualAssets?.pillar).toBe("terrain.crypt.pillar");
+    expect(MAP_DEFS.trainingYard.visualAssets?.floor).toBe("terrain.trainingYard.floor");
+    for (const mapDef of Object.values(MAP_DEFS)) {
+      if (mapDef.visualAssets) {
+        for (const id of Object.values(mapDef.visualAssets)) {
+          if (id) {
+            expect(id).not.toMatch(/\.(png|jpg|jpeg|svg|webp|gif)$/);
+            expect(id).not.toMatch(/^\//);
+          }
+        }
+      }
+    }
+  });
+
+  it("existing encounters build without requiring production art in the registry", () => {
+    // clearRegistry() is called in afterEach — registry is empty here.
+    // Encounters must work with no assets registered.
+    const state = buildEncounter("crypt", 42);
+    expect(state.started).toBe(true);
+    expect(Object.keys(state.combatants).length).toBeGreaterThan(0);
+    // resolveAsset gracefully returns undefined — no art, no crash.
+    expect(resolveAsset("character.fighter")).toBeUndefined();
+    expect(resolveAsset("terrain.crypt.floor")).toBeUndefined();
+  });
+
+  it("visual asset IDs on content defs are independent of the registry state", () => {
+    // visualAssetId on a def is just a string — it does not depend on whether
+    // the asset is actually registered. Registering/clearing the registry has
+    // no effect on COMBATANT_DEFS.
+    const idBefore = COMBATANT_DEFS.fighter.visualAssetId;
+    registerAsset({ id: "character.fighter", kind: "character", src: "/art/fighter.png" });
+    clearRegistry();
+    expect(COMBATANT_DEFS.fighter.visualAssetId).toBe(idBefore);
   });
 });

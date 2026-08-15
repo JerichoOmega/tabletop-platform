@@ -1,69 +1,105 @@
 # Intelligent Tabletop — Project Status
 
-**Last updated:** 2026-08-15 (UX milestone)  
-**Build:** passing (TypeScript, Vitest — 70 tests)  
-**Deployed at:** `/` (Replit preview)  
-**GitHub:** `JerichoOmega/tabletop-platform` @ `main` (commit `1a9fda6`)
+**Last updated:** 2026-08-15 (asset registry foundation)
+**Build:** passing (TypeScript, Vitest, Playwright E2E)
+**Deployed at:** `/` (Replit preview)
+**GitHub:** `JerichoOmega/tabletop-platform` @ `main`
 
 ---
 
 ## Architecture
 
-The application is a React + Vite single-page app. All game logic is pure JavaScript (no React); only the top-level component imports React. The four-layer separation means any layer can be tested, replaced, or evolved independently.
+The application is a React + Vite single-page app. All game logic is pure TypeScript (no React). The five-layer separation means any layer can be tested, replaced, or evolved independently.
 
 ```
 src/
   engine/
-    content.ts      — Static data + RNG + encounter factory (no rules logic)
-    rules.ts        — Map utilities, pathfinding, LOS, validation, execution, turn/AI
+    content.ts      — Static data + RNG + encounter factory. Fully typed.
+    rules.ts        — Map utilities, pathfinding, LOS, validation, execution, turn/AI. Fully typed.
   intent/
     parser.ts       — Text → ProposedAction interpreter + proposal lifecycle
+  assets/
+    types.ts        — AssetKind, AssetDefinition (shared types)
+    registry.ts     — registerAsset / resolveAsset / hasAsset / listAssets / clearRegistry
   ui/
     primitives.tsx  — ClassIcon, HpBar, CharacterPanel, actionBtnStyle
-  IntelligentTabletop.tsx — Main React component (imports from all three layers)
+                      Resolves visual assets from the registry; falls back to icon placeholders.
+  IntelligentTabletop.tsx — Main React component
   App.tsx           — Thin wrapper; renders <IntelligentTabletop />
   __tests__/
-    engine.test.ts  — Unit tests for rules engine + intent parser
+    engine.test.ts  — Unit tests: rules engine + intent parser + asset registry
+e2e/
+  traditional.spec.ts — Playwright: Move, Attack, Healing Touch, Fire Bolt, End Turn
+  assisted.spec.ts    — Playwright: natural-language attack, heal, Fire Bolt
+  victory.spec.ts     — Playwright: Quick Battle fixture → Victory banner
+  defeat.spec.ts      — Playwright: Quick Defeat fixture → Defeat banner
 ```
 
 ### Layer responsibilities
 
-| Layer | Reads | Mutates |
-|---|---|---|
-| `content.ts` | Nothing (source of truth) | Never |
-| `rules.ts` | `content.ts` | State (via `cloneState` — always produces new objects) |
-| `intent/parser.ts` | `content.ts` + `rules.ts` (validate* only) | Never |
-| `IntelligentTabletop.tsx` | All layers | React state via setters |
+| Layer | Reads | Mutates | Knows about visuals? |
+|---|---|---|---|
+| `content.ts` | Nothing (source of truth) | Never | No — only holds logical `visualAssetId` strings |
+| `rules.ts` | `content.ts` | State (via `cloneState`) | No |
+| `intent/parser.ts` | `content.ts` + `rules.ts` (validate* only) | Never | No |
+| `assets/registry.ts` | Nothing at import time | Registry Map | Yes — this is the seam |
+| `ui/primitives.tsx` | All layers + registry | Never | Yes — resolves at render |
+| `IntelligentTabletop.tsx` | All layers + registry | React state via setters | Yes — resolves at render |
+
+### Asset registry data flow
+
+```
+Game Content Definition  (content.ts)
+        ↓  visualAssetId: "character.fighter"  (logical string only)
+Asset Registry           (assets/registry.ts)
+        ↓  resolveAsset("character.fighter") → AssetDefinition | undefined
+Renderer / UI            (primitives.tsx, IntelligentTabletop.tsx)
+        ↓  <img src={asset.src} />  OR  <ClassIcon />  (graceful fallback)
+```
+
+The rules engine never imports from `assets/`. The UI never hardcodes file paths.
 
 ---
 
 ## Systems
 
 ### Map System
-Each encounter references a `MAP_DEFS` entry by id. Maps declare `width`, `height`, `entrance`, and `pillars[]`. The engine functions (`isWall`, `isPillar`, `reachableTiles`, `lineOfSight`) accept any map object — adding a new map never requires engine changes.
+Each encounter references a `MAP_DEFS` entry by id. Maps declare `width`, `height`, `entrance`, `pillars[]`, and now optionally `visualAssets` with logical terrain tile IDs. The engine functions (`isWall`, `isPillar`, `reachableTiles`, `lineOfSight`) never read `visualAssets`.
 
 ### Combatant System
-`COMBATANT_DEFS` are templates. `createCombatantInstance()` produces mutable runtime objects. Multiple instances of the same definition (e.g. three Goblins) mutate completely independently. Abilities are a list of ids on the definition; the engine resolves them from `ABILITY_DEFS`.
+`COMBATANT_DEFS` are templates. `createCombatantInstance()` produces mutable runtime objects. Definitions now carry an optional `visualAssetId` (e.g. `"character.fighter"`) that the UI resolves through the registry at render time. The rules engine never reads it.
 
 ### Ability System
-Abilities are fully data-driven. `ABILITY_DEFS` describes targeting rule (`self | ally | enemy | any`), range, LOS requirement, and `effect`. `EFFECT_HANDLERS` maps effect types (`heal`, `damage`) to pure mutation functions. `executeAbility()` dispatches on `effect.type`; it has no knowledge of specific ability names. Adding a new ability that uses an existing effect type requires only one new entry in `ABILITY_DEFS`.
+Abilities are fully data-driven. `ABILITY_DEFS` describes targeting (`self | ally | enemy | any`), range, LOS, and `effect`. `EFFECT_HANDLERS` maps effect types to pure functions. `executeAbility()` has no knowledge of specific ability names.
 
 ### Initiative & Turn Cycling
-`rollInitiative()` uses the encounter's seeded RNG. `endTurn()` skips dead combatants and increments the round counter on wrap. `resolveLeadingEnemyTurns()` runs any enemy turns that precede the first PC each time it is called (new encounter, post-endTurn).
+`rollInitiative()` uses the encounter's seeded RNG. `endTurn()` skips dead combatants and increments the round counter on wrap. `resolveLeadingEnemyTurns()` runs any enemy turns that precede the first PC each time it is called.
 
 ### Enemy AI
-`runEnemyAI()` reads only generic combatant/weapon fields. It moves toward the nearest living PC if out of weapon range, then attacks if a valid attack exists. Uses the same `validateAttack` / `executeMove` / `executeAttack` as the player — no separate fast path.
+`runEnemyAI()` reads only generic combatant/weapon fields. Uses the same `validateAttack` / `executeMove` / `executeAttack` as the player.
 
 ### Intent Parser
-`parseIntent(text, state, actorId)` returns one of four types:
-- `proposal` — ordered `steps[]` to be reviewed and approved
-- `query` — "Can I…?" check rendered as a checklist  
-- `inspect` — "What can I do?" listing current options
-- `error` — could not interpret
+`parseIntent(text, state, actorId)` returns one of four types: `proposal`, `query`, `inspect`, `error`. Fully data-driven — resolves enemy/ability names from live game state.
 
-The parser is data-driven: it resolves enemy names from whatever enemies are alive in the current encounter, and resolves abilities from whatever the current actor knows. No per-species or per-ability branching.
+### Asset Registry
+`src/assets/registry.ts` provides a singleton Map from logical ID strings to `AssetDefinition` objects. Content definitions carry optional `visualAssetId` strings; the registry is the only place that maps those to concrete `src` URLs. No production art is registered yet — all renderers fall back to the existing icon/CSS placeholders. When art is ready, add `registerAsset(...)` calls here or in a bootstrap file; nothing else in the codebase changes.
 
-`revalidateProposal` re-checks every step against the current state (simulating state changes across steps). `executeProposalSteps` is atomic — if any step fails mid-sequence, the original state is returned untouched.
+---
+
+## TypeScript Status
+
+| Module | Status |
+|---|---|
+| `engine/content.ts` | ✅ Fully typed — `@ts-nocheck` removed |
+| `engine/rules.ts` | ✅ Fully typed — `@ts-nocheck` removed |
+| `assets/types.ts` | ✅ Fully typed (new) |
+| `assets/registry.ts` | ✅ Fully typed (new) |
+| `intent/parser.ts` | `@ts-nocheck` retained (complex inference) |
+| `ui/primitives.tsx` | `@ts-nocheck` retained |
+| `IntelligentTabletop.tsx` | `@ts-nocheck` retained |
+| `__tests__/engine.test.ts` | `@ts-nocheck` retained |
+
+`pnpm --filter @workspace/tabletop run typecheck` passes clean.
 
 ---
 
@@ -72,109 +108,91 @@ The parser is data-driven: it resolves enemy names from whatever enemies are ali
 | Mode | How it plays |
 |---|---|
 | **Traditional** | Click a PC card → click Move/Attack/Ability button → click a tile or token |
-| **Assisted** | Type a natural-language instruction (e.g. "move behind the pillar and attack") → review Proposed Action → Approve |
-| **Adventure** | Same as Assisted, different placeholder copy suggesting narrative framing |
+| **Assisted** | Type a natural-language instruction → review Proposed Action card → Approve |
+| **Adventure** | Same as Assisted, different placeholder copy encouraging narrative framing |
 
-All three modes use exactly the same rules engine. Mode only changes which UI surface is visible.
+All three modes use exactly the same rules engine.
+
+---
+
+## UX Implementation (per Blueprint)
+
+| Blueprint section | Status |
+|---|---|
+| §2 Board token states | ✅ Selection (gold border), active-turn (warm ring), targeting glows |
+| §3 Character panel | ✅ ACTING badge, HP bar, move/action readiness |
+| §5 Two-tier action bar | ✅ Tier 1: Move/Attack/End Turn; Tier 2: wrapping ability row |
+| §5 Disabled buttons | ✅ Visible at 38% opacity with tooltip, not hidden |
+| §5 Ability tooltips | ✅ Derived from ABILITY_DEFS at runtime |
+| §6 Targeting visual language | ✅ Green (move), red (attack/harmful ability), blue (beneficial ability) |
+| §6 Targeting status strip | ✅ Color-matched + text-paired (colorblind safe) |
+| §8 Proposal card | ✅ Amber header + sword icon, distinct from query |
+| §10 Query card | ✅ Blue header + info icon, Dismiss only (no Approve) |
+| §10 Inspect card | ✅ Neutral header + scroll icon |
+| §12 Responsive layout | ⬜ Deferred (desktop baseline retained) |
+| §14 Animations | ⬜ Deferred |
+| §15 Accessibility pass | ⬜ Deferred |
+
+---
+
+## Test Coverage
+
+### Unit tests (`pnpm --filter @workspace/tabletop test`)
+
+| Area | Tests |
+|---|---|
+| RNG, factory, `buildEncounter`, `rollInitiative` | Determinism, bounds, edge cases |
+| Map utilities (`isWall`, `isPillar`, `isBlocked`) | Walls, pillars, OOB |
+| `reachableTiles` | Range bounds, wall/occupant exclusion |
+| `lineOfSight`, `chebyshev` | Clear path, pillar cover, diagonals |
+| `validateMove/Attack/Ability`, `isValidAbilityTarget` | All targeting rules |
+| `cloneState` | Mutation isolation |
+| `executeMove/Attack/Ability` | State changes, immutability |
+| `endTurn`, `checkEncounterStatus` | Turn cycling, victory/defeat detection |
+| `runEnemyAI`, `resolveLeadingEnemyTurns` | AI produces events, leaves PC as actor |
+| `parseIntent`, `revalidateProposal`, `executeProposalSteps` | Full intent pipeline |
+| **Asset Registry** | resolve/has/list/clear, content ID coupling, fallback behavior |
+| **Encounter regression** | Full Ruined Crypt runs to victory/defeat in ≤200 rounds |
+
+### Playwright E2E (`pnpm --filter @workspace/tabletop test:e2e`)
+
+| Spec | Covers |
+|---|---|
+| `traditional.spec.ts` | Move, Attack, Healing Touch, Fire Bolt, End Turn |
+| `assisted.spec.ts` | Natural-language attack, heal, Fire Bolt |
+| `victory.spec.ts` | Quick Battle fixture → Victory banner visible |
+| `defeat.spec.ts` | Quick Defeat fixture → Defeat banner visible |
+
+Test fixtures (`quickBattle`, `quickDefeat`) are deterministic and hidden from the normal encounter picker. They appear only when `?e2e` is present in the URL.
 
 ---
 
 ## Bug Fixes Applied (relative to v4 prototype)
 
-1. **Auto-select current PC on turn handover** — `useEffect` keyed on `turnKey = \`${seed}-${currentActorId}\`` fires once per turn-over and once per `newEncounter()` call. Without this, action buttons never appeared because `selected` was null and the button guard `selected.id === currentActorId && isPlayerTurn` was always false.
-
-2. **Layout: action controls above ENEMIES** — Move/Attack/Ability buttons and End Turn are rendered immediately below the PARTY section, before the ENEMIES section. With 3+ enemy CharacterPanels, controls were below the fold at 720px.
-
-3. **`newEncounter` arrow wrapper** — `onClick={() => newEncounter()}` prevents the SyntheticEvent from being passed as `encounterId`, which would corrupt `encounterIdRef.current` on game-over restart.
-
-4. **`flexWrap: "wrap"` on action button row** — prevents buttons from overflowing the 220px left column when a character has multiple abilities.
-
----
-
-## Test Status
-
-Tests are located in `src/__tests__/engine.test.ts` and run with:
-
-```
-pnpm --filter @workspace/tabletop test
-```
-
-Coverage:
-
-| Area | Tests |
-|---|---|
-| RNG (`mulberry32`, `rollDie`) | Determinism, bounds, seed independence |
-| `createCombatantInstance` | Field validation, custom name, unknown def |
-| `buildEncounter` | Initial state shape, determinism, unknown id |
-| `rollInitiative` | Sorted descending |
-| Map utilities (`isWall`, `isPillar`, `isBlocked`) | Walls, pillars, OOB |
-| `reachableTiles` | Range bounds, no walls, occupied exclusion |
-| `lineOfSight` | Clear path, pillar cover |
-| `chebyshev` | Diagonal, straight, same tile |
-| `validateMove` | Accept reachable, reject wall, reject wrong turn |
-| `validateAttack` | Reject out of range, reject dead target |
-| `validateAbility` | Unknown ability, not-learned, target type |
-| `isValidAbilityTarget` | All four targeting modes |
-| `cloneState` | Mutation isolation |
-| `executeMove` | State mutation, immutability of original |
-| `executeAttack` | Hit produces result, HP decreases |
-| `executeAbility` | Healing Touch (+HP), Fire Bolt (–HP), unknown |
-| `endTurn` | Advances actor, resets resources, increments round |
-| `checkEncounterStatus` | ongoing / victory / defeat |
-| `runEnemyAI` | Produces events |
-| `resolveLeadingEnemyTurns` | Leaves a PC as current actor |
-| `exampleTargetPhrase` | Names enemy class, fallback |
-| `parseIntent` | Empty, endTurn, inspect, query, attack, abilities |
-| `revalidateProposal` | endTurn valid, impossible move invalid |
-| `executeProposalSteps` | Atomic rollback on failure |
-| **Encounter regression** | Full Ruined Crypt to victory/defeat, ≤200 rounds |
+1. **Auto-select current PC** — `useEffect` keyed on `${seed}-${currentActorId}` fires on every turn-over and every `newEncounter()`.
+2. **Action controls above ENEMIES** — Move/Attack/Ability + End Turn render before the ENEMIES section.
+3. **`newEncounter` arrow wrapper** — `onClick={() => newEncounter()}` prevents SyntheticEvent from corrupting `encounterIdRef.current`.
+4. **`flexWrap: "wrap"` on ability row** — prevents button overflow in the 220px left column.
 
 ---
 
 ## Known Limitations
 
-- **No persistent save** — game state lives in React state; refreshing starts a new encounter.
-- **Intent parser is regex-based** — complex or ambiguous phrasings may fail. Designed to be replaced wholesale by an LLM call (see `buildIntentContext`).
-- **Ability targeting in assisted/adventure modes** — the parser resolves the target from text; unusual phrasings may produce `INVALID_TARGET_TYPE` errors that surface as error banners.
-- **Single-floor maps only** — no multi-level terrain, no doors, no fog of war.
-- **Enemy AI is simple greedy** — moves toward nearest PC, attacks if possible. No ability use, no pathfinding around other enemies.
-- **No undo** — once a proposal is approved, it cannot be reversed within the current session.
+- **No production art** — asset registry is wired up but all IDs resolve to `undefined`; renderers fall back to icon placeholders.
+- **No persistent save** — game state lives in React state.
+- **Intent parser is regex-based** — designed to be replaced by an LLM call via `parseIntent`'s stable return shape.
+- **Single-floor maps, no fog of war, no enemy AI abilities.**
+- **No undo.**
 
 ---
 
 ## Roadmap
 
-- [ ] Replace regex intent parser with an LLM call via `buildIntentContext` shape
-- [ ] Fog of war / visibility tracking
-- [ ] Multi-floor maps (stairs, rooms)
-- [ ] Enemy AI abilities (Goblin chieftain heals allies, etc.)
-- [ ] Persistent session log (export to text)
-- [ ] Undo last action
-- [ ] Additional encounter types (outdoor, cave, ship)
-- [ ] Status effects (stunned, burning, poisoned) via new EFFECT_HANDLERS entries
-- [ ] Playwright end-to-end tests for full gameplay matrix (click-through Traditional mode, Assisted approve flow, victory detection)
-
----
-
-## Project Checkpoint — 2026-08-15
-
-**Commit:** module extraction complete  
-**Branch:** `main`  
-**Remote:** `github` → `https://github.com/JerichoOmega/tabletop-platform`
-
-### What was extracted
-The 1956-line v4 prototype was split into four modules without changing any game logic:
-- `engine/content.ts` (185 lines) — data + RNG + factory
-- `engine/rules.ts` (230 lines) — rules engine
-- `intent/parser.ts` (310 lines) — intent + proposals
-- `ui/primitives.tsx` (75 lines) — UI components
-- `IntelligentTabletop.tsx` (360 lines) — React component
-
-### Bugs fixed
-All three bugs from the previous session (auto-select, layout, newEncounter button) are applied to the new modular base. The ability targeting token click path is also documented inline.
-
-### Tests added
-41 test cases across 21 `describe` blocks. All passing.
-
-### Typecheck
-`pnpm typecheck` passes clean (all files use `// @ts-nocheck` to avoid annotation churn on the prototype-style code; this is intentional and documented here).
+- [ ] Drop in production character/terrain art via `registerAsset()` — architecture is ready
+- [ ] Replace regex intent parser with an LLM call
+- [ ] Responsive tablet/phone layouts (Blueprint §12)
+- [ ] Animations (Blueprint §14)
+- [ ] Accessibility pass (Blueprint §15)
+- [ ] Fog of war / visibility
+- [ ] Status effects via new `EFFECT_HANDLERS` entries
+- [ ] Enemy AI abilities

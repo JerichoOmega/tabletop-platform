@@ -47,6 +47,16 @@ export interface MapDef {
   height: number;
   entrance: { x: number; y: number };
   pillars: { x: number; y: number }[];
+  /**
+   * Logical asset IDs for terrain tile types in this map.
+   * All fields are optional — unregistered or absent IDs fall back to the
+   * current CSS/inline-style rendering. The rules engine never reads this.
+   */
+  visualAssets?: {
+    floor?:  string;  // e.g. "terrain.crypt.floor"
+    wall?:   string;  // e.g. "terrain.crypt.wall"
+    pillar?: string;  // e.g. "terrain.crypt.pillar"
+  };
 }
 
 export interface InitiativeEntry {
@@ -93,6 +103,12 @@ interface CombatantDef {
   moveMax: number;
   weaponId: string;
   abilities?: string[];
+  /**
+   * Stable logical ID into the asset registry (e.g. "character.fighter").
+   * When a visual asset is registered under this ID, the UI renders it
+   * instead of the icon placeholder. The rules engine never reads this field.
+   */
+  visualAssetId?: string;
 }
 
 export interface AbilityEffect {
@@ -177,6 +193,13 @@ export const MAP_DEFS: Record<string, MapDef> = {
       { x: 3, y: 2 },
       { x: 5, y: 3 },
     ],
+    // Visual asset IDs for this map's terrain tiles. No production art is
+    // registered yet; the renderer falls back to CSS when these are absent.
+    visualAssets: {
+      floor:  "terrain.crypt.floor",
+      wall:   "terrain.crypt.wall",
+      pillar: "terrain.crypt.pillar",
+    },
   },
   trainingYard: {
     id: "trainingYard",
@@ -185,6 +208,10 @@ export const MAP_DEFS: Record<string, MapDef> = {
     height: 6,
     entrance: { x: 0, y: 3 },
     pillars: [], // open ground — proves cover is optional per-map, not hardcoded
+    visualAssets: {
+      floor: "terrain.trainingYard.floor",
+      wall:  "terrain.trainingYard.wall",
+    },
   },
 };
 
@@ -225,22 +252,27 @@ export const COMBATANT_DEFS: Record<string, CombatantDef> = {
     id: "fighter", name: "Aldric", cls: "Fighter", type: "pc",
     icon: "sword", maxHp: 20, ac: 15, atkMod: 5, dexMod: 1, moveMax: 5,
     weaponId: "longbow",
+    // Logical asset ID — resolved by the registry at render time, never by the engine.
+    visualAssetId: "character.fighter",
   },
   wizard: {
     id: "wizard", name: "Sable", cls: "Wizard", type: "pc",
     icon: "wand", maxHp: 14, ac: 12, atkMod: 4, dexMod: 2, moveMax: 4,
     weaponId: "forceBolt",
     abilities: ["healingTouch", "fireBolt"],
+    visualAssetId: "character.wizard",
   },
   goblin: {
     id: "goblin", name: "Goblin", cls: "Goblin", type: "enemy",
     icon: "shield", maxHp: 7, ac: 13, atkMod: 3, dexMod: 2, moveMax: 5,
     weaponId: "rustyShiv",
+    visualAssetId: "character.goblin",
   },
   orc: {
     id: "orc", name: "Orc", cls: "Orc", type: "enemy",
     icon: "shield", maxHp: 16, ac: 15, atkMod: 4, dexMod: 0, moveMax: 4,
     weaponId: "warAxe",
+    visualAssetId: "character.orc",
   },
   // E2E test fixture — guaranteed one-hit kill (HP 1, AC 1, dexMod -10 so
   // it always loses initiative and never reaches the fighter before dying).

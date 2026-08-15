@@ -35,6 +35,7 @@ import {
 } from "@/engine/rules";
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
 import { FONT_IMPORT, ClassIcon, CharacterPanel, actionBtnStyle } from "@/ui/primitives";
+import { resolveAsset } from "@/assets/registry";
 
 // True when running under Playwright or any other harness that appends ?e2e to
 // the URL.  Test-only encounters are hidden from the picker in normal usage.
@@ -610,7 +611,11 @@ export default function IntelligentTabletop() {
                           }}
                           title={tok.name}
                         >
-                          <ClassIcon icon={tok.icon} size={18} className="" />
+                          {/* Resolve visual asset if registered; fall back to icon placeholder. */}
+                          {resolveAsset(`character.${tok.defId}`)
+                            ? <img src={resolveAsset(`character.${tok.defId}`).src} alt={tok.name} style={{ width: 18, height: 18, objectFit: "cover", borderRadius: "50%", pointerEvents: "none" }} />
+                            : <ClassIcon icon={tok.icon} size={18} className="" />
+                          }
                         </div>
                       )}
                     </div>
