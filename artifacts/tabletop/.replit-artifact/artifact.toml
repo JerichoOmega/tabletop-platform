@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Intelligent Tabletop"
+description = "A self-contained tabletop combat simulator featuring Traditional, Assisted, and Adventure modes with a deterministic rules engine, initiative system, movement, attacks, spells, and session logging across two encounters (Training Yard and Ruined Crypt)."
+version = "1.0.0"
+id = "artifacts/tabletop"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22382
+
+[services.development]
+run = "pnpm --filter @workspace/tabletop run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tabletop", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tabletop/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22382"
+BASE_PATH = "/"
