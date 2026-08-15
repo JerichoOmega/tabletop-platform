@@ -1,0 +1,88 @@
+The diagnostic is useful, and commit 8667412 is pushed.
+
+However, I inspected the actual commit and found one important concern:
+
+The new useEffect auto-selects the current PC, which causes the action controls to render, but the action controls are still located AFTER all enemy CharacterPanel components in the left column.
+
+I do not see any actual scrollIntoView implementation in the commit.
+
+Therefore, do not assume the visibility problem is solved merely because the controls now render.
+
+I want a real-browser verification of the ORIGINAL failure condition.
+
+Use a fresh page and the Ruined Crypt, because it has 3 enemy panels.
+
+Use a viewport approximately 720px high.
+
+Verify all of the following:
+
+1. Load Ruined Crypt from a completely fresh page.
+2. Do not manually click a character first.
+3. Confirm it is a player's turn.
+4. Confirm the current PC is automatically selected.
+5. Determine whether Move, Attack, and any applicable ability buttons are actually visible in the viewport WITHOUT the user having to know to scroll.
+6. If they are below the viewport, the bug is NOT fully fixed.
+
+The desired UX is:
+
+When it is the player's turn, the player should immediately have access to their available commands without needing to discover that they must first select a character and then scroll below all enemies.
+
+Do NOT solve this by bypassing the rules engine.
+
+Do NOT rewrite combat.
+
+Do NOT remove the existing validation.
+
+Instead, fix the UI layout/placement so the player's available command controls are reliably discoverable and accessible.
+
+A good solution would be to place the active player's command controls in a stable location associated with the active player, rather than placing them after an arbitrary number of enemy panels.
+
+Before changing layout, inspect the existing UI carefully and choose the smallest clean solution.
+
+Also verify that the solution works for:
+
+- Ruined Crypt with 3 Goblins
+- Training Yard with 1 Orc
+- Different viewport heights
+- Multiple rounds
+- Switching between player turns
+- Switching encounters
+
+IMPORTANT:
+The current useEffect only auto-selects when !selectedId.
+
+Make sure this does not create a stale-selection problem when control passes from one PC to another in a future multi-PC encounter. The active actor should always be the actor whose commands are being presented.
+
+Also:
+
+The [DIAG] console.log statements were explicitly temporary diagnostic instrumentation.
+
+Once the browser reproduction confirms the real interaction path, REMOVE ALL [DIAG] logging before the final commit.
+
+Do not leave diagnostic console spam in production.
+
+Then run:
+
+- build
+- typecheck
+- real browser test
+- fresh Ruined Crypt test
+- fresh Training Yard test
+- Attack
+- Move
+- Healing Touch
+- Fire Bolt
+- End Turn
+- Assisted Mode
+- Adventure Mode
+- invalid-action test
+- New Encounter after victory
+
+Finally:
+
+1. Review git diff.
+2. Confirm only the necessary UI fix and diagnostic cleanup are present.
+3. Commit the fix.
+4. Push to main.
+
+Do not claim the original "commands are inaccessible" problem is fixed until you have visually verified the controls in a fresh 720px Ruined Crypt browser session.
