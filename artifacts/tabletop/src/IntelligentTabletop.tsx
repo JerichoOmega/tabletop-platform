@@ -36,6 +36,10 @@ import {
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
 import { FONT_IMPORT, ClassIcon, CharacterPanel, actionBtnStyle } from "@/ui/primitives";
 
+// True when running under Playwright or any other harness that appends ?e2e to
+// the URL.  Test-only encounters are hidden from the picker in normal usage.
+const isE2E = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("e2e");
+
 export default function IntelligentTabletop() {
   const seedRef        = useRef(1337);
   const encounterIdRef = useRef("crypt");
@@ -356,9 +360,9 @@ export default function IntelligentTabletop() {
         </div>
       </div>
 
-      {/* Encounter switcher */}
+      {/* Encounter switcher — test-only encounters are hidden unless ?e2e is in the URL */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        {Object.values(ENCOUNTER_DEFS).map((enc) => (
+        {Object.values(ENCOUNTER_DEFS).filter((enc) => !enc.testOnly || isE2E).map((enc) => (
           <button
             key={enc.id}
             onClick={() => newEncounter(enc.id)}

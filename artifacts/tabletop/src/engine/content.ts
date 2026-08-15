@@ -88,6 +88,14 @@ export const COMBATANT_DEFS = {
     icon: "shield", maxHp: 16, ac: 15, atkMod: 4, dexMod: 0, moveMax: 4,
     weaponId: "warAxe",
   },
+  // E2E test fixture — guaranteed one-hit kill (HP 1, AC 1, dexMod -10 so
+  // it always loses initiative and never reaches the fighter before dying).
+  // Only visible in-game when the ?e2e URL parameter is present.
+  targetDummy: {
+    id: "targetDummy", name: "Target Dummy", cls: "Dummy", type: "enemy",
+    icon: "shield", maxHp: 1, ac: 1, atkMod: -10, dexMod: -10, moveMax: 0,
+    weaponId: "rustyShiv",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -171,6 +179,18 @@ export const ENCOUNTER_DEFS = {
     mapId: "trainingYard",
     players: [{ defId: "fighter", instanceId: "fighter", x: 1, y: 3 }],
     enemies: [{ defId: "orc", instanceId: "orc1", x: 5, y: 2 }],
+  },
+  // E2E test encounter — deterministic one-round victory: the dummy has 1 HP,
+  // AC 1, and always loses initiative, so the fighter's first attack always
+  // kills it and triggers the Victory banner immediately.
+  // Hidden from the normal encounter picker; only shown when ?e2e is in the URL.
+  quickBattle: {
+    id: "quickBattle",
+    name: "Quick Battle",
+    mapId: "trainingYard",
+    testOnly: true,
+    players: [{ defId: "fighter", instanceId: "fighter", x: 1, y: 3 }],
+    enemies: [{ defId: "targetDummy", instanceId: "dummy1", x: 3, y: 3 }],
   },
 };
 
