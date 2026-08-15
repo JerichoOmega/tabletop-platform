@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useMemo, useCallback, useRef } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Sword, Wand2, Footprints, Shield, ScrollText, Dice5, Sparkles, ChevronRight, X, Check } from "lucide-react";
 
 /* ============================================================================
@@ -1225,6 +1225,15 @@ export default function IntelligentTabletop() {
   const isPlayerTurn = currentActor && currentActor.type === "pc";
   const selected = selectedId ? gameState.combatants[selectedId] : null;
 
+  // Auto-select the current PC actor whenever the turn changes and nothing is
+  // selected. This ensures action buttons are immediately visible without
+  // requiring the player to first click a character card manually.
+  useEffect(() => {
+    if (isPlayerTurn && !selectedId) {
+      setSelectedId(currentActorId);
+    }
+  }, [gameState, isPlayerTurn, currentActorId, selectedId]);
+
   // Derived straight from gameState so it's correct regardless of which code
   // path produced that state — including the lazy useState initializer and
   // newEncounter(), where calling a setter isn't an option.
@@ -1278,6 +1287,7 @@ export default function IntelligentTabletop() {
 
   const handleSelectToken = useCallback(
     (id) => {
+      console.log("[DIAG] handleSelectToken:", id);
       setSelectedId(id);
       setPendingAction(null);
       setProposal(null);
@@ -1286,8 +1296,10 @@ export default function IntelligentTabletop() {
   );
 
   function handleTileClick(x, y) {
+    console.log("[DIAG] handleTileClick:", x, y, "mode:", mode, "pendingAction:", pendingAction, "selected:", selected?.id);
     if (mode !== "traditional" || pendingAction !== "move" || !selected) return;
     const res = executeMove(gameState, selected.id, { x, y });
+    console.log("[DIAG] executeMove result:", res.ok, res.events);
     if (res.ok) {
       setPendingAction(null);
       afterPlayerAction(res.state);
@@ -1298,8 +1310,10 @@ export default function IntelligentTabletop() {
   }
 
   function handleAttackTarget(targetId) {
+    console.log("[DIAG] handleAttackTarget:", targetId, "mode:", mode, "pendingAction:", pendingAction, "selected:", selected?.id);
     if (mode !== "traditional" || pendingAction !== "attack" || !selected) return;
     const v = attackPreview[targetId];
+    console.log("[DIAG] attackPreview for target:", v);
     if (!v || !v.valid) {
       // Surface the real rules-engine reason. Do NOT mutate state, do NOT
       // consume the action, and stay in Attack mode so the player can pick
@@ -1310,6 +1324,7 @@ export default function IntelligentTabletop() {
       return;
     }
     const res = executeAttack(gameState, selected.id, targetId, rngRef.current);
+    console.log("[DIAG] executeAttack result:", res.ok, res.events);
     setPendingAction(null);
     if (res.ok) {
       setLastRoll({ kind: "attack", actor: selected.name, ...res.result, targetName: gameState.combatants[targetId].name });
@@ -1318,8 +1333,10 @@ export default function IntelligentTabletop() {
   }
 
   function handleAbilityTarget(abilityId, targetId) {
+    console.log("[DIAG] handleAbilityTarget:", abilityId, targetId, "mode:", mode, "pendingAction:", pendingAction, "selected:", selected?.id);
     if (mode !== "traditional" || pendingAction !== "ability:" + abilityId || !selected) return;
     const v = validateAbility(gameState, selected.id, abilityId, targetId);
+    console.log("[DIAG] validateAbility:", v);
     if (!v.valid) {
       // Same fix as handleAttackTarget: real reason, no mutation, no
       // consumed action, stay in ability-targeting mode.
@@ -1329,6 +1346,7 @@ export default function IntelligentTabletop() {
       return;
     }
     const res = executeAbility(gameState, selected.id, abilityId, targetId, rngRef.current);
+    console.log("[DIAG] executeAbility result:", res.ok, res.events);
     setPendingAction(null);
     if (res.ok) {
       setLastRoll({ kind: "ability", actor: selected.name, abilityName: ABILITY_DEFS[abilityId].name, ...res.result });
@@ -1337,6 +1355,7 @@ export default function IntelligentTabletop() {
   }
 
   function handleEndTurn() {
+    console.log("[DIAG] handleEndTurn fired, isPlayerTurn:", isPlayerTurn, "currentActorId:", currentActorId);
     const next = doEndTurnAndMaybeAI(gameState);
     setPendingAction(null);
     afterPlayerAction(next);
@@ -1545,7 +1564,7 @@ export default function IntelligentTabletop() {
       {encounterStatus !== "ongoing" && (
         <div style={{ marginBottom: 10, padding: "12px 16px", background: encounterStatus === "victory" ? "#243b1e" : "#3b1e1e", border: `1px solid ${encounterStatus === "victory" ? "#4c6b3f" : "#8b2e2e"}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontFamily: "Cinzel, serif", fontSize: 15 }}>{encounterBanner}</span>
-          <button onClick={newEncounter} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
+          <button onClick={() => newEncounter()} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
             New Encounter
           </button>
         </div>
