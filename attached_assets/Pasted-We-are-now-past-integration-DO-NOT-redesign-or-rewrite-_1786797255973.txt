@@ -1,0 +1,155 @@
+We are now past integration. DO NOT redesign or rewrite the combat system.
+
+The verified IntelligentTabletop implementation is already integrated in:
+
+artifacts/tabletop/src/IntelligentTabletop.tsx
+
+The current problem is specifically that the UI is not allowing me to perform gameplay commands such as:
+
+- Attack
+- Healing Touch
+- Fire Bolt
+- Move
+- End Turn
+- other combat actions
+
+The rules engine and the verified combat implementation already exist. I need you to diagnose why the CURRENT UI interaction path is not successfully reaching the existing command handlers.
+
+IMPORTANT:
+Do not replace the combat architecture.
+Do not create a second combat engine.
+Do not bypass validation.
+Do not directly mutate combat state from button handlers.
+Do not remove the existing rules engine.
+Do not change working rules merely to make the UI appear functional.
+
+FIRST, inspect the current code and trace the complete path for a normal Traditional Mode attack:
+
+UI button
+→ click handler
+→ selected actor
+→ selected target
+→ proposed action / command
+→ rules validation
+→ executeAttack / appropriate executor
+→ state update
+→ UI re-render
+→ session log
+
+Then do the same for:
+
+1. Move
+2. Weapon Attack
+3. Healing Touch
+4. Fire Bolt
+5. End Turn
+
+Find the exact point where the command path is breaking.
+
+Do NOT assume the rules engine is broken.
+
+Specifically investigate:
+
+- whether the action buttons are actually enabled
+- whether their onClick handlers are firing
+- whether the selected actor is correct
+- whether the selected target is correctly registered
+- whether target selection is being intercepted by another element
+- whether a ProposedAction is actually being created
+- whether validation is being called
+- whether validation is returning an error
+- whether the error is being swallowed
+- whether executeAttack / executeAbility / executeMove is being called
+- whether state is being mutated correctly
+- whether React state closures are using stale combat state
+- whether actionUsed / moveRemaining is preventing commands incorrectly
+- whether the UI is displaying a stale copy of the combat state
+- whether a mode-specific handler is disconnected from the shared rules engine
+- whether any command buttons are merely visual controls with incomplete handlers
+
+VERY IMPORTANT:
+
+Use the existing implementation as the source of truth.
+
+Do not "fix" the issue by allowing invalid actions.
+
+For every command that fails, identify the exact reason.
+
+For example, if clicking Attack produces no visible result, determine whether:
+
+A) the click handler never fires,
+B) the handler fires but no target is selected,
+C) a proposed action is never created,
+D) validation rejects it,
+E) execution never occurs,
+F) state changes but React/UI does not reflect it,
+G) the action is correctly rejected because the character has already used their action.
+
+Do not guess.
+
+Add temporary diagnostic logging if necessary, run the application, reproduce the problem with genuine browser interactions, and inspect the resulting logs.
+
+TEST THIS FROM A FRESH COMBAT STATE.
+
+Minimum browser reproduction:
+
+1. Start Training Yard.
+2. Select Aldric.
+3. Click Attack.
+4. Select the Orc.
+5. Verify that the attack actually resolves.
+6. Verify Orc HP changes.
+7. Verify the action becomes used.
+8. Start a fresh turn/state.
+9. Use Healing Touch where valid.
+10. Verify HP changes.
+11. Start a fresh turn/state.
+12. Use Fire Bolt against the Orc.
+13. Verify damage and action consumption.
+14. Move Aldric.
+15. Verify position changes.
+16. End Turn.
+17. Verify the Orc receives its turn.
+
+Also test Assisted Mode:
+
+- "attack the Orc"
+- "cast Fire Bolt at the Orc"
+- "heal Aldric"
+
+And verify that the same underlying rules/execution path is used.
+
+If you discover that the current implementation differs from the verified artifact that was previously browser-tested, compare the current code against the verified implementation before changing anything.
+
+After identifying the actual defect:
+
+1. Make the smallest possible fix.
+2. Preserve the existing rules engine.
+3. Preserve all existing validation.
+4. Do not rewrite unrelated code.
+5. Run the existing build/typecheck/tests.
+6. Run the application in the real browser.
+7. Reproduce all of the commands above through genuine UI interaction.
+8. Confirm the actual state changes.
+9. Check the session log.
+10. Check the browser console for errors.
+
+Then report:
+
+- exact root cause
+- exact file/function responsible
+- exact fix
+- build result
+- typecheck result
+- test results
+- browser results for Attack
+- browser results for Healing Touch
+- browser results for Fire Bolt
+- browser results for Move
+- browser results for End Turn
+- whether Assisted Mode commands work
+- whether any console errors remain
+
+DO NOT CLAIM THE ISSUE IS FIXED UNTIL YOU HAVE ACTUALLY CLICKED THE CONTROLS IN THE RUNNING BROWSER AND VERIFIED THE RESULT.
+
+Finally, commit only the actual fix with a descriptive commit message and push it to main.
