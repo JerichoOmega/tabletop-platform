@@ -1,0 +1,389 @@
+Task: Integrate the Verified Intelligent Tabletop Combat Artifact
+
+We have completed an exhaustive real-browser verification pass on the current Intelligent Tabletop combat implementation.
+
+The attached/provided file:
+
+intelligent-tabletop(3).tsx
+
+is the verified known-good artifact from that testing pass.
+
+Your job now is to integrate this exact implementation into the current Replit project and get the resulting project committed and pushed to GitHub.
+
+IMPORTANT — DO NOT START V6
+
+Do not redesign the combat system.
+
+Do not rewrite the combat architecture.
+
+Do not “clean up” working combat logic.
+
+Do not change behavior simply because you would implement it differently.
+
+Do not invent fixes for problems that were not reproduced.
+
+The purpose of this task is to preserve the verified implementation and get it properly integrated into the repository.
+
+⸻
+
+1. Inspect the Existing Project First
+
+Before modifying anything:
+
+1. Inspect the complete repository structure.
+2. Identify the existing Intelligent Tabletop application entry point.
+3. Identify where the current intelligent-tabletop.jsx, .tsx, or equivalent combat component lives.
+4. Identify the existing combat/rules-engine files.
+5. Identify the existing test suites.
+6. Inspect the current Git status.
+7. Determine whether the repository already contains the same implementation under a different filename.
+
+Do not make changes until you understand how the provided file fits into the existing project.
+
+⸻
+
+2. Treat the Provided File as the Known-Good Source
+
+Use:
+
+intelligent-tabletop(3).tsx
+
+as the source of truth for the verified Intelligent Tabletop UI/interaction implementation.
+
+The browser verification established that the implementation currently supports:
+
+* Traditional Mode
+* Assisted Mode
+* Adventure Mode
+* Movement
+* Reachable-tile highlighting
+* Actual movement execution
+* Weapon attacks
+* Damage resolution
+* Healing Touch
+* Self-healing
+* Healing another character
+* Fire Bolt
+* Action-economy enforcement
+* End Turn
+* Initiative progression
+* Multi-round combat
+* Enemy turns
+* Query mode
+* Invalid-action validation
+* Occupied-tile validation
+* Session logging
+* Combat state/UI synchronization
+* Training Yard
+* Ruined Crypt
+* Victory resolution
+
+The implementation was tested using genuine browser clicks against the built application.
+
+The previous diagnostic pass made zero code changes.
+
+Preserve this behavior.
+
+⸻
+
+3. Integrate Rather Than Blindly Replace
+
+If the project already contains the same Intelligent Tabletop implementation:
+
+* Compare the existing implementation against intelligent-tabletop(3).tsx.
+* Determine which version corresponds to the verified artifact.
+* Preserve any existing project infrastructure that is required for the application to build/run.
+* Do not overwrite unrelated systems.
+* Do not remove existing tests.
+* Do not remove existing rules-engine functionality.
+* Do not duplicate components unnecessarily.
+
+If the current project has a clearly corresponding Intelligent Tabletop component, update that component with the verified implementation where appropriate.
+
+If the provided file is already the exact current implementation, leave its logic unchanged.
+
+The objective is:
+
+verified artifact → correctly integrated project → passing tests → GitHub
+
+⸻
+
+4. Preserve the Rules Engine
+
+The rules engine is especially important.
+
+Do not bypass it from the UI.
+
+All gameplay commands must continue to flow through the existing validation/state-resolution pipeline.
+
+The following behaviors must remain authoritative:
+
+* ACTION_USED
+* invalid target rejection
+* occupied tile rejection
+* movement validation
+* attack validation
+* spell validation
+* range validation
+* line-of-sight validation
+* HP mutation
+* healing caps
+* resource/action consumption
+* turn progression
+* initiative progression
+
+The UI must not directly mutate combat state in a way that bypasses the rules engine.
+
+⸻
+
+5. Do Not Fix Non-Problems
+
+The previous testing pass initially appeared to reveal several problems, but each was ultimately determined to be a testing-methodology issue.
+
+Do not introduce code changes based on these:
+
+Reachable tiles
+
+Browser CSS inspection normalized the inline color:
+
+#6b8f4e
+
+into:
+
+rgb(107, 143, 78)
+
+The reachable-tile highlighting was actually working correctly.
+
+Session log
+
+The earlier diagnostic inspected the beginning of the log instead of the newest entries.
+
+The move had actually executed and logged correctly.
+
+Assisted Mode
+
+An attempted second action after Fire Bolt correctly failed with:
+
+ACTION_USED
+
+This was correct rules-engine behavior.
+
+Character token clicks
+
+Clicking directly on an occupied character token reselects the character because the token intentionally intercepts the click.
+
+The occupied-tile validation is still reachable by clicking the uncovered portion of the tile.
+
+This is a minor UX consideration, not a combat-system failure.
+
+Do not alter this behavior unless absolutely necessary for integration.
+
+⸻
+
+6. Run the Existing Tests
+
+After integration, run the complete existing test suite.
+
+At minimum verify:
+
+* engine_test.js
+* intent_test.js
+
+Also run whatever build/typecheck/lint commands the project already uses.
+
+Do not modify tests merely to make them pass.
+
+If a test fails:
+
+1. Determine whether the failure is caused by the integration.
+2. Determine whether it is an existing/environmental issue.
+3. Fix only genuine integration problems.
+4. Do not weaken or delete tests.
+
+⸻
+
+7. Perform a Real Browser Smoke Test
+
+After the project builds, run the actual application in the browser.
+
+Use genuine UI interactions.
+
+Do not rely solely on direct JavaScript state manipulation.
+
+Verify at minimum:
+
+Traditional Mode
+
+* Start Training Yard.
+* Confirm initiative.
+* Click Move.
+* Confirm reachable tiles highlight.
+* Click a reachable tile.
+* Confirm position changes.
+* Confirm movement is consumed.
+* Click Attack.
+* Select the Orc.
+* Confirm attack resolves.
+* Confirm HP changes appropriately.
+* End Turn.
+* Confirm Orc receives its turn.
+* Confirm the next round begins correctly.
+
+Healing
+
+On a fresh appropriate combat state:
+
+* Use Healing Touch.
+* Verify the target receives healing.
+* Verify HP cannot exceed maximum.
+
+Fire Bolt
+
+On a fresh turn:
+
+* Cast Fire Bolt at a valid target.
+* Verify the attack resolves.
+* Verify damage.
+* Verify action consumption.
+
+Assisted Mode
+
+On fresh turns:
+
+* Ask to attack the Goblin.
+* Approve.
+* Verify execution.
+
+Test:
+
+* heal Aldric
+* cast Fire Bolt at the Goblin
+
+Adventure Mode
+
+Test natural-language commands including:
+
+* I attack the goblin
+* I heal Aldric
+* I cast Fire Bolt at the goblin
+* I move behind the pillar and attack the goblin
+
+Query
+
+Verify:
+
+* attack query
+* healing query
+* Fire Bolt query
+
+Queries should explain the relevant checks and return the correct verdict.
+
+Invalid Actions
+
+Verify that invalid actions:
+
+* are rejected,
+* provide the actual rules-engine reason,
+* do not mutate combat state.
+
+⸻
+
+8. Check for Regressions
+
+Pay particular attention to:
+
+* action state
+* movement state
+* selected character
+* selected target
+* initiative
+* round number
+* HP
+* spell/action consumption
+* enemy action state
+* grid position
+* reachable tiles
+* session log
+* victory state
+
+Make sure the UI always reflects the actual rules-engine state.
+
+⸻
+
+9. GitHub Preparation
+
+Once everything is verified:
+
+1. Check git status.
+2. Review every changed file.
+3. Make sure there are no accidental generated files, debugging artifacts, screenshots, temporary files, or unrelated modifications.
+4. Make sure the verified Intelligent Tabletop implementation is actually included in the intended project files.
+5. Run the final test suite one more time.
+6. Review the diff carefully.
+
+Do not commit unrelated changes.
+
+⸻
+
+10. Commit
+
+Create a clean commit with a descriptive message such as:
+
+Integrate verified Intelligent Tabletop combat implementation
+
+The commit should represent the verified combat artifact being integrated into the repository.
+
+⸻
+
+11. Push to GitHub
+
+Push the commit to the repository’s currently configured GitHub remote and appropriate branch.
+
+Do not create a new repository.
+
+Do not change the remote.
+
+Do not force-push.
+
+Do not rewrite Git history.
+
+If authentication or permissions prevent the push, stop and report the exact GitHub/Git error rather than attempting destructive workarounds.
+
+⸻
+
+12. Final Report
+
+When finished, report:
+
+Integration
+
+* Which existing file/component received the verified implementation.
+* Whether intelligent-tabletop(3).tsx was copied, merged, or used as the existing source.
+* Any other files changed.
+
+Validation
+
+* Build result.
+* Typecheck result, if applicable.
+* Lint result, if applicable.
+* engine_test.js result.
+* intent_test.js result.
+* Browser smoke-test result.
+* Any console/page errors.
+
+Git
+
+* Current branch.
+* Commit hash.
+* Commit message.
+* Whether the commit was successfully pushed to GitHub.
+
+Important
+
+If no code changes were necessary because the repository already contained the verified implementation, say so explicitly.
+
+Do not claim success unless you actually verified the build/tests/Git state.
+
+The final objective is simple:
+
+Take the verified intelligent-tabletop(3).tsx implementation, integrate it cleanly into the existing project without breaking its working behavior, verify it, commit it, and push it to GitHub.
