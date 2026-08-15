@@ -1,8 +1,9 @@
 # Intelligent Tabletop — Project Status
 
-**Last updated:** 2026-08-15  
-**Build:** passing (TypeScript, Vitest)  
-**Deployed at:** `/` (Replit preview)
+**Last updated:** 2026-08-15 (UX milestone)  
+**Build:** passing (TypeScript, Vitest — 70 tests)  
+**Deployed at:** `/` (Replit preview)  
+**GitHub:** `JerichoOmega/tabletop-platform` @ `main` (commit `1a9fda6`)
 
 ---
 
