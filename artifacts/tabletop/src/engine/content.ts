@@ -250,6 +250,23 @@ export const COMBATANT_DEFS: Record<string, CombatantDef> = {
     icon: "shield", maxHp: 1, ac: 1, atkMod: -10, dexMod: -10, moveMax: 0,
     weaponId: "rustyShiv",
   },
+  // E2E test fixture — PC side of the "Quick Defeat" encounter.
+  // HP 1, AC 1, dexMod -10 guarantees the enemy always wins initiative and
+  // any attack (even a natural 1 + atkMod 20 = 21 vs AC 1) kills it.
+  glassPC: {
+    id: "glassPC", name: "Glass Squire", cls: "Squire", type: "pc",
+    icon: "sword", maxHp: 1, ac: 1, atkMod: 0, dexMod: -10, moveMax: 3,
+    weaponId: "rustyShiv",
+  },
+  // E2E test fixture — enemy side of the "Quick Defeat" encounter.
+  // atkMod 20 guarantees a hit (minimum roll 21 vs AC 1), rustyShiv minimum
+  // damage 2 > PC HP 1 → guaranteed one-hit kill. dexMod 10 always wins
+  // initiative. Placed adjacent to the PC so it can attack immediately.
+  doomEnemy: {
+    id: "doomEnemy", name: "Doom Wraith", cls: "Wraith", type: "enemy",
+    icon: "shield", maxHp: 50, ac: 20, atkMod: 20, dexMod: 10, moveMax: 0,
+    weaponId: "rustyShiv",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -345,6 +362,20 @@ export const ENCOUNTER_DEFS: Record<string, EncounterDef> = {
     testOnly: true,
     players: [{ defId: "fighter", instanceId: "fighter", x: 1, y: 3 }],
     enemies: [{ defId: "targetDummy", instanceId: "dummy1", x: 3, y: 3 }],
+  },
+  // E2E test encounter — deterministic one-round defeat: the Doom Wraith wins
+  // initiative (dexMod 10), attacks the adjacent Glass Squire (atkMod 20 vs
+  // AC 1 — never misses), and kills it (min damage 2 > HP 1) before the player
+  // ever gets a turn.  resolveLeadingEnemyTurns() runs the wraith's turn
+  // automatically on load, so the Defeat banner is visible immediately.
+  // Hidden from the normal encounter picker; only shown when ?e2e is in the URL.
+  quickDefeat: {
+    id: "quickDefeat",
+    name: "Quick Defeat",
+    mapId: "trainingYard",
+    testOnly: true,
+    players: [{ defId: "glassPC",   instanceId: "glassPC1",   x: 2, y: 3 }],
+    enemies: [{ defId: "doomEnemy", instanceId: "doomEnemy1", x: 3, y: 3 }],
   },
 };
 
