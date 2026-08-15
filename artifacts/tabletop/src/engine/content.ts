@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ---------------------------------------------------------------------------
 // CONTENT — static data definitions, RNG utilities, and encounter factory.
 //
@@ -9,10 +8,165 @@
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// SHARED TYPES — exported for use by rules.ts, intent/parser.ts, and the UI.
+// ---------------------------------------------------------------------------
+
+export interface Weapon {
+  name: string;
+  range: number;
+  dmgDie: number;
+  dmgMod: number;
+}
+
+export interface Combatant {
+  id: string;
+  defId: string;
+  name: string;
+  cls: string;
+  type: "pc" | "enemy";
+  icon: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  ac: number;
+  atkMod: number;
+  dexMod: number;
+  moveMax: number;
+  moveRemaining: number;
+  weapon: Weapon;
+  abilities: string[];
+  alive: boolean;
+  actionUsed: boolean;
+}
+
+export interface MapDef {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  entrance: { x: number; y: number };
+  pillars: { x: number; y: number }[];
+}
+
+export interface InitiativeEntry {
+  id: string;
+  total: number;
+}
+
+export interface GameState {
+  started: boolean;
+  encounterId: string;
+  encounterName: string;
+  map: MapDef;
+  round: number;
+  turnOrder: string[];
+  initiativeRolls: InitiativeEntry[];
+  turnIndex: number;
+  combatants: Record<string, Combatant>;
+  log: string[];
+  seed: number;
+}
+
+// ---------------------------------------------------------------------------
+// INTERNAL DEFINITION TYPES — not exported; only used within this file.
+// ---------------------------------------------------------------------------
+
+interface WeaponDef {
+  id: string;
+  name: string;
+  range: number;
+  dmgDie: number;
+  dmgMod: number;
+}
+
+interface CombatantDef {
+  id: string;
+  name: string;
+  cls: string;
+  type: "pc" | "enemy";
+  icon: string;
+  maxHp: number;
+  ac: number;
+  atkMod: number;
+  dexMod: number;
+  moveMax: number;
+  weaponId: string;
+  abilities?: string[];
+}
+
+export interface AbilityEffect {
+  type: "heal" | "damage";
+  die: number;
+  mod: number;
+}
+
+export interface AbilityDef {
+  id: string;
+  name: string;
+  range: number;
+  targeting: "self" | "ally" | "enemy" | "any";
+  effect: AbilityEffect;
+  requiresLineOfSight?: boolean;
+}
+
+interface EncounterEntry {
+  defId: string;
+  instanceId: string;
+  x: number;
+  y: number;
+}
+
+interface EncounterDef {
+  id: string;
+  name: string;
+  mapId: string;
+  testOnly?: boolean;
+  players: EncounterEntry[];
+  enemies: EncounterEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// EFFECT HANDLER TYPES
+// ---------------------------------------------------------------------------
+
+export interface HealResult {
+  type: "heal";
+  roll: number;
+  amount: number;
+  healed: number;
+  targetName: string;
+}
+
+export interface DamageResult {
+  type: "damage";
+  roll: number;
+  amount: number;
+  targetName: string;
+  targetHp: number;
+  dead: boolean;
+}
+
+export type EffectResult = HealResult | DamageResult;
+
+export interface HandlerReturn {
+  log: string[];
+  result: EffectResult;
+}
+
+export type EffectHandler = (
+  casterName: string,
+  abilityName: string,
+  target: Combatant,
+  effect: AbilityEffect,
+  rng: () => number,
+) => HandlerReturn;
+
+// ---------------------------------------------------------------------------
 // MAP DEFINITIONS — describe terrain. Engine (isWall/isPillar/reachable…)
 // only ever reads a `map` object; adding a new map never touches the engine.
 // ---------------------------------------------------------------------------
-export const MAP_DEFS = {
+export const MAP_DEFS: Record<string, MapDef> = {
   crypt: {
     id: "crypt",
     name: "the ruined crypt",
@@ -38,7 +192,7 @@ export const MAP_DEFS = {
 // RNG — seeded, deterministic. mulberry32 returns a stateful thunk so the
 // caller advances the same sequence call by call across game events.
 // ---------------------------------------------------------------------------
-export function mulberry32(seed) {
+export function mulberry32(seed: number): () => number {
   let s = seed >>> 0;
   return function () {
     s = (s + 0x6d2b79f5) | 0;
@@ -48,14 +202,14 @@ export function mulberry32(seed) {
   };
 }
 
-export function rollDie(sides, rng) {
+export function rollDie(sides: number, rng: () => number): number {
   return Math.floor(rng() * sides) + 1;
 }
 
 // ---------------------------------------------------------------------------
 // WEAPON DEFINITIONS
 // ---------------------------------------------------------------------------
-export const WEAPON_DEFS = {
+export const WEAPON_DEFS: Record<string, WeaponDef> = {
   longbow:   { id: "longbow",   name: "Longbow",    range: 6, dmgDie: 8,  dmgMod: 2 },
   forceBolt: { id: "forceBolt", name: "Force Bolt", range: 6, dmgDie: 6,  dmgMod: 3 },
   rustyShiv: { id: "rustyShiv", name: "Rusty Shiv", range: 1, dmgDie: 6,  dmgMod: 1 },
@@ -66,7 +220,7 @@ export const WEAPON_DEFS = {
 // COMBATANT DEFINITIONS — templates; never mutated. Runtime instances are
 // produced by createCombatantInstance() below.
 // ---------------------------------------------------------------------------
-export const COMBATANT_DEFS = {
+export const COMBATANT_DEFS: Record<string, CombatantDef> = {
   fighter: {
     id: "fighter", name: "Aldric", cls: "Fighter", type: "pc",
     icon: "sword", maxHp: 20, ac: 15, atkMod: 5, dexMod: 1, moveMax: 5,
@@ -103,7 +257,7 @@ export const COMBATANT_DEFS = {
 // executeAbility() dispatches on effect.type via EFFECT_HANDLERS; it has
 // no knowledge of which specific ability it is executing.
 // ---------------------------------------------------------------------------
-export const ABILITY_DEFS = {
+export const ABILITY_DEFS: Record<string, AbilityDef> = {
   healingTouch: {
     id: "healingTouch",
     name: "Healing Touch",
@@ -126,8 +280,8 @@ export const ABILITY_DEFS = {
 // A new ability with a known effect type (heal/damage) needs zero new code
 // here. A genuinely new effect shape adds ONE new entry.
 // ---------------------------------------------------------------------------
-export const EFFECT_HANDLERS = {
-  heal: (casterName, abilityName, target, effect, rng) => {
+export const EFFECT_HANDLERS: Record<string, EffectHandler> = {
+  heal: (casterName, abilityName, target, effect, rng): HandlerReturn => {
     const roll = rollDie(effect.die, rng);
     const amount = roll + effect.mod;
     const before = target.hp;
@@ -139,7 +293,7 @@ export const EFFECT_HANDLERS = {
     ];
     return { log, result: { type: "heal", roll, amount, healed, targetName: target.name } };
   },
-  damage: (casterName, abilityName, target, effect, rng) => {
+  damage: (casterName, abilityName, target, effect, rng): HandlerReturn => {
     const roll = rollDie(effect.die, rng);
     const amount = roll + effect.mod;
     target.hp = Math.max(0, target.hp - amount);
@@ -158,7 +312,7 @@ export const EFFECT_HANDLERS = {
 // ---------------------------------------------------------------------------
 // ENCOUNTER DEFINITIONS — which map, which combatants, where they start.
 // ---------------------------------------------------------------------------
-export const ENCOUNTER_DEFS = {
+export const ENCOUNTER_DEFS: Record<string, EncounterDef> = {
   crypt: {
     id: "crypt",
     name: "Ruined Crypt",
@@ -200,15 +354,21 @@ export const ENCOUNTER_DEFS = {
 // occurrence of that template in a specific game state. Multiple instances
 // of the same definition mutate completely independently.
 // ---------------------------------------------------------------------------
-export function createCombatantInstance(defId, instanceId, x, y, displayName) {
+export function createCombatantInstance(
+  defId: string,
+  instanceId: string,
+  x: number,
+  y: number,
+  displayName?: string,
+): Combatant {
   const def = COMBATANT_DEFS[defId];
   if (!def) throw new Error(`Unknown combatant definition: "${defId}"`);
-  const weapon = WEAPON_DEFS[def.weaponId];
-  if (!weapon) throw new Error(`Unknown weapon "${def.weaponId}" referenced by "${defId}"`);
+  const weaponDef = WEAPON_DEFS[def.weaponId];
+  if (!weaponDef) throw new Error(`Unknown weapon "${def.weaponId}" referenced by "${defId}"`);
   return {
     id: instanceId,
     defId,
-    name: displayName || def.name,
+    name: displayName ?? def.name,
     cls: def.cls,
     type: def.type,
     icon: def.icon,
@@ -221,15 +381,15 @@ export function createCombatantInstance(defId, instanceId, x, y, displayName) {
     dexMod: def.dexMod,
     moveMax: def.moveMax,
     moveRemaining: def.moveMax,
-    weapon: { name: weapon.name, range: weapon.range, dmgDie: weapon.dmgDie, dmgMod: weapon.dmgMod },
-    abilities: def.abilities || [],
+    weapon: { name: weaponDef.name, range: weaponDef.range, dmgDie: weaponDef.dmgDie, dmgMod: weaponDef.dmgMod },
+    abilities: def.abilities ?? [],
     alive: true,
     actionUsed: false,
   };
 }
 
-export function rollInitiative(combatants, rng) {
-  const rolled = Object.values(combatants).map((c) => ({
+export function rollInitiative(combatants: Record<string, Combatant>, rng: () => number): InitiativeEntry[] {
+  const rolled: InitiativeEntry[] = Object.values(combatants).map((c) => ({
     id: c.id,
     total: rollDie(20, rng) + c.dexMod,
   }));
@@ -240,25 +400,25 @@ export function rollInitiative(combatants, rng) {
 // The only place content definitions and runtime state meet. Everything
 // downstream (validation, execution, turn cycling, intent parser, UI) only
 // ever deals with runtime instances.
-export function buildEncounter(encounterId, seed) {
+export function buildEncounter(encounterId: string, seed: number): GameState {
   const encounterDef = ENCOUNTER_DEFS[encounterId];
   if (!encounterDef) throw new Error(`Unknown encounter: "${encounterId}"`);
   const map = MAP_DEFS[encounterDef.mapId];
   if (!map) throw new Error(`Unknown map: "${encounterDef.mapId}" (encounter "${encounterId}")`);
 
-  const combatants = {};
+  const combatants: Record<string, Combatant> = {};
   // Number display names when multiple instances share a definition
   // (e.g. three Goblins → "Goblin 1", "Goblin 2", "Goblin 3").
-  const countByDef = {};
+  const countByDef: Record<string, number> = {};
   for (const entry of [...encounterDef.players, ...encounterDef.enemies]) {
-    countByDef[entry.defId] = (countByDef[entry.defId] || 0) + 1;
+    countByDef[entry.defId] = (countByDef[entry.defId] ?? 0) + 1;
   }
-  const seenByDef = {};
+  const seenByDef: Record<string, number> = {};
   for (const entry of [...encounterDef.players, ...encounterDef.enemies]) {
     const def = COMBATANT_DEFS[entry.defId];
     let displayName = def.name;
     if (countByDef[entry.defId] > 1) {
-      seenByDef[entry.defId] = (seenByDef[entry.defId] || 0) + 1;
+      seenByDef[entry.defId] = (seenByDef[entry.defId] ?? 0) + 1;
       displayName = `${def.name} ${seenByDef[entry.defId]}`;
     }
     combatants[entry.instanceId] = createCombatantInstance(

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ---------------------------------------------------------------------------
 // RULES ENGINE — the authoritative game rules.
 //
@@ -11,41 +10,75 @@
 // ---------------------------------------------------------------------------
 
 import { ABILITY_DEFS, EFFECT_HANDLERS, rollDie } from "./content";
+import type { Combatant, GameState, MapDef } from "./content";
+
+// ---------------------------------------------------------------------------
+// VALIDATION RESULT — returned by all validate* functions.
+// `valid: false` always includes `reason`; `valid: true` may include metadata.
+// `code` is stable/machine-readable; `reason` is human-readable.
+// ---------------------------------------------------------------------------
+export interface ValidationResult {
+  valid: boolean;
+  code: string;
+  reason?: string;
+  /** Distance in movement steps (validateMove success). */
+  cost?: number;
+  /** Whether the target has cover (validateAttack / validateAbility success). */
+  cover?: boolean;
+  /** Chebyshev distance to target (validateAttack / validateAbility success). */
+  distance?: number;
+}
+
+// ---------------------------------------------------------------------------
+// EXECUTION RESULT — returned by all execute* functions.
+// ---------------------------------------------------------------------------
+export interface ExecutionResult {
+  state: GameState;
+  events: string[];
+  ok: boolean;
+  code?: string;
+  result?: unknown;
+}
 
 // ---------------------------------------------------------------------------
 // MAP UTILITIES — operate on the `map` field of game state. The functions
 // accept any map object, so new maps need no changes here.
 // ---------------------------------------------------------------------------
-export function isWall(map, x, y) {
+export function isWall(map: MapDef, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return true;
   const border = x === 0 || x === map.width - 1 || y === 0 || y === map.height - 1;
   if (border && !(x === map.entrance.x && y === map.entrance.y)) return true;
   return false;
 }
-export function isPillar(map, x, y) {
+export function isPillar(map: MapDef, x: number, y: number): boolean {
   return map.pillars.some((p) => p.x === x && p.y === y);
 }
-export function isBlocked(map, x, y) {
+export function isBlocked(map: MapDef, x: number, y: number): boolean {
   return isWall(map, x, y) || isPillar(map, x, y);
 }
-export function key(x, y) {
+export function key(x: number, y: number): string {
   return x + "," + y;
 }
 
 // ---------------------------------------------------------------------------
 // PATHFINDING / LINE OF SIGHT
 // ---------------------------------------------------------------------------
-export function reachableTiles(map, start, maxRange, occupiedSet) {
-  const dist = new Map();
+export function reachableTiles(
+  map: MapDef,
+  start: { x: number; y: number },
+  maxRange: number,
+  occupiedSet: Set<string>,
+): { x: number; y: number; dist: number }[] {
+  const dist = new Map<string, number>();
   dist.set(key(start.x, start.y), 0);
-  const queue = [start];
-  const result = [];
+  const queue: { x: number; y: number }[] = [start];
+  const result: { x: number; y: number; dist: number }[] = [];
   while (queue.length) {
-    const cur = queue.shift();
-    const d = dist.get(key(cur.x, cur.y));
+    const cur = queue.shift()!;
+    const d = dist.get(key(cur.x, cur.y))!;
     if (d > 0) result.push({ x: cur.x, y: cur.y, dist: d });
     if (d >= maxRange) continue;
-    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]] as [number, number][]) {
       const nx = cur.x + dx, ny = cur.y + dy;
       if (isBlocked(map, nx, ny)) continue;
       if (occupiedSet.has(key(nx, ny))) continue;
@@ -59,8 +92,13 @@ export function reachableTiles(map, start, maxRange, occupiedSet) {
   return result;
 }
 
-export function lineTiles(x0, y0, x1, y1) {
-  const pts = [];
+export function lineTiles(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): { x: number; y: number }[] {
+  const pts: { x: number; y: number }[] = [];
   const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx - dy, x = x0, y = y0;
@@ -74,7 +112,11 @@ export function lineTiles(x0, y0, x1, y1) {
   return pts;
 }
 
-export function lineOfSight(map, a, b) {
+export function lineOfSight(
+  map: MapDef,
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): { blocked: boolean; cover: boolean } {
   const tiles = lineTiles(a.x, a.y, b.x, b.y).slice(1, -1);
   let blocked = false, cover = false;
   for (const t of tiles) {
@@ -84,7 +126,10 @@ export function lineOfSight(map, a, b) {
   return { blocked, cover };
 }
 
-export function chebyshev(a, b) {
+export function chebyshev(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
@@ -92,15 +137,19 @@ export function chebyshev(a, b) {
 // VALIDATION — pure read-only. ValidationResult: { valid, code, reason, …metadata }
 // `code` is stable/machine-readable; `reason` is human-readable.
 // ---------------------------------------------------------------------------
-export function occupiedSet(combatants, excludeId) {
-  const s = new Set();
+export function occupiedSet(combatants: Record<string, Combatant>, excludeId: string): Set<string> {
+  const s = new Set<string>();
   for (const c of Object.values(combatants)) {
     if (c.alive && c.id !== excludeId) s.add(key(c.x, c.y));
   }
   return s;
 }
 
-export function validateMove(state, actorId, dest) {
+export function validateMove(
+  state: GameState,
+  actorId: string,
+  dest: { x: number; y: number },
+): ValidationResult {
   const actor = state.combatants[actorId];
   if (!actor) return { valid: false, code: "ACTOR_UNKNOWN", reason: "Unknown actor." };
   if (!actor.alive) return { valid: false, code: "ACTOR_DEAD", reason: `${actor.name} is down.` };
@@ -118,7 +167,11 @@ export function validateMove(state, actorId, dest) {
   return { valid: true, code: "OK", cost: found.dist };
 }
 
-export function validateAttack(state, actorId, targetId) {
+export function validateAttack(
+  state: GameState,
+  actorId: string,
+  targetId: string,
+): ValidationResult {
   const actor  = state.combatants[actorId];
   const target = state.combatants[targetId];
   if (!actor || !target) return { valid: false, code: "TARGET_UNKNOWN", reason: "Unknown combatant." };
@@ -136,7 +189,11 @@ export function validateAttack(state, actorId, targetId) {
   return { valid: true, code: "OK", cover: los.cover, distance: dist };
 }
 
-export function isValidAbilityTarget(targeting, actor, target) {
+export function isValidAbilityTarget(
+  targeting: string,
+  actor: Combatant,
+  target: Combatant,
+): boolean {
   if (targeting === "self")  return target.id === actor.id;
   if (targeting === "ally")  return target.type === actor.type;
   if (targeting === "enemy") return target.type !== actor.type;
@@ -144,14 +201,19 @@ export function isValidAbilityTarget(targeting, actor, target) {
   return false;
 }
 
-export function validateAbility(state, actorId, abilityId, targetId) {
+export function validateAbility(
+  state: GameState,
+  actorId: string,
+  abilityId: string,
+  targetId: string,
+): ValidationResult {
   const actor   = state.combatants[actorId];
   const target  = state.combatants[targetId];
   const ability = ABILITY_DEFS[abilityId];
   if (!actor || !target) return { valid: false, code: "TARGET_UNKNOWN", reason: "Unknown combatant." };
   if (!ability) return { valid: false, code: "ABILITY_UNKNOWN", reason: `Unknown ability: "${abilityId}".` };
   if (!actor.alive) return { valid: false, code: "ACTOR_DEAD", reason: `${actor.name} is down.` };
-  if (!(actor.abilities || []).includes(abilityId))
+  if (!(actor.abilities ?? []).includes(abilityId))
     return { valid: false, code: "ABILITY_NOT_LEARNED", reason: `${actor.name} does not know ${ability.name}.` };
   if (!target.alive) return { valid: false, code: "TARGET_DEAD", reason: `${target.name} is already defeated.` };
   if (state.turnOrder[state.turnIndex] !== actorId)
@@ -174,26 +236,35 @@ export function validateAbility(state, actorId, abilityId, targetId) {
 // ---------------------------------------------------------------------------
 // EXECUTION — the ONLY functions permitted to produce new game state.
 // ---------------------------------------------------------------------------
-export function cloneState(state) {
-  return { ...state, combatants: JSON.parse(JSON.stringify(state.combatants)), log: [...state.log] };
+export function cloneState(state: GameState): GameState {
+  return { ...state, combatants: JSON.parse(JSON.stringify(state.combatants)) as Record<string, Combatant>, log: [...state.log] };
 }
 
-export function executeMove(state, actorId, dest) {
+export function executeMove(
+  state: GameState,
+  actorId: string,
+  dest: { x: number; y: number },
+): ExecutionResult {
   const v = validateMove(state, actorId, dest);
-  if (!v.valid) return { state, events: [v.reason], ok: false, code: v.code };
+  if (!v.valid) return { state, events: [v.reason ?? v.code], ok: false, code: v.code };
   const next  = cloneState(state);
   const actor = next.combatants[actorId];
   actor.x = dest.x;
   actor.y = dest.y;
-  actor.moveRemaining -= v.cost;
+  actor.moveRemaining -= v.cost ?? 0;
   const line = `${actor.name} moved to (${dest.x}, ${dest.y}).`;
   next.log.push(line);
   return { state: next, events: [line], ok: true };
 }
 
-export function executeAttack(state, actorId, targetId, rng) {
+export function executeAttack(
+  state: GameState,
+  actorId: string,
+  targetId: string,
+  rng: () => number,
+): ExecutionResult {
   const v = validateAttack(state, actorId, targetId);
-  if (!v.valid) return { state, events: [v.reason], ok: false, code: v.code };
+  if (!v.valid) return { state, events: [v.reason ?? v.code], ok: false, code: v.code };
   const next   = cloneState(state);
   const actor  = next.combatants[actorId];
   const target = next.combatants[targetId];
@@ -203,11 +274,12 @@ export function executeAttack(state, actorId, targetId, rng) {
   const atkTotal    = d20 + actor.atkMod;
   const effectiveAc = target.ac + (v.cover ? 2 : 0);
   const coverNote   = v.cover ? ` (target has cover, AC ${target.ac}+2=${effectiveAc})` : "";
-  const events = [
+  const events: string[] = [
     `${actor.name} attacks ${target.name} with ${actor.weapon.name}. Attack Roll: ${d20} + ${actor.atkMod} = ${atkTotal} vs AC ${effectiveAc}${coverNote}.`,
   ];
 
-  let dmgRoll = null, dmgTotal = 0, hit = false, crit = d20 === 20;
+  let dmgRoll: number | null = null, dmgTotal = 0, hit = false;
+  const crit = d20 === 20;
   if (crit || atkTotal >= effectiveAc) {
     hit     = true;
     dmgRoll = rollDie(actor.weapon.dmgDie, rng);
@@ -236,9 +308,15 @@ export function executeAttack(state, actorId, targetId, rng) {
 // Resolves ANY ability — dispatches on effect.type via EFFECT_HANDLERS.
 // Healing Touch works because "heal" has a handler, not because this
 // function knows Healing Touch exists.
-export function executeAbility(state, actorId, abilityId, targetId, rng) {
+export function executeAbility(
+  state: GameState,
+  actorId: string,
+  abilityId: string,
+  targetId: string,
+  rng: () => number,
+): ExecutionResult {
   const v = validateAbility(state, actorId, abilityId, targetId);
-  if (!v.valid) return { state, events: [v.reason], ok: false, code: v.code };
+  if (!v.valid) return { state, events: [v.reason ?? v.code], ok: false, code: v.code };
   const ability = ABILITY_DEFS[abilityId];
   const handler = EFFECT_HANDLERS[ability.effect.type];
   if (!handler) return { state, events: [`No handler for effect type "${ability.effect.type}".`], ok: false, code: "NO_EFFECT_HANDLER" };
@@ -256,7 +334,7 @@ export function executeAbility(state, actorId, abilityId, targetId, rng) {
 // ---------------------------------------------------------------------------
 // TURN MANAGEMENT + ENCOUNTER STATUS
 // ---------------------------------------------------------------------------
-export function endTurn(state) {
+export function endTurn(state: GameState): GameState {
   const next      = cloneState(state);
   const currentId = next.turnOrder[next.turnIndex];
   const actor     = next.combatants[currentId];
@@ -280,7 +358,7 @@ export function endTurn(state) {
   return next;
 }
 
-export function checkEncounterStatus(state) {
+export function checkEncounterStatus(state: GameState): "victory" | "defeat" | "ongoing" {
   const pcs    = Object.values(state.combatants).filter((c) => c.type === "pc");
   const enemies = Object.values(state.combatants).filter((c) => c.type === "enemy");
   if (enemies.every((e) => !e.alive)) return "victory";
@@ -292,9 +370,13 @@ export function checkEncounterStatus(state) {
 // ENEMY AI — reads only generic combatant/weapon fields; nothing here is
 // specific to Goblins or Orcs. Uses the same validate/execute as the player.
 // ---------------------------------------------------------------------------
-export function runEnemyAI(state, actorId, rng) {
+export function runEnemyAI(
+  state: GameState,
+  actorId: string,
+  rng: () => number,
+): { state: GameState; events: string[] } {
   let cur = state;
-  const events = [];
+  const events: string[] = [];
   const actor = cur.combatants[actorId];
   const pcs   = Object.values(cur.combatants).filter((c) => c.type === "pc" && c.alive);
   if (!actor.alive || pcs.length === 0) return { state: cur, events };
@@ -329,7 +411,7 @@ export function runEnemyAI(state, actorId, rng) {
 
 // Resolves any enemy turns that precede the first PC in initiative order.
 // Uses the same runEnemyAI/endTurn as mid-encounter — no special-casing.
-export function resolveLeadingEnemyTurns(state, rng) {
+export function resolveLeadingEnemyTurns(state: GameState, rng: () => number): GameState {
   let next = state, guard = 0;
   while (
     checkEncounterStatus(next) === "ongoing" &&
