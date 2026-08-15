@@ -1225,16 +1225,20 @@ export default function IntelligentTabletop() {
   const isPlayerTurn = currentActor && currentActor.type === "pc";
   const selected = selectedId ? gameState.combatants[selectedId] : null;
 
-  // Auto-select the current PC actor whenever the active actor changes.
-  // Keying on [currentActorId, isPlayerTurn] means this fires exactly once per
-  // turn handover — not on every render — so a user can still click an enemy
-  // panel mid-turn without immediately losing that selection, while a new
-  // player turn always starts with the right character pre-selected.
+  // Combines encounter seed + current actor so the effect fires on EITHER a
+  // turn handoff OR a new encounter — even when both produce the same
+  // currentActorId (e.g. "wizard" winning initiative in consecutive crypt
+  // runs). Each newEncounter() call increments seedRef before building, so
+  // gameState.seed changes every time, giving a fresh key.
+  // The key does NOT change on mid-turn state mutations (attacks, moves) so
+  // enemy-panel clicks remain stable and the effect stays quiet between turns.
+  const turnKey = `${gameState.seed}-${currentActorId}`;
+
   useEffect(() => {
     if (isPlayerTurn) {
       setSelectedId(currentActorId);
     }
-  }, [currentActorId, isPlayerTurn]);
+  }, [turnKey, isPlayerTurn]);
 
   // Derived straight from gameState so it's correct regardless of which code
   // path produced that state — including the lazy useState initializer and
