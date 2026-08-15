@@ -21,7 +21,7 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
-  Footprints, Sword, Sparkles, ScrollText, Dice5, ChevronRight, X, Check,
+  Footprints, Sword, Sparkles, ScrollText, Dice5, ChevronRight, X, Check, Info,
 } from "lucide-react";
 
 import { ENCOUNTER_DEFS, ABILITY_DEFS, buildEncounter, mulberry32 } from "@/engine/content";
@@ -106,6 +106,10 @@ export default function IntelligentTabletop() {
 
   const pendingAbilityId = typeof pendingAction === "string" && pendingAction.startsWith("ability:")
     ? pendingAction.slice(8) : null;
+  const pendingAbility   = pendingAbilityId ? ABILITY_DEFS[pendingAbilityId] : null;
+  // Harmful abilities (enemy-targeting) use the same red ring as attacks.
+  // Beneficial abilities (ally/self-targeting) use a distinct blue ring.
+  const abilityIsHarmful = pendingAbility?.targeting === "enemy";
 
   const abilityPreview = useMemo(() => {
     if (!isPlayerTurn || !pendingAbilityId || !selected || selected.id !== currentActorId) return {};
@@ -403,37 +407,99 @@ export default function IntelligentTabletop() {
               <CharacterPanel key={c.id} c={c} isCurrent={c.id === currentActorId} isSelected={c.id === selectedId} onSelect={handleSelectToken} />
             ))}
 
-          {/* FIX 2: Action controls rendered HERE — above the ENEMIES section — so
-              they are visible without scrolling even when there are many enemy panels. */}
-          {selected && mode === "traditional" && selected.id === currentActorId && isPlayerTurn && (
-            <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button
-                onClick={() => setPendingAction(pendingAction === "move" ? null : "move")}
-                style={actionBtnStyle(pendingAction === "move")}
-              >
-                <Footprints size={13} /> Move
-              </button>
-              <button
-                onClick={() => setPendingAction(pendingAction === "attack" ? null : "attack")}
-                disabled={selected.actionUsed}
-                style={{ ...actionBtnStyle(pendingAction === "attack"), opacity: selected.actionUsed ? 0.4 : 1 }}
-              >
-                <Sword size={13} /> Attack
-              </button>
-              {(selected.abilities || []).map((abilityId) => (
+          {/* Action bar — Two-tier layout per UX blueprint §5.
+              Tier 1: Move + Attack + End Turn, always visible on the PC's turn.
+              Tier 2: data-driven abilities in a separate wrapping row.
+              Disabled buttons stay visible with a tooltip so the player always
+              knows where Attack went. Both tiers only render for the current actor. */}
+          {mode === "traditional" && isPlayerTurn && selected && selected.id === currentActorId && (
+            <div style={{ marginTop: 10 }}>
+              {/* Tier 1 — universal actions: Move · Attack · End Turn */}
+              <div style={{ display: "flex", gap: 6 }}>
                 <button
-                  key={abilityId}
-                  onClick={() => setPendingAction(pendingAction === "ability:" + abilityId ? null : "ability:" + abilityId)}
-                  disabled={selected.actionUsed}
-                  style={{ ...actionBtnStyle(pendingAction === "ability:" + abilityId), opacity: selected.actionUsed ? 0.4 : 1 }}
+                  onClick={() => setPendingAction(pendingAction === "move" ? null : "move")}
+                  style={actionBtnStyle(pendingAction === "move")}
                 >
-                  <Sparkles size={13} /> {ABILITY_DEFS[abilityId].name}
+                  <Footprints size={13} /> Move
                 </button>
-              ))}
+                <button
+                  onClick={() => setPendingAction(pendingAction === "attack" ? null : "attack")}
+                  disabled={selected.actionUsed}
+                  title={selected.actionUsed ? "Action already used this turn" : "Select an enemy to attack"}
+                  style={{ ...actionBtnStyle(pendingAction === "attack"), opacity: selected.actionUsed ? 0.38 : 1 }}
+                >
+                  <Sword size={13} /> Attack
+                </button>
+                <button
+                  onClick={handleEndTurn}
+                  style={{
+                    flex: 1,
+                    fontFamily: "Cinzel, serif",
+                    fontSize: 11,
+                    padding: "8px 0",
+                    borderRadius: 7,
+                    border: "1px solid #c9a227",
+                    background: "transparent",
+                    color: "#c9a227",
+                    cursor: "pointer",
+                  }}
+                >
+                  End Turn
+                </button>
+              </div>
+              {/* Tier 2 — data-driven abilities (wrapping, up to ~2 rows) */}
+              {(selected.abilities || []).length > 0 && (
+                <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {(selected.abilities || []).map((abilityId) => {
+                    const ab = ABILITY_DEFS[abilityId];
+                    const effectLine = ab?.effect
+                      ? `, d${ab.effect.die}+${ab.effect.mod} ${ab.effect.type}`
+                      : "";
+                    const tipText = ab
+                      ? `${ab.name} — Range ${ab.range}${ab.requiresLineOfSight ? ", requires LOS" : ""}${effectLine}`
+                      : abilityId;
+                    return (
+                      <button
+                        key={abilityId}
+                        onClick={() => setPendingAction(pendingAction === "ability:" + abilityId ? null : "ability:" + abilityId)}
+                        disabled={selected.actionUsed}
+                        title={selected.actionUsed ? "Action already used this turn" : tipText}
+                        style={{ ...actionBtnStyle(pendingAction === "ability:" + abilityId), opacity: selected.actionUsed ? 0.38 : 1 }}
+                      >
+                        <Sparkles size={13} /> {ab?.name || abilityId}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {/* Targeting status strip — color-coded and paired with text (blueprint §15) */}
+              {pendingAction && (
+                <div style={{
+                  marginTop: 7,
+                  fontSize: 11,
+                  fontFamily: "'EB Garamond', serif",
+                  fontStyle: "italic",
+                  letterSpacing: 0.2,
+                  color: pendingAction === "move"
+                    ? "#7aaa5a"
+                    : (pendingAction === "attack" || abilityIsHarmful)
+                    ? "#c87070"
+                    : "#5a8fc7",
+                }}>
+                  {pendingAction === "move" && "↳ Click a highlighted tile to move"}
+                  {pendingAction === "attack" && "↳ Click an enemy token to attack"}
+                  {pendingAbilityId && abilityIsHarmful  && `↳ Click an enemy for ${pendingAbility?.name}`}
+                  {pendingAbilityId && !abilityIsHarmful && `↳ Click a target for ${pendingAbility?.name}`}
+                </div>
+              )}
             </div>
           )}
-          {isPlayerTurn && (
-            <button onClick={handleEndTurn} style={{ marginTop: 10, width: "100%", fontFamily: "Cinzel, serif", fontSize: 12, background: "transparent", color: "#c9a227", border: "1px solid #5a4326", borderRadius: 7, padding: "8px 0", cursor: "pointer" }}>
+          {/* End Turn shown alone when another character's panel is selected */}
+          {mode === "traditional" && isPlayerTurn && !(selected && selected.id === currentActorId) && (
+            <button
+              onClick={handleEndTurn}
+              style={{ marginTop: 10, width: "100%", fontFamily: "Cinzel, serif", fontSize: 12, background: "transparent", color: "#c9a227", border: "1px solid #5a4326", borderRadius: 7, padding: "8px 0", cursor: "pointer" }}
+            >
               End Turn
             </button>
           )}
@@ -527,10 +593,14 @@ export default function IntelligentTabletop() {
                               : "radial-gradient(circle at 35% 30%, #5a7a3d, #263c1c)",
                             border: tok.id === selectedId ? "2px solid #c9a227" : "2px solid rgba(0,0,0,0.4)",
                             boxShadow:
-                              mode === "traditional" && pendingAction === "attack" && tok.type === "enemy" && attackPreview[tok.id] && attackPreview[tok.id].valid
-                                ? "0 0 0 3px rgba(139,46,46,0.6)"
-                                : mode === "traditional" && pendingAbilityId && abilityPreview[tok.id] && abilityPreview[tok.id].valid
-                                ? "0 0 0 3px rgba(76,107,63,0.7)"
+                              mode === "traditional" && pendingAction === "attack" && tok.type === "enemy" && attackPreview[tok.id]?.valid
+                                ? "0 0 0 3px rgba(180,50,50,0.8)"          // red — hostile attack
+                                : mode === "traditional" && pendingAbilityId && abilityPreview[tok.id]?.valid
+                                ? (abilityIsHarmful
+                                    ? "0 0 0 3px rgba(180,50,50,0.8)"      // red — harmful ability (e.g. Fire Bolt)
+                                    : "0 0 0 3px rgba(59,130,200,0.9)")    // blue — beneficial ability (e.g. Healing Touch)
+                                : tok.id === currentActorId
+                                ? "0 0 0 2px rgba(255,240,170,0.3), 0 2px 5px rgba(0,0,0,0.5)"  // warm ring = active turn
                                 : "0 2px 5px rgba(0,0,0,0.5)",
                             cursor: "pointer",
                           }}
@@ -675,8 +745,19 @@ export default function IntelligentTabletop() {
                 border: proposal.stale ? "1px solid #8b2e2e" : "1px solid #a8925a",
               }}
             >
-              <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, letterSpacing: 1, marginBottom: 4, color: "#6b4f24" }}>
-                PROPOSED ACTION
+              {/* Proposal card header — amber/action treatment, distinct from query cards */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                paddingBottom: 10,
+                marginBottom: 10,
+                borderBottom: "1px solid rgba(180,130,40,0.4)",
+              }}>
+                <Sword size={13} color="#7a5a28" />
+                <span style={{ fontFamily: "Cinzel, serif", fontSize: 11.5, letterSpacing: 1.2, color: "#6b4f24" }}>
+                  PROPOSED ACTION
+                </span>
               </div>
               <div style={{ fontSize: 12.5, fontStyle: "italic", color: "#5a4a2e", marginBottom: 10 }}>"{proposal.text}"</div>
 
@@ -745,7 +826,20 @@ export default function IntelligentTabletop() {
                 border: "1px solid #a8925a",
               }}
             >
-              <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, letterSpacing: 1, marginBottom: 10, color: "#6b4f24" }}>{infoResult.headline}</div>
+              {/* Query card header — blue/information treatment, impossible to confuse with proposal */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                paddingBottom: 10,
+                marginBottom: 10,
+                borderBottom: "1px solid rgba(80,120,170,0.4)",
+              }}>
+                <Info size={13} color="#3a6080" />
+                <span style={{ fontFamily: "Cinzel, serif", fontSize: 11.5, letterSpacing: 1.2, color: "#3a6080" }}>
+                  {infoResult.headline}
+                </span>
+              </div>
               {infoResult.items.map((it, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13.5 }}>
                   {it.ok ? <Check size={14} color="#4c6b3f" /> : <X size={14} color="#8b2e2e" />}
@@ -774,7 +868,20 @@ export default function IntelligentTabletop() {
                 border: "1px solid #a8925a",
               }}
             >
-              <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, letterSpacing: 1, marginBottom: 10, color: "#6b4f24" }}>OPTIONS FROM HERE</div>
+              {/* Inspect card header — neutral/descriptive treatment */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                paddingBottom: 10,
+                marginBottom: 10,
+                borderBottom: "1px solid rgba(120,100,60,0.4)",
+              }}>
+                <ScrollText size={13} color="#7a6a3c" />
+                <span style={{ fontFamily: "Cinzel, serif", fontSize: 11.5, letterSpacing: 1.2, color: "#7a6a3c" }}>
+                  OPTIONS FROM HERE
+                </span>
+              </div>
               {infoResult.lines.map((line, i) => (
                 <div key={i} style={{ fontSize: 13, marginBottom: 4 }}>{line}</div>
               ))}

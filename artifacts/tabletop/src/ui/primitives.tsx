@@ -49,6 +49,19 @@ export function CharacterPanel({ c, isCurrent, isSelected, onSelect }) {
           <span style={{ fontFamily: "Cinzel, serif", fontSize: 13, color: "#e8dcc0", letterSpacing: 0.3 }}>
             {c.name}
           </span>
+          {isCurrent && (
+            <span style={{
+              fontFamily: "Cinzel, serif",
+              fontSize: 8,
+              letterSpacing: 0.8,
+              background: "#c9a227",
+              color: "#241a12",
+              padding: "1px 5px",
+              borderRadius: 2,
+              lineHeight: 1.5,
+              verticalAlign: "middle",
+            }}>ACTING</span>
+          )}
         </div>
         <span style={{ fontFamily: "'EB Garamond', serif", fontSize: 11, color: "#a89468" }}>{c.cls}</span>
       </div>

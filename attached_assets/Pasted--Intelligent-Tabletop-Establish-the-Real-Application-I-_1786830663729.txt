@@ -1,0 +1,563 @@
+# Intelligent Tabletop — Establish the Real Application
+
+I am giving you the current working Intelligent Tabletop prototype.
+
+The provided artifact is the authoritative starting point:
+
+intelligent-tabletop(4).tsx
+
+This is a working vertical-slice prototype, but it is currently a large standalone artifact rather than the proper application structure I ultimately want.
+
+Your job is to take ownership of this application and turn the prototype into the real runnable project.
+
+==================================================
+IMPORTANT: INSPECT BEFORE BUILDING
+==================================================
+
+Do NOT immediately rewrite the file.
+
+First inspect the entire provided artifact carefully.
+
+Determine what is already implemented and what should be preserved.
+
+The prototype contains important working systems including, but not necessarily limited to:
+
+- Authoritative game state
+- Data-driven maps
+- Data-driven combatants
+- Data-driven weapons
+- Data-driven encounters
+- Generic abilities
+- Generic ability validation
+- Generic ability execution
+- Generic effects
+- Healing effects
+- Damage effects
+- Movement/pathfinding
+- Line of sight
+- Cover
+- Initiative
+- Turn cycling
+- Enemy AI
+- Combat resolution
+- Traditional Mode
+- Assisted Mode
+- Adventure Mode
+- Intent parsing
+- Proposed actions
+- Proposal validation
+- Proposal revalidation
+- Atomic execution
+- Query/inspect interactions
+- Session logging
+- Victory/defeat
+- Crypt encounter
+- Training Yard encounter
+- Goblin enemy
+- Orc enemy
+- Healing Touch
+- Fire Bolt
+
+Treat the actual code as authoritative.
+
+Do not rely on previous conversation summaries when the source file can answer the question directly.
+
+==================================================
+1. CREATE THE REAL PROJECT
+==================================================
+
+Create the appropriate runnable project structure in Replit.
+
+Use the current artifact as the source material.
+
+Determine what framework/build configuration is appropriate for the code that actually exists.
+
+Do not arbitrarily migrate everything to a new architecture.
+
+The first goal is:
+
+CURRENT WORKING PROTOTYPE
+↓
+REAL PROJECT
+↓
+SAME GAME
+↓
+SAME BEHAVIOR
+
+Do not redesign the product during this step.
+
+==================================================
+2. EXTRACT WHAT IS ACTUALLY NECESSARY
+==================================================
+
+Do not simply dump the entire prototype into one file and call that the finished project.
+
+Inspect the artifact and extract the appropriate pieces into maintainable modules where it makes sense.
+
+Potential areas include:
+
+src/
+  engine/
+  content/
+  intent/
+  ui/
+  types/
+  tests/
+
+But determine the actual structure from the code.
+
+Keep related logic together.
+
+Do NOT create dozens of tiny files merely for the sake of modularity.
+
+The important architectural separation is:
+
+CONTENT
+ENGINE
+INTENT
+UI
+
+The rules engine should remain independent of UI rendering.
+
+==================================================
+3. PRESERVE THE AUTHORITATIVE ENGINE
+==================================================
+
+The following principles must remain intact:
+
+The game state is authoritative.
+
+The UI does not own game state.
+
+Traditional Mode actions use the rules engine.
+
+Assisted and Adventure modes produce proposals.
+
+Proposals are validated through the same rules engine.
+
+Only validated execution functions mutate authoritative state.
+
+Intent parsing does not directly mutate game state.
+
+Do not weaken these boundaries while restructuring.
+
+==================================================
+4. PRESERVE THE GENERIC ABILITY SYSTEM
+==================================================
+
+The current prototype has demonstrated a generic ability architecture.
+
+Preserve:
+
+ABILITY_DEFS
+
+executeAbility()
+
+EFFECT_HANDLERS
+
+Generic effects such as:
+
+- heal
+- damage
+
+Healing Touch and Fire Bolt must remain data-driven.
+
+Do NOT turn them into:
+
+executeHeal()
+
+executeFireBolt()
+
+or other bespoke action functions.
+
+Do not unify weapon attacks with abilities unless the existing source already does so.
+
+That is a future architectural decision.
+
+==================================================
+5. VERIFY THE ACTUAL USER EXPERIENCE
+==================================================
+
+There is an important unresolved real-world issue:
+
+The user has reported that they have personally been unable to use abilities/spells reliably through the UI, even though automated browser tests have reported success.
+
+Therefore do not simply trust previous automated reports.
+
+After importing the prototype into the real Replit application, manually verify the actual UI path for:
+
+Traditional:
+
+- Move
+- Attack
+- Healing Touch
+- Fire Bolt
+- End Turn
+
+Assisted:
+
+- Attack
+- Healing Touch
+- Fire Bolt
+
+Adventure:
+
+- Attack
+- Healing Touch
+- Fire Bolt
+- Move + Attack
+
+Queries:
+
+- Attack query
+- Healing query
+- Fire Bolt query
+
+Pay particular attention to target selection.
+
+When an ability is selected:
+
+ABILITY SELECTED
+↓
+TARGETING MODE
+↓
+TARGET CLICK
+↓
+VALIDATION
+↓
+EXECUTION
+↓
+STATE CHANGE
+↓
+UI UPDATE
+
+Make sure token clicks are routed correctly.
+
+Normal mode may use token clicks to select characters.
+
+But while the player is actively targeting an attack or ability, target selection must take precedence.
+
+Do not allow character-selection behavior to swallow ability-target clicks.
+
+==================================================
+6. DO NOT PATCH THE SYMPTOM
+==================================================
+
+Do not solve ability interaction by:
+
+- bypassing validation
+- directly changing HP from the UI
+- automatically executing abilities
+- making every target valid
+- removing targeting rules
+- hardcoding Fire Bolt
+- hardcoding Healing Touch
+- creating fake log messages
+
+The existing rules engine must remain authoritative.
+
+Fix the actual interaction problem if one exists.
+
+==================================================
+7. KEEP THE CURRENT GAMEPLAY
+==================================================
+
+Do not add new gameplay systems during this migration.
+
+Do not add:
+
+- new classes
+- new races
+- new abilities
+- new maps
+- multiplayer
+- accounts
+- marketplace
+- campaign system
+- character creator
+- content editor
+- LLM integration
+- procedural generation
+
+First establish a stable foundation around the existing vertical slice.
+
+==================================================
+8. TEST THE REAL PROJECT
+==================================================
+
+Create a proper test setup around the application where practical.
+
+Separate:
+
+UNIT TESTS
+for rules/engine behavior
+
+from:
+
+BROWSER/INTEGRATION TESTS
+for actual UI interaction.
+
+At minimum verify:
+
+### Engine
+
+- movement
+- attack validation
+- attack execution
+- ability validation
+- ability execution
+- heal effect
+- damage effect
+- initiative
+- turn cycling
+- encounter completion
+- intent parsing
+- proposal validation
+- revalidation
+- atomic execution
+
+### Browser
+
+- Move
+- Attack
+- Healing Touch
+- Fire Bolt
+- End Turn
+- Assisted Attack
+- Assisted Heal
+- Assisted Fire Bolt
+- Adventure Attack
+- Adventure Heal
+- Adventure Fire Bolt
+- Query actions
+- Invalid actions
+
+==================================================
+9. FULL ENCOUNTER REGRESSION
+==================================================
+
+Verify the actual application can play:
+
+CRYPT
+
+from encounter start through Victory.
+
+Then verify:
+
+TRAINING YARD
+
+with the Orc.
+
+Use actual UI interaction where possible.
+
+Do not rely solely on direct function calls.
+
+There must be no page or console errors.
+
+==================================================
+10. DOCUMENTATION IS REQUIRED
+==================================================
+
+After implementation, update ALL necessary project documentation to reflect the actual state of the project.
+
+Do not simply create a generic README.
+
+Inspect whatever documentation structure already exists in the Replit project.
+
+If there is already a development bible, architecture documentation, roadmap, changelog, or project status system, update it rather than creating competing documents.
+
+If documentation does not exist, establish a sensible documentation structure.
+
+At minimum document:
+
+### CURRENT PROJECT STATUS
+
+What exists today.
+
+### ARCHITECTURE
+
+Explain:
+
+CONTENT
+↓
+RUNTIME STATE
+↓
+RULES ENGINE
+↓
+UI
+
+and:
+
+PLAYER INPUT
+↓
+INTENT
+↓
+PROPOSED ACTION
+↓
+VALIDATION
+↓
+EXECUTION
+↓
+STATE
+
+### SYSTEMS COMPLETED
+
+Document the systems actually implemented and verified.
+
+### CONTENT
+
+Document current encounters, maps, combatants, weapons, and abilities.
+
+### GAME MODES
+
+Document Traditional, Assisted, and Adventure.
+
+### ABILITY SYSTEM
+
+Document:
+
+- ABILITY_DEFS
+- generic ability validation
+- executeAbility()
+- EFFECT_HANDLERS
+- Healing Touch
+- Fire Bolt
+
+### TEST STATUS
+
+Document what was actually tested.
+
+Distinguish:
+
+- unit tests
+- integration tests
+- browser tests
+- full encounter tests
+
+### KNOWN LIMITATIONS
+
+Document actual limitations.
+
+Do not invent them.
+
+### ROADMAP
+
+Update the roadmap to reflect what is genuinely complete and what remains.
+
+==================================================
+11. DOCUMENTATION MUST BE FACTUAL
+==================================================
+
+This is important.
+
+Do not document something as complete simply because it exists in source code.
+
+Mark a feature complete only if it has actually been verified.
+
+Likewise:
+
+Do not claim GitHub integration unless an actual repository exists.
+
+Do not claim multiplayer.
+
+Do not claim LLM integration.
+
+Do not claim a content editor.
+
+Do not claim systems that are only conceptual.
+
+The documentation should describe the REAL current state.
+
+==================================================
+12. CREATE A CURRENT PROJECT CHECKPOINT
+==================================================
+
+Create a concise project checkpoint/status document containing:
+
+- Current milestone
+- What is working
+- What has been tested
+- Current architecture
+- Current content
+- Current game modes
+- Current known issues
+- Next recommended milestone
+
+This should become the canonical "where are we?" reference for future AI agents.
+
+Future agents should be able to read this document and understand the project without relying on this conversation.
+
+==================================================
+13. DO NOT OVERWRITE USEFUL DOCUMENTATION
+==================================================
+
+If the Replit project already contains useful documentation:
+
+- preserve it
+- consolidate duplicates
+- update stale sections
+- avoid creating conflicting versions
+
+There should be one clear source of truth for project status.
+
+==================================================
+14. BUILD AND VERIFY
+==================================================
+
+After restructuring:
+
+1. Install/use the appropriate dependencies.
+2. Run the development application.
+3. Run the production build.
+4. Run tests.
+5. Launch the actual application in a browser.
+6. Perform the critical gameplay matrix.
+7. Play both encounters.
+8. Confirm no regressions.
+
+If something cannot be run because of the environment, report that honestly.
+
+Do not fabricate successful commands.
+
+==================================================
+15. FINAL REPORT
+==================================================
+
+At the end, report:
+
+1. What you found in the original artifact.
+2. What was extracted/reused.
+3. New project structure.
+4. What remained unchanged.
+5. Any gameplay fixes made.
+6. Ability interaction result.
+7. Traditional Mode result.
+8. Assisted Mode result.
+9. Adventure Mode result.
+10. Query result.
+11. Crypt result.
+12. Training Yard result.
+13. Tests run.
+14. Browser verification.
+15. Documentation updated.
+16. Current project milestone.
+17. Known limitations.
+18. Recommended next milestone.
+
+Most importantly:
+
+Do not treat this as a blank project.
+
+This is an existing prototype whose core architecture and gameplay have already been developed.
+
+Your job is to:
+
+# TAKE THE WORKING PROTOTYPE, EXTRACT THE GOOD PARTS, MAKE IT A REAL APPLICATION, VERIFY IT, FIX THE REAL UI ISSUES, AND DOCUMENT EXACTLY WHERE THE PROJECT NOW STANDS.
+
+Do not add unnecessary features.
+
+Do not rewrite working systems without a reason.
+
+Do not fabricate infrastructure that does not exist.
+
+The final result should be a stable foundation that another AI agent can continue building from.
