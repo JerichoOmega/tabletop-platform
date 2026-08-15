@@ -1225,14 +1225,16 @@ export default function IntelligentTabletop() {
   const isPlayerTurn = currentActor && currentActor.type === "pc";
   const selected = selectedId ? gameState.combatants[selectedId] : null;
 
-  // Auto-select the current PC actor whenever the turn changes and nothing is
-  // selected. This ensures action buttons are immediately visible without
-  // requiring the player to first click a character card manually.
+  // Auto-select the current PC actor whenever the active actor changes.
+  // Keying on [currentActorId, isPlayerTurn] means this fires exactly once per
+  // turn handover — not on every render — so a user can still click an enemy
+  // panel mid-turn without immediately losing that selection, while a new
+  // player turn always starts with the right character pre-selected.
   useEffect(() => {
-    if (isPlayerTurn && !selectedId) {
+    if (isPlayerTurn) {
       setSelectedId(currentActorId);
     }
-  }, [gameState, isPlayerTurn, currentActorId, selectedId]);
+  }, [currentActorId, isPlayerTurn]);
 
   // Derived straight from gameState so it's correct regardless of which code
   // path produced that state — including the lazy useState initializer and
@@ -1287,7 +1289,6 @@ export default function IntelligentTabletop() {
 
   const handleSelectToken = useCallback(
     (id) => {
-      console.log("[DIAG] handleSelectToken:", id);
       setSelectedId(id);
       setPendingAction(null);
       setProposal(null);
@@ -1296,10 +1297,8 @@ export default function IntelligentTabletop() {
   );
 
   function handleTileClick(x, y) {
-    console.log("[DIAG] handleTileClick:", x, y, "mode:", mode, "pendingAction:", pendingAction, "selected:", selected?.id);
     if (mode !== "traditional" || pendingAction !== "move" || !selected) return;
     const res = executeMove(gameState, selected.id, { x, y });
-    console.log("[DIAG] executeMove result:", res.ok, res.events);
     if (res.ok) {
       setPendingAction(null);
       afterPlayerAction(res.state);
@@ -1310,10 +1309,8 @@ export default function IntelligentTabletop() {
   }
 
   function handleAttackTarget(targetId) {
-    console.log("[DIAG] handleAttackTarget:", targetId, "mode:", mode, "pendingAction:", pendingAction, "selected:", selected?.id);
     if (mode !== "traditional" || pendingAction !== "attack" || !selected) return;
     const v = attackPreview[targetId];
-    console.log("[DIAG] attackPreview for target:", v);
     if (!v || !v.valid) {
       // Surface the real rules-engine reason. Do NOT mutate state, do NOT
       // consume the action, and stay in Attack mode so the player can pick
@@ -1324,7 +1321,6 @@ export default function IntelligentTabletop() {
       return;
     }
     const res = executeAttack(gameState, selected.id, targetId, rngRef.current);
-    console.log("[DIAG] executeAttack result:", res.ok, res.events);
     setPendingAction(null);
     if (res.ok) {
       setLastRoll({ kind: "attack", actor: selected.name, ...res.result, targetName: gameState.combatants[targetId].name });
@@ -1333,10 +1329,8 @@ export default function IntelligentTabletop() {
   }
 
   function handleAbilityTarget(abilityId, targetId) {
-    console.log("[DIAG] handleAbilityTarget:", abilityId, targetId, "mode:", mode, "pendingAction:", pendingAction, "selected:", selected?.id);
     if (mode !== "traditional" || pendingAction !== "ability:" + abilityId || !selected) return;
     const v = validateAbility(gameState, selected.id, abilityId, targetId);
-    console.log("[DIAG] validateAbility:", v);
     if (!v.valid) {
       // Same fix as handleAttackTarget: real reason, no mutation, no
       // consumed action, stay in ability-targeting mode.
@@ -1346,7 +1340,6 @@ export default function IntelligentTabletop() {
       return;
     }
     const res = executeAbility(gameState, selected.id, abilityId, targetId, rngRef.current);
-    console.log("[DIAG] executeAbility result:", res.ok, res.events);
     setPendingAction(null);
     if (res.ok) {
       setLastRoll({ kind: "ability", actor: selected.name, abilityName: ABILITY_DEFS[abilityId].name, ...res.result });
@@ -1355,7 +1348,6 @@ export default function IntelligentTabletop() {
   }
 
   function handleEndTurn() {
-    console.log("[DIAG] handleEndTurn fired, isPlayerTurn:", isPlayerTurn, "currentActorId:", currentActorId);
     const next = doEndTurnAndMaybeAI(gameState);
     setPendingAction(null);
     afterPlayerAction(next);
@@ -1579,15 +1571,12 @@ export default function IntelligentTabletop() {
             .map((c) => (
               <CharacterPanel key={c.id} c={c} isCurrent={c.id === currentActorId} isSelected={c.id === selectedId} onSelect={handleSelectToken} />
             ))}
-          <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", margin: "14px 0 8px", letterSpacing: 1 }}>ENEMIES</div>
-          {Object.values(gameState.combatants)
-            .filter((c) => c.type === "enemy")
-            .map((c) => (
-              <CharacterPanel key={c.id} c={c} isCurrent={c.id === currentActorId} isSelected={c.id === selectedId} onSelect={handleSelectToken} />
-            ))}
 
+          {/* Action controls sit immediately below the PC panels so they are
+              always visible without scrolling, regardless of how many enemy
+              panels appear below. */}
           {selected && mode === "traditional" && selected.id === currentActorId && isPlayerTurn && (
-            <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+            <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button
                 onClick={() => setPendingAction(pendingAction === "move" ? null : "move")}
                 style={actionBtnStyle(pendingAction === "move")}
@@ -1618,6 +1607,13 @@ export default function IntelligentTabletop() {
               End Turn
             </button>
           )}
+
+          <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", margin: "14px 0 8px", letterSpacing: 1 }}>ENEMIES</div>
+          {Object.values(gameState.combatants)
+            .filter((c) => c.type === "enemy")
+            .map((c) => (
+              <CharacterPanel key={c.id} c={c} isCurrent={c.id === currentActorId} isSelected={c.id === selectedId} onSelect={handleSelectToken} />
+            ))}
         </div>
 
         {/* CENTER: tabletop */}
