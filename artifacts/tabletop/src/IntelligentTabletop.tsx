@@ -127,6 +127,37 @@ const RESPONSIVE_CSS = `
     /* On portrait the session log can be shorter — saves scroll distance */
     .it-session-log { height: 200px !important; }
   }
+  /* ---- Focus visibility — gold ring matching the tabletop aesthetic ----
+     Applied via :focus-visible so mouse users are unaffected.              */
+  .it-root button:focus-visible,
+  .it-root [role="button"]:focus-visible,
+  .it-root input:focus-visible,
+  .it-root [tabindex="0"]:focus-visible {
+    outline: 2px solid #c9a227;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* ---- Visually-hidden utility — sr-only pattern for screen-reader text ---- */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* ---- Reduced motion — suppress non-essential transitions for users who
+     prefer it. Gameplay timing is unaffected; only visual transitions change. ---- */
+  @media (prefers-reduced-motion: reduce) {
+    .it-root *, .it-root *::before, .it-root *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
 `;
 
 // True when running under Playwright or any other harness that appends ?e2e to
@@ -451,6 +482,31 @@ export default function IntelligentTabletop() {
     setMode("traditional");
   }
 
+  // Builds a rich accessible name for a board token.
+  // Communicates: name, acting/selected state, targeting validity, and HP.
+  // Purely presentational — no game logic, no GameState mutation.
+  function buildTokenAriaLabel(tok: GameState["combatants"][string]): string {
+    if (!tok.alive) return `${tok.name}, defeated`;
+    const parts: string[] = [tok.name];
+    if (tok.id === currentActorId) parts.push("acting");
+    else if (tok.id === selectedId) parts.push("selected");
+    if (targetPreview?.targetId === tok.id) {
+      parts.push(targetPreview.valid
+        ? "valid target"
+        : `invalid target: ${previewReasonText(targetPreview.code, targetPreview.reason)}`);
+    } else if (pendingAction === "attack" && tok.type === "enemy") {
+      const v = attackPreview[tok.id];
+      // Phrase avoids the word "attack" so it does not collide with Playwright's
+      // substring matching against the "Attack" button in existing E2E tests.
+      if (v?.valid) parts.push("can be hit");
+    } else if (pendingAbilityId) {
+      const v = abilityPreview[tok.id];
+      if (v) parts.push(v.valid ? "can be targeted" : "out of range");
+    }
+    parts.push(`HP ${tok.hp} of ${tok.maxHp}`);
+    return parts.join(", ");
+  }
+
   // ---------------------------------------------------------------------------
   // GRID RENDERING HELPERS
   // ---------------------------------------------------------------------------
@@ -481,10 +537,10 @@ export default function IntelligentTabletop() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div>
-          <div style={{ fontFamily: "Cinzel, serif", fontSize: 22, letterSpacing: 1, color: "#e8dcc0" }}>
+          <div role="heading" aria-level={1} style={{ fontFamily: "Cinzel, serif", fontSize: 22, letterSpacing: 1, color: "#e8dcc0" }}>
             {gameState.encounterName}
           </div>
-          <div style={{ fontSize: 12.5, color: "#a89468" }}>
+          <div aria-live="polite" aria-atomic="true" style={{ fontSize: 12.5, color: "#a89468" }}>
             Round {gameState.round} · {currentActor ? `${currentActor.name}'s turn` : ""}
           </div>
         </div>
@@ -496,6 +552,7 @@ export default function IntelligentTabletop() {
           ].map((m) => (
             <button
               key={m.id}
+              aria-pressed={mode === m.id}
               onClick={() => { setMode(m.id); setPendingAction(null); setProposal(null); setInfoResult(null); }}
               style={{
                 fontFamily: "Cinzel, serif",
@@ -521,6 +578,7 @@ export default function IntelligentTabletop() {
         {Object.values(isE2E ? ENCOUNTER_DEFS : getProductionEncounters()).map((enc) => (
           <button
             key={enc.id}
+            aria-pressed={gameState.encounterId === enc.id}
             onClick={() => newEncounter(enc.id)}
             style={{
               fontFamily: "'EB Garamond', serif",
@@ -538,16 +596,16 @@ export default function IntelligentTabletop() {
         ))}
       </div>
 
-      {/* Transient banner */}
+      {/* Transient banner — role="alert" causes screen readers to announce immediately */}
       {banner && (
-        <div style={{ marginBottom: 10, padding: "8px 12px", background: "#3b2418", border: "1px solid #8b2e2e", borderRadius: 8, fontSize: 13, color: "#e8b8a8" }}>
+        <div role="alert" style={{ marginBottom: 10, padding: "8px 12px", background: "#3b2418", border: "1px solid #8b2e2e", borderRadius: 8, fontSize: 13, color: "#e8b8a8" }}>
           {banner}
         </div>
       )}
 
-      {/* Victory / Defeat banner */}
+      {/* Victory / Defeat banner — role="alert" announces outcome to screen readers */}
       {encounterStatus !== "ongoing" && (
-        <div style={{ marginBottom: 10, padding: "12px 16px", background: encounterStatus === "victory" ? "#243b1e" : "#3b1e1e", border: `1px solid ${encounterStatus === "victory" ? "#4c6b3f" : "#8b2e2e"}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div role="alert" style={{ marginBottom: 10, padding: "12px 16px", background: encounterStatus === "victory" ? "#243b1e" : "#3b1e1e", border: `1px solid ${encounterStatus === "victory" ? "#4c6b3f" : "#8b2e2e"}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontFamily: "Cinzel, serif", fontSize: 15 }}>{encounterBanner}</span>
           {/* FIX 3: arrow wrapper — prevents SyntheticEvent from becoming encounterId */}
           <button onClick={() => newEncounter()} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
@@ -560,7 +618,7 @@ export default function IntelligentTabletop() {
         {/* LEFT: character panels */}
         <div className="it-left-panel">
           {/* PARTY */}
-          <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>PARTY</div>
+          <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>PARTY</div>
           {Object.values(gameState.combatants)
             .filter((c) => c.type === "pc")
             .map((c) => (
@@ -578,6 +636,7 @@ export default function IntelligentTabletop() {
               <div style={{ display: "flex", gap: 6 }}>
                 <button
                   onClick={() => setPendingAction(pendingAction === "move" ? null : "move")}
+                  aria-pressed={pendingAction === "move"}
                   style={actionBtnStyle(pendingAction === "move")}
                 >
                   <Footprints size={13} /> Move
@@ -585,6 +644,8 @@ export default function IntelligentTabletop() {
                 <button
                   onClick={() => setPendingAction(pendingAction === "attack" ? null : "attack")}
                   disabled={selected.actionUsed}
+                  aria-pressed={pendingAction === "attack"}
+                  aria-label={selected.actionUsed ? "Attack, action already used this turn" : "Attack"}
                   title={selected.actionUsed ? "Action already used this turn" : "Select an enemy to attack"}
                   style={{ ...actionBtnStyle(pendingAction === "attack"), opacity: selected.actionUsed ? 0.38 : 1 }}
                 >
@@ -623,6 +684,8 @@ export default function IntelligentTabletop() {
                         key={abilityId}
                         onClick={() => setPendingAction(pendingAction === "ability:" + abilityId ? null : "ability:" + abilityId)}
                         disabled={selected.actionUsed}
+                        aria-pressed={pendingAction === "ability:" + abilityId}
+                        aria-label={selected.actionUsed ? `${ab?.name || abilityId}, action already used this turn` : (ab?.name || abilityId)}
                         title={selected.actionUsed ? "Action already used this turn" : tipText}
                         style={{ ...actionBtnStyle(pendingAction === "ability:" + abilityId), opacity: selected.actionUsed ? 0.38 : 1 }}
                       >
@@ -680,6 +743,20 @@ export default function IntelligentTabletop() {
                   })()}
                 </div>
               )}
+              {/* Persistent sr-only live region — announces targeting-mode changes to
+                  screen readers without any visible UI change.  Always rendered while
+                  the action bar is active so the live region persists across updates. */}
+              <div role="status" className="sr-only">
+                {pendingAction === "move"
+                  ? "Move mode: click a highlighted tile to move"
+                  : pendingAction === "attack"
+                  ? "Attack mode: click an enemy token to attack"
+                  : pendingAbilityId && abilityIsHarmful
+                  ? `${pendingAbility?.name}: click an enemy to cast`
+                  : pendingAbilityId
+                  ? `${pendingAbility?.name}: click a target`
+                  : ""}
+              </div>
             </div>
           )}
           {/* End Turn shown alone when another character's panel is selected */}
@@ -693,7 +770,7 @@ export default function IntelligentTabletop() {
           )}
 
           {/* ENEMIES */}
-          <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", margin: "14px 0 8px", letterSpacing: 1 }}>ENEMIES</div>
+          <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", margin: "14px 0 8px", letterSpacing: 1 }}>ENEMIES</div>
           {Object.values(gameState.combatants)
             .filter((c) => c.type === "enemy")
             .map((c) => (
@@ -771,15 +848,21 @@ export default function IntelligentTabletop() {
                               handleSelectToken(tok.id);
                             }
                           }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            if (mode === "traditional" && pendingAction === "attack" && tok.type === "enemy") {
+                              handleAttackTarget(tok.id);
+                            } else if (mode === "traditional" && pendingAbilityId) {
+                              handleAbilityTarget(pendingAbilityId, tok.id);
+                            } else {
+                              handleSelectToken(tok.id);
+                            }
+                          }}
                           role="button"
+                          tabIndex={tok.alive ? 0 : -1}
                           title={tok.name}
-                          aria-label={
-                            targetPreview?.targetId === tok.id
-                              ? (targetPreview.valid
-                                  ? `${tok.name}, valid target`
-                                  : `${tok.name}, invalid: ${previewReasonText(targetPreview.code, targetPreview.reason)}`)
-                              : tok.name
-                          }
+                          aria-label={buildTokenAriaLabel(tok)}
                           style={{
                             position: "absolute",
                             inset: 4,
@@ -884,8 +967,8 @@ export default function IntelligentTabletop() {
 
         {/* RIGHT: initiative tracker + session log */}
         <div className="it-right-panel">
-          <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>INITIATIVE</div>
-          <div style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 8, marginBottom: 14 }}>
+          <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>INITIATIVE</div>
+          <div aria-label="Initiative order" style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 8, marginBottom: 14 }}>
             {gameState.turnOrder.map((id, i) => {
               const c = gameState.combatants[id];
               return (
@@ -910,10 +993,10 @@ export default function IntelligentTabletop() {
             })}
           </div>
 
-          <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1, display: "flex", alignItems: "center", gap: 5 }}>
+          <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1, display: "flex", alignItems: "center", gap: 5 }}>
             <ScrollText size={13} /> SESSION LOG
           </div>
-          <div className="it-session-log" style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 10, height: 320, overflowY: "auto", fontSize: 12, lineHeight: 1.5 }}>
+          <div className="it-session-log" role="log" aria-label="Session log" aria-live="polite" aria-atomic="false" style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 10, height: 320, overflowY: "auto", fontSize: 12, lineHeight: 1.5 }}>
             {gameState.log.map((line, i) => (
               <div key={i} style={{ color: line.startsWith("—") ? "#c9a227" : "#c9bd9e", fontStyle: line.startsWith("—") ? "italic" : "normal", marginBottom: 3 }}>
                 {line}
@@ -931,6 +1014,7 @@ export default function IntelligentTabletop() {
           <div style={{ display: "flex", gap: 8 }}>
             <Sparkles size={16} color="#c9a227" style={{ marginTop: 10 }} />
             <input
+              aria-label="Describe your action in plain language"
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") runIntent(); }}
@@ -968,6 +1052,8 @@ export default function IntelligentTabletop() {
           {/* Proposal card */}
           {proposal && (
             <div
+              role="region"
+              aria-label="Proposed action"
               style={{
                 marginTop: 12,
                 background: "linear-gradient(180deg, #ece0bd, #ddcf9f)",
@@ -1049,6 +1135,8 @@ export default function IntelligentTabletop() {
           {/* Query result card */}
           {infoResult && infoResult.type === "query" && (
             <div
+              role="region"
+              aria-label="Information query result"
               style={{
                 marginTop: 12,
                 background: "linear-gradient(180deg, #ece0bd, #ddcf9f)",
@@ -1091,6 +1179,8 @@ export default function IntelligentTabletop() {
           {/* Inspect result card */}
           {infoResult && infoResult.type === "inspect" && (
             <div
+              role="region"
+              aria-label="Inspect result"
               style={{
                 marginTop: 12,
                 background: "linear-gradient(180deg, #ece0bd, #ddcf9f)",
