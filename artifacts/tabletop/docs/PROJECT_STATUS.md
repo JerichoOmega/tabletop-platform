@@ -6,7 +6,7 @@ _Last updated: Visual asset library integrated (44 assets)_
 
 | Metric | Value |
 |---|---|
-| Commit | pending — visual asset integration |
+| Commit | `b554e68` — assets: integrate canonical tabletop visual library |
 | Unit tests | 93 passing |
 | E2E tests | 148 passing |
 | TypeScript | Clean (0 errors, `--noEmit`) |
