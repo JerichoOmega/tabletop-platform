@@ -52,6 +52,28 @@ The Phase 2 test baseline (93 unit / 148 E2E) is unchanged. Phase A and Phase B 
 
 ---
 
+## Visual Asset Library
+
+**Full specification:** `docs/VISUAL_ASSET_LIBRARY.md`
+
+The project maintains a canonical visual asset library separate from the runtime asset registry. Approved visual assets are **not** assumed to be registered in `src/assets/registry.ts` — that registration happens independently.
+
+| Category | Locked canonical assets |
+|---|---:|
+| Miniatures | 4 |
+| Floor family | 6 |
+| Terrain / architecture | 13 |
+| Props / environment objects | 21 |
+| **Total** | **44** |
+
+**Current production checkpoint:** Paused after **Lantern V1** (asset #44).
+
+**Next proposed asset:** Notice Board / Quest Board V1 — not yet generated; generation begins when the visual production workflow resumes.
+
+All 44 assets follow the established stylized 3D fantasy tabletop miniature aesthetic. Locked assets must not be redesigned, regenerated, renamed, or reinterpreted without an explicit revision request. Full style rules, the wall-family master rule, approved variation families, and the canonical approval workflow are documented in `docs/VISUAL_ASSET_LIBRARY.md`.
+
+---
+
 ## §14 Animation / tactile feedback — implementation notes
 
 Completed as the final Phase 2 UX item. All animation state is purely transient
