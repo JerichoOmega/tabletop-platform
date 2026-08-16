@@ -69,6 +69,66 @@ type TargetPreview = {
   cover?: boolean;
 } | null;
 
+// ---------------------------------------------------------------------------
+// RESPONSIVE CSS — injected as a <style> tag alongside FONT_IMPORT.
+//
+// Breakpoints:
+//   ≥ 1100px  — wide desktop: 3-col (220px | 1fr | 260px)
+//   768-1099px — tablet landscape / narrow desktop: 3-col (160px | 1fr | 200px)
+//   < 768px   — tablet portrait: single column, board first
+//
+// All grid/layout behaviour lives here so that CSS media queries win over
+// fixed values without needing any JS resize logic for layout.  cellPx is
+// still computed in JS (it affects the React grid template), but visual
+// structure is CSS-only.
+// ---------------------------------------------------------------------------
+const RESPONSIVE_CSS = `
+  .it-root {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  /* Ensure comfortable touch targets across all buttons */
+  .it-root button {
+    min-height: 38px;
+    touch-action: manipulation;
+  }
+  /* Encounter switcher pills — compact on small screens */
+  .it-encounter-switcher {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  /* ---- Main three-column layout ---- */
+  .it-main-grid {
+    display: grid;
+    grid-template-columns: 220px 1fr 260px;
+    gap: 16px;
+    align-items: start;
+  }
+  /* Tablet landscape / narrow desktop */
+  @media (max-width: 1099px) {
+    .it-main-grid {
+      grid-template-columns: 160px 1fr 200px;
+      gap: 10px;
+    }
+  }
+  /* Tablet portrait / phone — stack columns, board first */
+  @media (max-width: 767px) {
+    .it-main-grid {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    .it-board-col  { order: 1; }
+    .it-left-panel { order: 2; }
+    .it-right-panel { order: 3; }
+    /* On portrait the session log can be shorter — saves scroll distance */
+    .it-session-log { height: 200px !important; }
+  }
+`;
+
 // True when running under Playwright or any other harness that appends ?e2e to
 // the URL.  Test-only encounters are hidden from the picker in normal usage.
 const isE2E = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("e2e");
@@ -93,6 +153,19 @@ export default function IntelligentTabletop() {
   const [infoResult, setInfoResult]   = useState<ProposedAction | null>(null);
   const [banner, setBanner]           = useState<string | null>(null);
   const [targetPreview, setTargetPreview] = useState<TargetPreview>(null);
+
+  // cellPx drives the board grid. Starts at 52 (desktop), drops to 46 on
+  // narrower viewports (<1100 px) so the board stays visible alongside panels.
+  // This is purely presentational — GameState never sees viewport dimensions.
+  const [cellPx, setCellPx] = useState(52);
+  useEffect(() => {
+    function updateCellPx() {
+      setCellPx(window.innerWidth < 1100 ? 46 : 52);
+    }
+    updateCellPx();
+    window.addEventListener("resize", updateCellPx, { passive: true });
+    return () => window.removeEventListener("resize", updateCellPx);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentActorId = gameState.turnOrder[gameState.turnIndex];
   const currentActor   = gameState.combatants[currentActorId];
@@ -388,13 +461,12 @@ export default function IntelligentTabletop() {
     return m;
   }, [gameState]);
 
-  const cellPx = 52;
-
   // ---------------------------------------------------------------------------
   // RENDER
   // ---------------------------------------------------------------------------
   return (
     <div
+      className="it-root"
       style={{
         fontFamily: "'EB Garamond', serif",
         minHeight: "100vh",
@@ -404,6 +476,7 @@ export default function IntelligentTabletop() {
       }}
     >
       <style>{FONT_IMPORT}</style>
+      <style>{RESPONSIVE_CSS}</style>
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
@@ -444,7 +517,7 @@ export default function IntelligentTabletop() {
       </div>
 
       {/* Encounter switcher — test-only encounters are hidden unless ?e2e is in the URL */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+      <div className="it-encounter-switcher">
         {Object.values(isE2E ? ENCOUNTER_DEFS : getProductionEncounters()).map((enc) => (
           <button
             key={enc.id}
@@ -483,9 +556,9 @@ export default function IntelligentTabletop() {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr 260px", gap: 16, alignItems: "start" }}>
+      <div className="it-main-grid">
         {/* LEFT: character panels */}
-        <div>
+        <div className="it-left-panel">
           {/* PARTY */}
           <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>PARTY</div>
           {Object.values(gameState.combatants)
@@ -629,7 +702,7 @@ export default function IntelligentTabletop() {
         </div>
 
         {/* CENTER: tabletop grid */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div className="it-board-col" style={{ display: "flex", flexDirection: "column", alignItems: "center", overflowX: "auto" }}>
           <div
             style={{
               background: "linear-gradient(160deg, #4a3320, #2c1e12)",
@@ -810,7 +883,7 @@ export default function IntelligentTabletop() {
         </div>
 
         {/* RIGHT: initiative tracker + session log */}
-        <div>
+        <div className="it-right-panel">
           <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>INITIATIVE</div>
           <div style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 8, marginBottom: 14 }}>
             {gameState.turnOrder.map((id, i) => {
@@ -840,7 +913,7 @@ export default function IntelligentTabletop() {
           <div style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1, display: "flex", alignItems: "center", gap: 5 }}>
             <ScrollText size={13} /> SESSION LOG
           </div>
-          <div style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 10, height: 320, overflowY: "auto", fontSize: 12, lineHeight: 1.5 }}>
+          <div className="it-session-log" style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 10, height: 320, overflowY: "auto", fontSize: 12, lineHeight: 1.5 }}>
             {gameState.log.map((line, i) => (
               <div key={i} style={{ color: line.startsWith("—") ? "#c9a227" : "#c9bd9e", fontStyle: line.startsWith("—") ? "italic" : "normal", marginBottom: 3 }}>
                 {line}

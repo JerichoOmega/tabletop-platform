@@ -134,7 +134,7 @@ All three modes use exactly the same rules engine.
 | §8 Proposal card | ✅ Amber header + sword icon, distinct from query |
 | §10 Query card | ✅ Blue header + info icon, Dismiss only (no Approve) |
 | §10 Inspect card | ✅ Neutral header + scroll icon |
-| §12 Responsive layout | ⬜ Deferred (desktop baseline retained) |
+| §12 Responsive layout | ✅ Tablet-first responsive layout (landscape + portrait) |
 | §14 Animations | ⬜ Deferred |
 | §15 Accessibility pass | ⬜ Deferred |
 
