@@ -178,36 +178,40 @@ manipulate the tabletop rendering layer.**
 
 ---
 
-### Phase 2 — Core Tabletop UX 🔄 Current
+### Phase 2 — Core Tabletop UX ✅ Complete
 
-Work in this phase focuses on interactive quality and player-facing polish before
-major architectural expansion.
+Work in this phase focused on interactive quality and player-facing polish before
+major architectural expansion. All items are complete.
 
-1. Hover / Target Preview
-2. Targeting UX refinements
-3. Tablet-oriented tabletop layout
-4. Accessibility
-5. Animation and interaction polish
+| Item | Status |
+|---|---|
+| Hover / Target Preview | ✅ Done |
+| Targeting UX refinements | ✅ Done |
+| Tablet-first responsive layout | ✅ Done |
+| Keyboard navigation + ARIA roles | ✅ Done |
+| WCAG 2.1 AA accessibility | ✅ Done |
+| Animation / tactile feedback | ✅ Done |
 
-Items in this phase are not all complete. See `docs/PROJECT_STATUS.md` for current
-implementation state.
+See `artifacts/tabletop/docs/PROJECT_STATUS.md` for implementation detail.
 
 ---
 
-### Phase 3 — World Representation 📋 Planned
+### Phase 3 — World Representation 📋 Specification Complete / Implementation Next
 
 This is the next major architectural phase. The Fixed Tabletop / Large World principle
 (above) must be fully implemented before Phase 4 or Phase 5 work that depends on it.
 
-1. **World Scale & Tabletop Viewport Specification** — formal spec document
-2. **World-coordinate model** — coordinate system independent of viewport
-3. **Fixed tabletop viewport** — renders a bounded window into world space
-4. **Large-area viewport behavior** — rules for when/how the viewport moves
-5. **Continuous / streaming environments** — corridor and open-world geometry streaming
-6. **World-coordinate preservation** — entities keep identity across viewport changes
-7. **Encounter boundaries** — define the tactical area within a world region
-8. **Tactical-area locking** — viewport stabilization during combat
-9. **Seamless exploration → encounter → combat transitions**
+| Item | Status |
+|---|---|
+| **World Scale & Tabletop Viewport Specification** — `artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md` | ✅ Specification written |
+| **World-coordinate model** — coordinate system independent of viewport | ⬜ Not started |
+| **Fixed tabletop viewport** — renders a bounded window into world space | ⬜ Not started |
+| **Large-area viewport behavior** — rules for when/how the viewport moves | ⬜ Not started |
+| **Continuous / streaming environments** — corridor and open-world geometry streaming | ⬜ Not started |
+| **World-coordinate preservation** — entities keep identity across viewport changes | ⬜ Not started |
+| **Encounter boundaries** — define the tactical area within a world region | ⬜ Not started |
+| **Tactical-area locking** — viewport stabilization during combat | ⬜ Not started |
+| **Seamless exploration → encounter → combat transitions** | ⬜ Not started |
 
 ---
 

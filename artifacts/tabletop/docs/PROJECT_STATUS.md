@@ -1,17 +1,17 @@
 # Intelligent Tabletop — Project Status
 
-_Last updated: Visual asset library integrated (44 assets)_
+_Last updated: Documentation synchronized — Phase 2 complete, Phase 3 specification complete, implementation not started_
 
 ## Baseline (latest committed state)
 
 | Metric | Value |
 |---|---|
-| Commit | `b554e68` — assets: integrate canonical tabletop visual library |
+| Commit | `856ea40` — Attach image and table documentation files |
 | Unit tests | 93 passing |
 | E2E tests | 148 passing |
 | TypeScript | Clean (0 errors, `--noEmit`) |
 | Build | Vite production build clean |
-| Visual assets | 44 canonical assets registered |
+| Visual assets | 45 total (44 production assets + 1 foundational environment asset) |
 
 ---
 
@@ -37,16 +37,16 @@ See `docs/ROADMAP.md` for the full phase breakdown and governance rules.
 | 14 | Animation / tactile feedback | ✅ Done |
 | 15 | Accessibility — WCAG 2.1 AA | ✅ Done |
 | 16 | Automated game-engine tests | ⬜ Pending |
-| 17 | World-scale viewport (Phase 3) | 📋 Specified — see `docs/WORLD_SCALE_VIEWPORT.md` |
+| 17 | World-scale viewport (Phase 3) | 📋 Specified — see `artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md` |
 | 18 | Visual asset library integration | ✅ Done — 44 assets registered, see `docs/VISUAL_ASSET_LIBRARY.md` |
 
 ---
 
 ## Phase 3 — World Scale & Fixed Tabletop Viewport
 
-**Status:** Specification complete. No implementation has occurred.
+**Status:** Specification complete. **No implementation has occurred.**
 
-Full technical specification: **`docs/WORLD_SCALE_VIEWPORT.md`**
+Full technical specification: **`artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md`**
 
 The spec covers all 26 required sections: coordinate systems, authoritative vs presentation state, viewport model, follow/dead-zone behavior, chunk streaming, entity persistence, exploration vs tactical modes, encounter transitions, large-environment combat, world edges, rendering architecture, AI DM integration, test strategy, and a staged 10-phase implementation plan (Phase A through Phase J).
 
@@ -56,7 +56,7 @@ The Phase 2 test baseline (93 unit / 148 E2E) is unchanged. Phase A and Phase B 
 
 ## Visual Asset Library
 
-**Full specification:** `docs/VISUAL_ASSET_LIBRARY.md`
+**Full specification:** `artifacts/tabletop/docs/VISUAL_ASSET_LIBRARY.md`
 
 The project maintains a canonical visual asset library separate from the runtime asset registry. Approved visual assets are **not** assumed to be registered in `src/assets/registry.ts` — that registration happens independently.
 
