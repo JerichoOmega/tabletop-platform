@@ -158,6 +158,102 @@ const RESPONSIVE_CSS = `
       animation-iteration-count: 1 !important;
     }
   }
+
+  /* =====================================================================
+     ANIMATION KEYFRAMES — restrained tactile feedback.
+     All animations are one-shot (iteration-count: 1) and self-cleaning.
+     The reduced-motion rule above suppresses them to 0.01ms for users
+     who prefer it — no duplicate or conflicting overrides needed here.
+  ===================================================================== */
+
+  /* Movement entrance — token pops into its new cell from a slight scale */
+  @keyframes it-move-in {
+    from { transform: scale(0.72); opacity: 0.55; }
+    to   { transform: scale(1);    opacity: 1;    }
+  }
+  .it-anim-move {
+    animation: it-move-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    animation-fill-mode: both;
+  }
+
+  /* Attacker lunge — brief scale pop on the striking token */
+  @keyframes it-strike {
+    0%   { transform: scale(1);    }
+    35%  { transform: scale(1.18); }
+    100% { transform: scale(1);    }
+  }
+  .it-anim-strike {
+    animation: it-strike 0.32s ease-out;
+    animation-fill-mode: both;
+  }
+
+  /* Hit reaction — lateral shake on the damaged token */
+  @keyframes it-hit {
+    0%   { transform: translate(0,    0) scale(1);    }
+    18%  { transform: translate(-4px, 0) scale(0.94); }
+    36%  { transform: translate( 4px, 0) scale(1.03); }
+    54%  { transform: translate(-2px, 0) scale(0.97); }
+    72%  { transform: translate( 1px, 0) scale(1.01); }
+    100% { transform: translate(0,    0) scale(1);    }
+  }
+  .it-anim-hit {
+    animation: it-hit 0.42s ease-out;
+    animation-fill-mode: both;
+  }
+
+  /* Miss — faint amber flicker on the evading token */
+  @keyframes it-miss {
+    0%   { opacity: 1;   }
+    25%  { opacity: 0.4; }
+    65%  { opacity: 0.85;}
+    100% { opacity: 1;   }
+  }
+  .it-anim-miss {
+    animation: it-miss 0.35s ease-out;
+    animation-fill-mode: both;
+  }
+
+  /* Heal — expanding green glow ring */
+  @keyframes it-heal {
+    0%   { box-shadow: 0 0 0 0   rgba(90, 190, 70, 0),   0 2px 5px rgba(0,0,0,0.5); }
+    40%  { box-shadow: 0 0 0 7px rgba(90, 190, 70, 0.7), 0 2px 5px rgba(0,0,0,0.5); }
+    100% { box-shadow: 0 0 0 0   rgba(90, 190, 70, 0),   0 2px 5px rgba(0,0,0,0.5); }
+  }
+  .it-anim-heal {
+    animation: it-heal 0.65s ease-out;
+    animation-fill-mode: both;
+  }
+
+  /* Turn transition — gold pulse ring on newly active actor */
+  @keyframes it-acting-pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(201, 162, 39, 0.7), 0 2px 5px rgba(0,0,0,0.5); }
+    45%  { box-shadow: 0 0 0 9px rgba(201, 162, 39, 0.3), 0 2px 5px rgba(0,0,0,0.5); }
+    100% { box-shadow: 0 0 0 4px rgba(201, 162, 39, 0),   0 2px 5px rgba(0,0,0,0.5); }
+  }
+  .it-anim-acting {
+    animation: it-acting-pulse 0.65s ease-out;
+    animation-fill-mode: both;
+  }
+
+  /* Intent card entrance — proposal / query / inspect */
+  @keyframes it-card-in {
+    from { opacity: 0; transform: translateY(-7px); }
+    to   { opacity: 1; transform: translateY(0);    }
+  }
+  .it-anim-card-in {
+    animation: it-card-in 0.22s ease-out;
+    animation-fill-mode: both;
+  }
+
+  /* Victory / defeat banner entrance */
+  @keyframes it-banner-in {
+    from { opacity: 0; transform: scaleY(0.8); transform-origin: top; }
+    to   { opacity: 1; transform: scaleY(1);   transform-origin: top; }
+  }
+  .it-anim-banner-in {
+    animation: it-banner-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    animation-fill-mode: both;
+  }
 `;
 
 // True when running under Playwright or any other harness that appends ?e2e to
@@ -184,6 +280,25 @@ export default function IntelligentTabletop() {
   const [infoResult, setInfoResult]   = useState<ProposedAction | null>(null);
   const [banner, setBanner]           = useState<string | null>(null);
   const [targetPreview, setTargetPreview] = useState<TargetPreview>(null);
+
+  // ---------------------------------------------------------------------------
+  // ANIMATION STATE — purely transient presentation state; never in GameState.
+  // Maps combatant id → CSS class name. Each entry self-removes after its
+  // animation duration via setTimeout. Reduced-motion is handled globally in
+  // RESPONSIVE_CSS (all animation-duration collapsed to 0.01ms there).
+  // ---------------------------------------------------------------------------
+  const [animClasses, setAnimClasses] = useState<Record<string, string>>({});
+  const triggerAnim = useCallback((id: string, cls: string, durationMs: number) => {
+    setAnimClasses(prev => ({ ...prev, [id]: cls }));
+    setTimeout(() => {
+      setAnimClasses(prev => {
+        if (prev[id] !== cls) return prev; // another animation took over — leave it
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }, durationMs);
+  }, []); // setAnimClasses is a stable setter
 
   // cellPx drives the board grid. Starts at 52 (desktop), drops to 46 on
   // narrower viewports (<1100 px) so the board stays visible alongside panels.
@@ -214,6 +329,9 @@ export default function IntelligentTabletop() {
   // ---------------------------------------------------------------------------
   const turnKey = `${gameState.seed}-${currentActorId}`;
   useEffect(() => {
+    // Gold pulse ring on whichever combatant just became the active actor.
+    // Fires for both PC and enemy turns; reduced-motion collapses it to 0.01ms.
+    if (currentActorId) triggerAnim(currentActorId, "it-anim-acting", 750);
     if (isPlayerTurn && currentActorId) {
       setSelectedId(currentActorId);
       setPendingAction(null);
@@ -288,6 +406,8 @@ export default function IntelligentTabletop() {
     if (res.ok) {
       setPendingAction(null);
       afterPlayerAction(res.state);
+      // Token now renders in its new cell — play entrance animation there.
+      triggerAnim(selected.id, "it-anim-move", 380);
     } else {
       setBanner(res.events[0]);
       setTimeout(() => setBanner(null), 2200);
@@ -309,7 +429,11 @@ export default function IntelligentTabletop() {
     const res = executeAttack(gameState, selected.id, targetId, rngRef.current!);
     setPendingAction(null);
     if (res.ok) {
-      setLastRoll({ kind: "attack", actor: selected.name, ...(res.result as AttackResult), targetName: gameState.combatants[targetId].name });
+      const atkResult = res.result as AttackResult;
+      setLastRoll({ kind: "attack", actor: selected.name, ...atkResult, targetName: gameState.combatants[targetId].name });
+      // Attacker lunges; target shakes on hit or flickers on miss.
+      triggerAnim(selected.id, "it-anim-strike", 380);
+      triggerAnim(targetId, atkResult.hit ? "it-anim-hit" : "it-anim-miss", atkResult.hit ? 500 : 400);
     }
     afterPlayerAction(res.state);
   }
@@ -333,6 +457,8 @@ export default function IntelligentTabletop() {
     if (res.ok) {
       const r = res.result as HealResult | DamageResult;
       setLastRoll({ kind: "ability", actor: selected.name, abilityName: ABILITY_DEFS[abilityId].name, ...r });
+      // Green glow for heals; shake for damage abilities.
+      triggerAnim(targetId, r.type === "heal" ? "it-anim-heal" : "it-anim-hit", r.type === "heal" ? 750 : 500);
     }
     afterPlayerAction(res.state);
   }
@@ -436,12 +562,15 @@ export default function IntelligentTabletop() {
       const atkStep = proposal.steps.find((s): s is Extract<Step, { kind: "attack" }> => s.kind === "attack");
       if (atkStep) {
         setLastRoll({ kind: "attack", actor: exec.state.combatants[proposal.actorId].name, targetName: exec.state.combatants[atkStep.targetId]?.name ?? "Unknown", ...exec.lastAttackResult });
+        triggerAnim(proposal.actorId, "it-anim-strike", 380);
+        triggerAnim(atkStep.targetId, exec.lastAttackResult.hit ? "it-anim-hit" : "it-anim-miss", exec.lastAttackResult.hit ? 500 : 400);
       }
     } else if (exec.lastAbilityResult) {
       const abilityStep = proposal.steps.find((s): s is Extract<Step, { kind: "ability" }> => s.kind === "ability");
       if (abilityStep) {
         const r = exec.lastAbilityResult as HealResult | DamageResult;
         setLastRoll({ kind: "ability", actor: exec.state.combatants[proposal.actorId].name, abilityName: ABILITY_DEFS[abilityStep.abilityId].name, ...r });
+        triggerAnim(abilityStep.targetId, r.type === "heal" ? "it-anim-heal" : "it-anim-hit", r.type === "heal" ? 750 : 500);
       }
     }
     setProposal(null);
@@ -605,7 +734,7 @@ export default function IntelligentTabletop() {
 
       {/* Victory / Defeat banner — role="alert" announces outcome to screen readers */}
       {encounterStatus !== "ongoing" && (
-        <div role="alert" style={{ marginBottom: 10, padding: "12px 16px", background: encounterStatus === "victory" ? "#243b1e" : "#3b1e1e", border: `1px solid ${encounterStatus === "victory" ? "#4c6b3f" : "#8b2e2e"}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div role="alert" className="it-anim-banner-in" style={{ marginBottom: 10, padding: "12px 16px", background: encounterStatus === "victory" ? "#243b1e" : "#3b1e1e", border: `1px solid ${encounterStatus === "victory" ? "#4c6b3f" : "#8b2e2e"}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontFamily: "Cinzel, serif", fontSize: 15 }}>{encounterBanner}</span>
           {/* FIX 3: arrow wrapper — prevents SyntheticEvent from becoming encounterId */}
           <button onClick={() => newEncounter()} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
@@ -863,6 +992,7 @@ export default function IntelligentTabletop() {
                           tabIndex={tok.alive ? 0 : -1}
                           title={tok.name}
                           aria-label={buildTokenAriaLabel(tok)}
+                          className={animClasses[tok.id] || ""}
                           style={{
                             position: "absolute",
                             inset: 4,
@@ -1054,6 +1184,7 @@ export default function IntelligentTabletop() {
             <div
               role="region"
               aria-label="Proposed action"
+              className="it-anim-card-in"
               style={{
                 marginTop: 12,
                 background: "linear-gradient(180deg, #ece0bd, #ddcf9f)",
@@ -1137,6 +1268,7 @@ export default function IntelligentTabletop() {
             <div
               role="region"
               aria-label="Information query result"
+              className="it-anim-card-in"
               style={{
                 marginTop: 12,
                 background: "linear-gradient(180deg, #ece0bd, #ddcf9f)",
@@ -1181,6 +1313,7 @@ export default function IntelligentTabletop() {
             <div
               role="region"
               aria-label="Inspect result"
+              className="it-anim-card-in"
               style={{
                 marginTop: 12,
                 background: "linear-gradient(180deg, #ece0bd, #ddcf9f)",

@@ -1,0 +1,285 @@
+TASK: Add Animation and Tactile Feedback to Intelligent Tabletop
+
+Repository:
+JerichoOmega/tabletop-platform
+
+CURRENT CANONICAL BASELINE
+
+Accessibility is complete in commit:
+aafb5a9
+
+Recent milestones:
+
+- 1c825d3 — Asset registry
+- 9e489d5 — Gameplay interaction regression coverage
+- 5508399 — Engine/type-safety hardening
+- 8e966cf — Hover / Target Preview
+- 58004b2 — Canonical roadmap
+- 8529cda — Tablet-first responsive UX
+- aafb5a9 — Accessibility pass
+
+Current verified baseline:
+- 93/93 unit tests
+- 133/133 E2E tests
+- typecheck clean
+- build clean
+
+Read `docs/ROADMAP.md` before making changes.
+
+OBJECTIVE
+
+Complete the final Phase 2 UX item:
+
+ANIMATION / TACTILE FEEDBACK
+
+Make the existing tabletop feel more responsive and alive without changing gameplay behavior or architecture.
+
+Animations must represent already-authoritative state changes.
+
+They must NEVER become part of the rules engine or determine whether an action succeeds.
+
+SCOPE
+
+Implement restrained feedback for:
+
+1. Movement
+2. Attack
+3. Damage
+4. Healing
+5. Turn transitions
+6. Target acquisition/selection
+7. Proposal appearance/approval where appropriate
+8. Victory/defeat transitions where appropriate
+
+Do not create elaborate cinematic effects.
+
+The tabletop should remain readable and tactical.
+
+ANIMATION PRINCIPLE
+
+Game state changes first.
+
+Animation follows.
+
+Never:
+
+animation → gameplay decision
+
+Always:
+
+gameplay decision
+    ↓
+authoritative state change
+    ↓
+UI state/render update
+    ↓
+animation
+
+Do not delay or block authoritative execution waiting for an animation.
+
+MOVEMENT
+
+When a token moves:
+
+- Provide a brief visual transition between its old and new position.
+- Preserve the existing grid and coordinates.
+- Do not change movement validation.
+- Do not alter movement range.
+- Do not change turn/action timing.
+
+The animation should make movement feel physical without making the player wait unnecessarily.
+
+ATTACK
+
+When an attack executes:
+
+- Provide a subtle attack/impact cue.
+- Make the attacking token and affected target visually readable.
+- Damage feedback should clearly correspond to the affected target.
+
+Do not introduce combat calculations into the animation system.
+
+DAMAGE
+
+When a combatant takes damage:
+
+- Provide brief visual feedback.
+- A small hit reaction, shake, flash, scale response, or equivalent is acceptable.
+- Avoid excessive screen movement.
+- Do not rely exclusively on color.
+
+Healing should have a distinct but restrained visual response.
+
+TURN TRANSITIONS
+
+When the active actor changes:
+
+- Provide a subtle transition indicating the new active actor.
+- Preserve the existing `ACTING` indicator.
+- Do not hide or delay the active actor state.
+
+The player should immediately know whose turn it is.
+
+TARGETING
+
+When a valid target is acquired:
+
+- A subtle target-acquisition animation may occur.
+- Preserve the existing red/blue/green semantic language.
+- Preserve the existing target-preview behavior.
+- Do not make animation necessary to understand target validity.
+
+Invalid targets should have a restrained rejection cue where appropriate.
+
+Do not create a separate targeting system.
+
+PROPOSALS / INTENT CARDS
+
+When a proposal/query/inspect card appears:
+
+- A restrained entrance transition is acceptable.
+- Preserve all existing semantic distinctions.
+- Preserve keyboard focus behavior.
+- Do not steal focus solely for animation.
+
+Proposal approval should provide appropriate feedback without delaying authoritative execution.
+
+VICTORY / DEFEAT
+
+Existing victory and defeat states may receive subtle transition treatment.
+
+Do not make victory/defeat dependent on animation completion.
+
+REDUCED MOTION
+
+The accessibility implementation in `aafb5a9` already establishes:
+
+`@media (prefers-reduced-motion: reduce)`
+
+Respect it.
+
+For reduced-motion users:
+
+- eliminate non-essential movement
+- use opacity or other minimal transitions where appropriate
+- do not remove essential state communication
+- do not alter gameplay timing
+
+Do not duplicate or conflict with the existing reduced-motion implementation.
+
+PERFORMANCE
+
+Animations should remain lightweight.
+
+Prefer CSS transitions/keyframes where they are sufficient.
+
+Avoid introducing a large animation dependency.
+
+Do not add a new animation library unless the existing implementation genuinely requires it.
+
+Do not create animation loops or timers that continue indefinitely.
+
+Animations must clean themselves up naturally.
+
+ARCHITECTURE
+
+Do not modify:
+
+- rules engine
+- validation system
+- GameState model
+- intent architecture
+- asset registry architecture
+- world/map coordinate model
+
+Animation state should remain transient UI/presentation state.
+
+If a small typed presentation-state abstraction is useful, keep it local to the UI.
+
+WORLD SCALE IS OUT OF SCOPE
+
+Do NOT implement:
+
+- world coordinates
+- viewport coordinates
+- camera movement
+- map streaming
+- chunk generation
+- exploration mode
+- large-world behavior
+- encounter viewport locking
+
+Those belong to Phase 3.
+
+TESTING
+
+Add regression coverage for animation-related behavior where practical.
+
+Tests should verify observable state/DOM behavior, not fragile timing assumptions.
+
+At minimum ensure:
+
+- movement still executes correctly
+- attack still executes correctly
+- damage/healing state remains correct
+- turn transitions remain correct
+- targeting remains correct
+- proposals remain functional
+- victory/defeat remain functional
+- reduced-motion styling does not remove essential state information
+- existing responsive behavior remains intact
+- existing accessibility behavior remains intact
+
+Do not make tests wait for arbitrary animation durations unless absolutely necessary.
+
+REGRESSION REQUIREMENT
+
+Run:
+
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
+
+Do not weaken existing tests.
+
+Expected baseline:
+
+- 93 unit tests
+- 133 E2E tests
+
+Report the actual final counts.
+
+DOCUMENTATION
+
+After implementation:
+
+- Update `docs/PROJECT_STATUS.md` to reflect completion of the animation/tactile-feedback milestone.
+- Do not rewrite `docs/ROADMAP.md`.
+- Do not mark Phase 3 complete.
+
+FINAL REPORT
+
+Report:
+
+1. Files changed
+2. Animation systems implemented
+3. State/animation architectural approach
+4. Reduced-motion behavior
+5. Tests added/modified
+6. Exact unit-test result
+7. Exact E2E result
+8. Typecheck result
+9. Build result
+10. Any known limitations
+11. Commit hash
+
+IMPORTANT:
+
+This is the final Phase 2 UX task.
+
+After completing it, STOP.
+
+Do not begin World Scale implementation.
+
+The next task will be a dedicated technical specification for the Phase 3 "World Scale & Tabletop Viewport" system.

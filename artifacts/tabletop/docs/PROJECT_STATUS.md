@@ -33,10 +33,51 @@ See `docs/ROADMAP.md` for the full phase breakdown and governance rules.
 | 11 | Full type safety (engine/rules, intent/parser, main component) | ✅ Done |
 | 12 | Tablet-first responsive layout | ✅ Done |
 | 13 | Keyboard navigation + ARIA roles | ✅ Done |
-| 14 | Visual polish pass | ⬜ Pending |
+| 14 | Animation / tactile feedback | ✅ Done |
 | 15 | Accessibility — WCAG 2.1 AA | ✅ Done |
 | 16 | Automated game-engine tests | ⬜ Pending |
-| 17 | World-scale viewport (Phase 2) | ⬜ Future phase |
+| 17 | World-scale viewport (Phase 3) | ⬜ Future phase |
+
+---
+
+## §14 Animation / tactile feedback — implementation notes
+
+Completed as the final Phase 2 UX item. All animation state is purely transient
+presentation state — never written into `GameState`, never consulted by the rules
+engine, never gating gameplay execution.
+
+**Architecture**
+- `animClasses: Record<string, string>` state maps combatant id → CSS class name.
+- `triggerAnim(id, cls, durationMs)` sets the class then clears it via `setTimeout`.
+- The existing `@media (prefers-reduced-motion: reduce)` rule in `RESPONSIVE_CSS`
+  collapses all animation/transition durations to `0.01ms` — no duplicate overrides
+  needed in the new keyframe rules.
+
+**CSS keyframes added to `RESPONSIVE_CSS`**
+
+| Keyframe | Class | Target | Duration |
+|---|---|---|---|
+| `it-move-in` | `.it-anim-move` | Moving token (new cell) | 280 ms |
+| `it-strike` | `.it-anim-strike` | Attacking token | 320 ms |
+| `it-hit` | `.it-anim-hit` | Damaged token (shake) | 420 ms |
+| `it-miss` | `.it-anim-miss` | Evading token (opacity flicker) | 350 ms |
+| `it-heal` | `.it-anim-heal` | Healed token (green glow ring) | 650 ms |
+| `it-acting-pulse` | `.it-anim-acting` | New active-turn token (gold pulse) | 650 ms |
+| `it-card-in` | `.it-anim-card-in` | Proposal / Query / Inspect card | 220 ms |
+| `it-banner-in` | `.it-anim-banner-in` | Victory / defeat banner | 280 ms |
+
+**Trigger points**
+- `turnKey` useEffect — acting pulse fires for every new actor (PC and enemy alike).
+- `handleTileClick` success — move entrance on the actor's token in its new cell.
+- `handleAttackTarget` — strike on attacker; hit-shake or miss-flicker on target.
+- `handleAbilityTarget` — hit-shake (damage) or heal-glow on target.
+- `approveProposal` — same strike / hit / heal triggers for proposal execution path.
+- Intent cards — static `className="it-anim-card-in"` on all three card root divs.
+- Victory/defeat banner — static `className="it-anim-banner-in"`.
+
+**New E2E spec**: `e2e/animation.spec.ts` — 15 tests covering keyframe presence in
+injected styles, reduced-motion rule, entrance class wiring on cards and banner,
+and behavioral regression for Move / Attack / End Turn / turn transition.
 
 ---
 
