@@ -436,6 +436,18 @@ export const ENCOUNTER_DEFS: Record<string, EncounterDef> = {
     players: [{ defId: "glassPC",   instanceId: "glassPC1",   x: 2, y: 3 }],
     enemies: [{ defId: "doomEnemy", instanceId: "doomEnemy1", x: 3, y: 3 }],
   },
+  // E2E test encounter — out-of-range coverage for hover preview.
+  // Fighter (Aldric, longbow range 6) at (0,3); Target Dummy at (7,3).
+  // Chebyshev distance = max(7,0) = 7 > range 6 → attack always OUT_OF_RANGE.
+  // trainingYard map: no pillars → LOS is always clear (range, not LOS, is the limiter).
+  quickOutOfRange: {
+    id: "quickOutOfRange",
+    name: "Range Test",
+    mapId: "trainingYard",
+    testOnly: true,
+    players: [{ defId: "fighter", instanceId: "fighter", x: 0, y: 3 }],
+    enemies: [{ defId: "targetDummy", instanceId: "dummy1", x: 7, y: 3 }],
+  },
 };
 
 /**

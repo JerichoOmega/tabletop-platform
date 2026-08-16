@@ -25,7 +25,7 @@ import {
 
 import type { GameState, HealResult, DamageResult } from "@/engine/content";
 import { ENCOUNTER_DEFS, ABILITY_DEFS, buildEncounter, mulberry32, getProductionEncounters } from "@/engine/content";
-import type { AttackResult, ValidationResult } from "@/engine/rules";
+import type { AttackResult, ValidationResult, ValidationCode } from "@/engine/rules";
 import {
   resolveLeadingEnemyTurns, endTurn,
   executeMove, executeAttack, executeAbility,
@@ -58,6 +58,17 @@ interface ProposalState {
   stale:   boolean;
 }
 
+/** Transient UI-only hover state during targeting mode.
+ *  Never written into GameState. Cleared whenever pendingAction changes. */
+type TargetPreview = {
+  targetId: string;
+  valid: boolean;
+  code: ValidationCode;
+  reason?: string;
+  distance?: number;
+  cover?: boolean;
+} | null;
+
 // True when running under Playwright or any other harness that appends ?e2e to
 // the URL.  Test-only encounters are hidden from the picker in normal usage.
 const isE2E = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("e2e");
@@ -81,6 +92,7 @@ export default function IntelligentTabletop() {
   const [proposal, setProposal]       = useState<ProposalState | null>(null);
   const [infoResult, setInfoResult]   = useState<ProposedAction | null>(null);
   const [banner, setBanner]           = useState<string | null>(null);
+  const [targetPreview, setTargetPreview] = useState<TargetPreview>(null);
 
   const currentActorId = gameState.turnOrder[gameState.turnIndex];
   const currentActor   = gameState.combatants[currentActorId];
@@ -103,6 +115,10 @@ export default function IntelligentTabletop() {
       setPendingAction(null);
     }
   }, [turnKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear hover preview whenever targeting mode changes (covers End Turn, mode
+  // button clicks, action execution, and encounter resets — all call setPendingAction).
+  useEffect(() => { setTargetPreview(null); }, [pendingAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived straight from gameState so it is correct regardless of which code
   // path produced that state — including the lazy useState initializer and
@@ -221,6 +237,45 @@ export default function IntelligentTabletop() {
     const next = doEndTurnAndMaybeAI(gameState);
     setPendingAction(null);
     afterPlayerAction(next);
+  }
+
+  /** Short human phrase for a ValidationCode, shown in the hover preview strip. */
+  function previewReasonText(code: ValidationCode, reason?: string): string {
+    switch (code) {
+      case "OUT_OF_RANGE":          return "out of range";
+      case "BLOCKED_LINE_OF_SIGHT": return "line of sight blocked";
+      case "INVALID_TARGET_TYPE":   return "wrong target type";
+      case "TARGET_DEAD":           return "already dead";
+      case "ACTION_USED":           return "action already used";
+      case "NOT_YOUR_TURN":         return "not your turn";
+      default:                      return reason ?? code.toLowerCase().replace(/_/g, " ");
+    }
+  }
+
+  function handleTokenPointerEnter(targetId: string) {
+    if (!isPlayerTurn || !pendingAction || pendingAction === "move") return;
+    if (pendingAction === "attack") {
+      const v = attackPreview[targetId];
+      if (v) {
+        setTargetPreview({ targetId, valid: v.valid, code: v.code, reason: v.reason, distance: v.distance, cover: v.cover });
+      } else {
+        // Hovered token is a PC or dead enemy — not present in attackPreview.
+        const c = gameState.combatants[targetId];
+        const reason = c?.type === "pc" ? "Cannot attack an ally." : "Not a valid attack target.";
+        setTargetPreview({ targetId, valid: false, code: "INVALID_TARGET_TYPE", reason });
+      }
+    } else if (pendingAbilityId) {
+      const v = abilityPreview[targetId];
+      if (v) {
+        setTargetPreview({ targetId, valid: v.valid, code: v.code, reason: v.reason, distance: v.distance, cover: v.cover });
+      } else {
+        setTargetPreview({ targetId, valid: false, code: "TARGET_UNKNOWN", reason: "Not a valid target." });
+      }
+    }
+  }
+
+  function handleTokenPointerLeave() {
+    setTargetPreview(null);
   }
 
   // Both Assisted and Adventure modes funnel through the same interpreter
@@ -522,6 +577,34 @@ export default function IntelligentTabletop() {
                   {pendingAction === "attack" && "↳ Click an enemy token to attack"}
                   {pendingAbilityId && abilityIsHarmful  && `↳ Click an enemy for ${pendingAbility?.name}`}
                   {pendingAbilityId && !abilityIsHarmful && `↳ Click a target for ${pendingAbility?.name}`}
+                  {/* Hover preview detail — visible only while pointer rests on a token */}
+                  {targetPreview && pendingAction !== "move" && (() => {
+                    const tName = gameState.combatants[targetPreview.targetId]?.name ?? "Target";
+                    if (targetPreview.valid) {
+                      const parts: string[] = [tName];
+                      if (targetPreview.distance !== undefined)
+                        parts.push(`${targetPreview.distance} ${targetPreview.distance === 1 ? "tile" : "tiles"}`);
+                      if (targetPreview.cover) parts.push("cover");
+                      return (
+                        <div
+                          data-testid="target-preview"
+                          aria-live="polite"
+                          style={{ marginTop: 3, color: (pendingAction === "attack" || abilityIsHarmful) ? "#e07070" : "#7aacdf" }}
+                        >
+                          ⊕ {parts.join(" · ")}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        data-testid="target-preview"
+                        aria-live="polite"
+                        style={{ marginTop: 3, color: "#c8925a" }}
+                      >
+                        ⊘ {tName}: {previewReasonText(targetPreview.code, targetPreview.reason)}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -600,6 +683,8 @@ export default function IntelligentTabletop() {
                       )}
                       {tok && (
                         <div
+                          onPointerEnter={() => handleTokenPointerEnter(tok.id)}
+                          onPointerLeave={handleTokenPointerLeave}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (mode === "traditional" && pendingAction === "attack" && tok.type === "enemy") {
@@ -613,6 +698,15 @@ export default function IntelligentTabletop() {
                               handleSelectToken(tok.id);
                             }
                           }}
+                          role="button"
+                          title={tok.name}
+                          aria-label={
+                            targetPreview?.targetId === tok.id
+                              ? (targetPreview.valid
+                                  ? `${tok.name}, valid target`
+                                  : `${tok.name}, invalid: ${previewReasonText(targetPreview.code, targetPreview.reason)}`)
+                              : tok.name
+                          }
                           style={{
                             position: "absolute",
                             inset: 4,
@@ -625,19 +719,47 @@ export default function IntelligentTabletop() {
                               : "radial-gradient(circle at 35% 30%, #5a7a3d, #263c1c)",
                             border: tok.id === selectedId ? "2px solid #c9a227" : "2px solid rgba(0,0,0,0.4)",
                             boxShadow:
-                              mode === "traditional" && pendingAction === "attack" && tok.type === "enemy" && attackPreview[tok.id]?.valid
-                                ? "0 0 0 3px rgba(180,50,50,0.8)"          // red — hostile attack
-                                : mode === "traditional" && pendingAbilityId && abilityPreview[tok.id]?.valid
+                              // Hover preview states — hovered token overrides the baseline ring.
+                              targetPreview?.targetId === tok.id && !targetPreview.valid
+                                ? "0 0 0 3px rgba(200,130,40,0.95)"                                    // amber — invalid hover
+                              : targetPreview?.targetId === tok.id && (pendingAction === "attack" || abilityIsHarmful)
+                                ? "0 0 0 4px rgba(220,55,55,1), 0 0 8px rgba(220,55,55,0.4)"           // bright red — hovered valid attack/harmful
+                              : targetPreview?.targetId === tok.id
+                                ? "0 0 0 4px rgba(70,145,220,1), 0 0 8px rgba(70,145,220,0.4)"         // bright blue — hovered valid beneficial
+                              // Baseline valid-target rings (not currently hovered).
+                              : mode === "traditional" && pendingAction === "attack" && tok.type === "enemy" && attackPreview[tok.id]?.valid
+                                ? "0 0 0 3px rgba(180,50,50,0.8)"                                      // red — valid attack target
+                              : mode === "traditional" && pendingAbilityId && abilityPreview[tok.id]?.valid
                                 ? (abilityIsHarmful
-                                    ? "0 0 0 3px rgba(180,50,50,0.8)"      // red — harmful ability (e.g. Fire Bolt)
-                                    : "0 0 0 3px rgba(59,130,200,0.9)")    // blue — beneficial ability (e.g. Healing Touch)
-                                : tok.id === currentActorId
-                                ? "0 0 0 2px rgba(255,240,170,0.3), 0 2px 5px rgba(0,0,0,0.5)"  // warm ring = active turn
-                                : "0 2px 5px rgba(0,0,0,0.5)",
+                                    ? "0 0 0 3px rgba(180,50,50,0.8)"                                  // red — valid harmful ability
+                                    : "0 0 0 3px rgba(59,130,200,0.9)")                                // blue — valid beneficial ability
+                              : tok.id === currentActorId
+                                ? "0 0 0 2px rgba(255,240,170,0.3), 0 2px 5px rgba(0,0,0,0.5)"        // warm ring = active turn
+                              : "0 2px 5px rgba(0,0,0,0.5)",
                             cursor: "pointer",
                           }}
-                          title={tok.name}
                         >
+                          {/* Validity badge — small ✓/✗ marker while pointer rests on token */}
+                          {targetPreview?.targetId === tok.id && (
+                            <div
+                              aria-hidden="true"
+                              style={{
+                                position: "absolute",
+                                top: 0, right: 0,
+                                transform: "translate(35%, -35%)",
+                                width: 11, height: 11,
+                                borderRadius: "50%",
+                                background: targetPreview.valid ? "#4caf50" : "#d9600a",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 7, color: "white", fontWeight: "bold",
+                                boxShadow: "0 1px 4px rgba(0,0,0,0.6)",
+                                pointerEvents: "none",
+                                zIndex: 1,
+                              }}
+                            >
+                              {targetPreview.valid ? "✓" : "✗"}
+                            </div>
+                          )}
                           {/* Resolve visual asset if registered; fall back to icon placeholder. */}
                           {(() => {
                             const asset = resolveAsset(`character.${tok.defId}`);
