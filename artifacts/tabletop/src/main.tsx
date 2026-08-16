@@ -2,8 +2,13 @@ import { createRoot } from 'react-dom/client';
 
 import App from './App';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { registerCanonicalAssets } from '@/assets/visualAssets';
 
 import './index.css';
+
+// Register all 44 canonical visual assets before React renders.
+// The rules engine never calls this — it is UI-layer bootstrap only.
+registerCanonicalAssets();
 
 createRoot(document.getElementById('root')!, {
   // Keeps caught errors off reportError(), which would raise the dev overlay.

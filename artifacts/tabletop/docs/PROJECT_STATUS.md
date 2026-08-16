@@ -1,16 +1,17 @@
 # Intelligent Tabletop — Project Status
 
-_Last updated: Phase 3 specification begun_
+_Last updated: Visual asset library integrated (44 assets)_
 
 ## Baseline (latest committed state)
 
 | Metric | Value |
 |---|---|
-| Commit | `7f35369` — Animation / tactile feedback |
+| Commit | pending — visual asset integration |
 | Unit tests | 93 passing |
-| E2E tests | 148 passing (133 prior + 15 animation) |
+| E2E tests | 148 passing |
 | TypeScript | Clean (0 errors, `--noEmit`) |
 | Build | Vite production build clean |
+| Visual assets | 44 canonical assets registered |
 
 ---
 
@@ -37,6 +38,7 @@ See `docs/ROADMAP.md` for the full phase breakdown and governance rules.
 | 15 | Accessibility — WCAG 2.1 AA | ✅ Done |
 | 16 | Automated game-engine tests | ⬜ Pending |
 | 17 | World-scale viewport (Phase 3) | 📋 Specified — see `docs/WORLD_SCALE_VIEWPORT.md` |
+| 18 | Visual asset library integration | ✅ Done — 44 assets registered, see `docs/VISUAL_ASSET_LIBRARY.md` |
 
 ---
 

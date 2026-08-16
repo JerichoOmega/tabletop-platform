@@ -1,0 +1,507 @@
+We are continuing the Intelligent Tabletop project.
+
+Repository:
+JerichoOmega/tabletop-platform
+
+I am providing a ZIP archive containing the visual assets that were generated and approved during our asset-design process.
+
+ZIP:
+Intelligent-Tabletop-Visual-Assets.zip
+
+Your task is to integrate these visual assets into the repository as the project's canonical visual asset library.
+
+IMPORTANT:
+These are APPROVED visual assets. Do not redesign, regenerate, restyle, upscale, crop, reinterpret, or replace them.
+
+Do not generate new artwork as part of this task.
+
+==================================================
+1. PRESERVE THE EXISTING ARCHITECTURE
+==================================================
+
+The application architecture is:
+
+Content → Rules Engine → Intent → UI
+
+The visual asset system already has:
+
+src/assets/types.ts
+src/assets/registry.ts
+
+The rules engine must remain visual-agnostic.
+
+Do not introduce direct visual-asset imports into the rules engine.
+
+The asset registry should remain the seam between logical asset IDs and concrete visual assets.
+
+==================================================
+2. IMPORT THE ZIP
+==================================================
+
+Extract:
+
+Intelligent-Tabletop-Visual-Assets.zip
+
+into an appropriate repository asset location.
+
+Prefer a structure such as:
+
+src/assets/
+  visual/
+    miniatures/
+    floors/
+    terrain/
+    props/
+    variations/
+
+If the existing project has a better-established production-art directory, use that instead.
+
+Do not duplicate the same images unnecessarily.
+
+First inspect the repository and determine the cleanest location consistent with the existing architecture.
+
+==================================================
+3. DO NOT ASSUME EVERY IMAGE IS A SEPARATE ASSET
+==================================================
+
+Some recovered files may be visual sheets containing multiple related assets or variations.
+
+Do NOT automatically split, crop, or alter those images unless the source file clearly establishes that this is required and can be done without changing the approved artwork.
+
+Preserve the source images exactly whenever possible.
+
+If an image contains multiple approved variations, record that relationship in the asset manifest rather than altering the artwork.
+
+==================================================
+4. CANONICAL ASSET LIST
+==================================================
+
+The current approved visual library is organized into these categories.
+
+------------------------------
+MINIATURES
+------------------------------
+
+Human Fighter
+Human Spellcaster
+Goblin Warrior
+Orc Warrior
+
+------------------------------
+FLOORS
+------------------------------
+
+Cobblestone Classic V1
+Cobblestone Cleaner V1
+Cobblestone Overgrown V1
+Cobblestone Ruined V1
+Dungeon Stone V1
+Large Floor / Room Tile V1
+
+------------------------------
+TERRAIN / ARCHITECTURE
+------------------------------
+
+Full Wall V1
+Broken Wall V1
+Wall Corner V1
+Doorway V1
+Wall End Cap V1
+Pillar V1
+Staircase V1
+Raised Platform V1
+Archway V1
+Stone Bridge V1
+Chasm / Pit V1
+Cliff Edge V1
+Gate / Portcullis V1
+
+------------------------------
+PROPS / ENVIRONMENT
+------------------------------
+
+Barrel V1
+Crate V1
+Chest V1
+Torch V1
+Rocks & Debris V1
+Brazier / Fire Pit V1
+Bookshelf V1
+Bookshelf V2
+Table & Bench V1
+Table & Bench V2
+Weapon Rack V1
+Altar V1
+Lever / Wall Switch V1
+Trapdoor / Floor Hatch V1
+Chest V2
+Banner / Wall Hanging V1
+Workbench / Crafting Table V1
+Anvil V1
+Crates & Supplies V1
+Wall Sconce V1
+Lantern V1
+
+==================================================
+5. SPECIAL APPROVED VERSIONS
+==================================================
+
+These details are important.
+
+LEVER / WALL SWITCH V1
+
+Use the SMALLER approved version.
+
+Do not substitute an earlier larger version.
+
+ANVIL V1
+
+Use the SMALLER approved version.
+
+Do not substitute an earlier larger version.
+
+CRATES & SUPPLIES V1
+
+Use the MORE STYLIZED approved version.
+
+An earlier more realistic version may exist in the recovered material.
+
+Do not accidentally register the rejected version as canonical.
+
+==================================================
+6. APPROVED VARIATION FAMILIES
+==================================================
+
+These variations belong to established asset families.
+
+BOOKSHELF:
+
+Bookshelf V1
+Bookshelf V2
+
+TABLE:
+
+Table & Bench V1
+Table & Bench V2
+
+CHEST:
+
+Chest V1
+Chest V2
+
+BANNER / WALL HANGING:
+
+Banner / Wall Hanging V1
+
+Approved banner variations:
+
+Red / Sun
+Blue / Lion
+Green / Stag
+Black / Skull
+White / Temple
+Purple / Arcane
+Tattered / Worn
+Bloodstained
+
+These are variations of the same physical banner system.
+
+Do not turn them into unrelated physical asset types.
+
+==================================================
+7. WALL FAMILY — CRITICAL
+==================================================
+
+Full Wall V1 is the visual MASTER reference for the entire wall family.
+
+The following assets must visually belong to the exact same modular construction system:
+
+Full Wall V1
+Broken Wall V1
+Wall Corner V1
+Doorway V1
+Wall End Cap V1
+Pillar V1
+Archway V1
+Gate / Portcullis V1
+
+They must preserve:
+
+- Same chunky masonry
+- Same bluish-gray stone
+- Same capstones
+- Same wood reinforcement
+- Same brass/metal bands
+- Same hardware
+- Same proportions
+- Same moss/ground treatment
+- Same tabletop scale
+
+Do not modify these images.
+
+This rule is documentation/governance for future asset work.
+
+==================================================
+8. VISUAL STYLE — CANONICAL
+==================================================
+
+The entire library uses:
+
+- Stylized hand-painted 3D appearance
+- Strong readable silhouettes
+- Slightly exaggerated proportions
+- Chunky tactile geometry
+- Premium fantasy tabletop miniature presentation
+- Bluish-gray stone
+- Dark/weathered wood
+- Restrained brass/bronze hardware
+- Moss, grass, dirt and environmental wear
+- Consistent tabletop scale
+- Consistent base treatment
+- Dramatic but controlled studio lighting
+
+DO NOT shift the collection toward:
+
+- Photorealism
+- Hyper-realistic PBR rendering
+- Real-world product photography
+- Excessive micro-detail
+- Realistic architectural visualization
+
+The stylized miniature appearance is intentional.
+
+==================================================
+9. ASSET REGISTRY
+==================================================
+
+Inspect:
+
+src/assets/types.ts
+src/assets/registry.ts
+
+Determine how the existing AssetDefinition and registry work.
+
+Register the recovered production assets through the existing registry architecture.
+
+Do not hardcode image paths throughout React components.
+
+Use logical asset IDs.
+
+Use a consistent naming scheme such as:
+
+character.human-fighter
+character.human-spellcaster
+character.goblin-warrior
+character.orc-warrior
+
+floor.cobblestone-classic-v1
+floor.cobblestone-cleaner-v1
+floor.cobblestone-overgrown-v1
+floor.cobblestone-ruined-v1
+floor.dungeon-stone-v1
+floor.large-room-tile-v1
+
+terrain.full-wall-v1
+terrain.broken-wall-v1
+terrain.wall-corner-v1
+terrain.doorway-v1
+terrain.wall-end-cap-v1
+terrain.pillar-v1
+terrain.staircase-v1
+terrain.raised-platform-v1
+terrain.archway-v1
+terrain.stone-bridge-v1
+terrain.chasm-pit-v1
+terrain.cliff-edge-v1
+terrain.gate-portcullis-v1
+
+prop.barrel-v1
+prop.crate-v1
+prop.chest-v1
+prop.torch-v1
+prop.rocks-debris-v1
+prop.brazier-fire-pit-v1
+prop.bookshelf-v1
+prop.bookshelf-v2
+prop.table-bench-v1
+prop.table-bench-v2
+prop.weapon-rack-v1
+prop.altar-v1
+prop.lever-wall-switch-v1
+prop.trapdoor-floor-hatch-v1
+prop.chest-v2
+prop.banner-wall-hanging-v1
+prop.workbench-crafting-table-v1
+prop.anvil-v1
+prop.crates-supplies-v1
+prop.wall-sconce-v1
+prop.lantern-v1
+
+If the project already has established logical IDs, preserve them instead of creating duplicates.
+
+==================================================
+10. ASSET MANIFEST
+==================================================
+
+Create a manifest documenting:
+
+- Logical asset ID
+- Display name
+- Category
+- Source image
+- Variant/family relationship
+- Canonical status
+
+For example:
+
+{
+  "id": "prop.anvil-v1",
+  "name": "Anvil V1",
+  "category": "prop",
+  "status": "canonical",
+  "notes": "Smaller approved scale"
+}
+
+Use whatever format best fits the existing project conventions.
+
+==================================================
+11. DO NOT CLAIM MISSING ASSETS EXIST
+==================================================
+
+The ZIP consists of recovered generated artwork.
+
+Inspect its contents carefully.
+
+If a canonical asset from the list does NOT have a corresponding image in the ZIP:
+
+- Do not generate it
+- Do not substitute another asset
+- Do not create a fake placeholder and call it production art
+- Do not silently omit it from documentation
+
+Instead, document it as:
+
+"Approved visual decision — production image not present in recovered archive"
+
+This distinction matters.
+
+==================================================
+12. VISUAL ASSET DOCUMENTATION
+==================================================
+
+Create/update:
+
+docs/VISUAL_ASSET_LIBRARY.md
+
+It should document:
+
+- The canonical visual language
+- The wall-family master rule
+- Every approved asset by name
+- Asset categories
+- Variation families
+- Special approved scale/style revisions
+- Current production checkpoint
+- Runtime registry boundary
+- Approval workflow
+
+The current production checkpoint is:
+
+Lantern V1 — LOCKED
+
+The next proposed asset is:
+
+Notice Board / Quest Board V1
+
+Do NOT create Notice Board / Quest Board V1 during this task.
+
+==================================================
+13. PROJECT STATUS
+==================================================
+
+Update:
+
+docs/PROJECT_STATUS.md
+
+Add a reference to:
+
+docs/VISUAL_ASSET_LIBRARY.md
+
+Record that the visual asset library has progressed through Lantern V1.
+
+Do not overwrite unrelated project-status information.
+
+Do not claim that every approved visual asset is necessarily present in the ZIP.
+
+Distinguish between:
+
+1. Approved visual decision
+2. Recovered image file
+3. Runtime-registered production asset
+
+Those are three different states.
+
+==================================================
+14. APPLICATION INTEGRATION
+==================================================
+
+If the existing UI can safely display the newly registered artwork without changing game behavior, wire the assets into the existing asset registry/rendering seam.
+
+Do not redesign the UI.
+
+Do not modify combat rules.
+
+Do not modify the intent parser.
+
+Do not modify game mechanics.
+
+Do not add new gameplay systems.
+
+This task is primarily:
+
+VISUAL ASSET IMPORT + REGISTRY INTEGRATION + DOCUMENTATION
+
+==================================================
+15. VALIDATION
+==================================================
+
+After implementation:
+
+1. Verify all recovered image files are present.
+2. Verify there are no accidental duplicate assets.
+3. Verify the canonical naming scheme.
+4. Verify the asset registry resolves the imported assets.
+5. Verify missing production files are clearly documented.
+6. Verify the smaller Anvil V1 is used.
+7. Verify the smaller Lever / Wall Switch V1 is used.
+8. Verify the stylized Crates & Supplies V1 is used.
+9. Verify the banner variation relationships.
+10. Verify the wall-family documentation.
+11. Run TypeScript checks.
+12. Run Vitest.
+13. Run Playwright if the visual integration affects E2E behavior.
+14. Confirm existing gameplay behavior has not changed.
+
+==================================================
+16. GIT
+==================================================
+
+Commit the completed work.
+
+Suggested commit message:
+
+assets: import canonical tabletop visual library
+
+Report:
+
+- Files added
+- Files modified
+- Number of recovered image files
+- Number of assets registered
+- Any approved assets whose image files were missing
+- Tests/checks performed
+- Commit hash
+
+Do not generate any new visual assets during this task.
+
+The purpose of this task is to bring the already-approved visual work into the repository faithfully.
