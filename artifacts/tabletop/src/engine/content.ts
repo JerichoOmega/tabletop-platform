@@ -274,6 +274,17 @@ export const COMBATANT_DEFS: Record<string, CombatantDef> = {
     weaponId: "warAxe",
     visualAssetId: "character.orc",
   },
+  // E2E test fixture — Wizard clone with very high dexMod so she always wins
+  // initiative against any dexMod -10 enemy fixture. Identical stats to the
+  // canonical wizard def except dexMod 15 (min roll 16 vs max dummy roll 10).
+  // Hidden from the encounter picker; only appears when ?e2e is in the URL.
+  testWizard: {
+    id: "testWizard", name: "Sable", cls: "Wizard", type: "pc",
+    icon: "wand", maxHp: 14, ac: 12, atkMod: 4, dexMod: 15, moveMax: 4,
+    weaponId: "forceBolt",
+    abilities: ["healingTouch", "fireBolt"],
+    visualAssetId: "character.wizard",
+  },
   // E2E test fixture — guaranteed one-hit kill (HP 1, AC 1, dexMod -10 so
   // it always loses initiative and never reaches the fighter before dying).
   // Only visible in-game when the ?e2e URL parameter is present.
@@ -394,6 +405,22 @@ export const ENCOUNTER_DEFS: Record<string, EncounterDef> = {
     testOnly: true,
     players: [{ defId: "fighter", instanceId: "fighter", x: 1, y: 3 }],
     enemies: [{ defId: "targetDummy", instanceId: "dummy1", x: 3, y: 3 }],
+  },
+  // E2E test encounter — ability targeting coverage.
+  // testWizard (dexMod 15) always wins initiative vs targetDummy (dexMod -10):
+  //   min wizard total 16 > max dummy total 10 → fully deterministic.
+  // Layout: wizard at (1,3), dummy at (4,3).
+  //   Fire Bolt range 4, chebyshev distance 3 → within range.
+  //   trainingYard has no pillars → LOS always clear.
+  //   Healing Touch range 1; wizard can target herself at distance 0 ≤ 1.
+  // Hidden from the normal encounter picker; only shown when ?e2e is in the URL.
+  quickAbility: {
+    id: "quickAbility",
+    name: "Ability Test",
+    mapId: "trainingYard",
+    testOnly: true,
+    players: [{ defId: "testWizard", instanceId: "wizard", x: 1, y: 3 }],
+    enemies: [{ defId: "targetDummy", instanceId: "dummy1", x: 4, y: 3 }],
   },
   // E2E test encounter — deterministic one-round defeat: the Doom Wraith wins
   // initiative (dexMod 10), attacks the adjacent Glass Squire (atkMod 20 vs

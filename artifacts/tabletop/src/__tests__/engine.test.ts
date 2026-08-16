@@ -590,6 +590,48 @@ describe("endTurn", () => {
     expect(state.turnIndex).toBe(before);
   });
 
+  // ── Turn state isolation (interaction loop regression) ────────────────────
+  // These tests guarantee that per-turn bookkeeping is fully reset for each new
+  // actor. A combatant's mid-turn state must never leak into the next actor's turn.
+
+  it("new actor's actionUsed is false even when the previous actor consumed their action", () => {
+    // Simulate the previous actor having used their action before endTurn.
+    const state = freshCrypt(1);
+    const currentId = state.turnOrder[state.turnIndex];
+    const mutated = cloneState(state);
+    mutated.combatants[currentId].actionUsed = true;
+
+    const next    = endTurn(mutated);
+    const newId   = next.turnOrder[next.turnIndex];
+    expect(next.combatants[newId].actionUsed).toBe(false);
+  });
+
+  it("new actor's moveRemaining equals moveMax even when the previous actor used all movement", () => {
+    const state = freshCrypt(1);
+    const currentId = state.turnOrder[state.turnIndex];
+    const mutated = cloneState(state);
+    mutated.combatants[currentId].moveRemaining = 0;   // previous actor moved as far as possible
+
+    const next  = endTurn(mutated);
+    const newId = next.turnOrder[next.turnIndex];
+    expect(next.combatants[newId].moveRemaining).toBe(
+      next.combatants[newId].moveMax
+    );
+  });
+
+  it("endTurn after both move and action are consumed does not affect the next actor", () => {
+    const state = freshCrypt(42);
+    const currentId = state.turnOrder[state.turnIndex];
+    const mutated = cloneState(state);
+    mutated.combatants[currentId].actionUsed   = true;
+    mutated.combatants[currentId].moveRemaining = 0;
+
+    const next  = endTurn(mutated);
+    const newId = next.turnOrder[next.turnIndex];
+    expect(next.combatants[newId].actionUsed).toBe(false);
+    expect(next.combatants[newId].moveRemaining).toBe(next.combatants[newId].moveMax);
+  });
+
   it("increments round when cycling back to first in order", () => {
     let state = freshCrypt(1);
     const order = state.turnOrder.length;
