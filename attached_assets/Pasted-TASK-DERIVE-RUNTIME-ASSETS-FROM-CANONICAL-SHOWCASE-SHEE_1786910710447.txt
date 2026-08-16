@@ -1,0 +1,425 @@
+TASK: DERIVE RUNTIME ASSETS FROM CANONICAL SHOWCASE SHEETS
+
+Repository:
+JerichoOmega/tabletop-platform
+
+The canonical visual asset library has already been successfully integrated.
+
+Relevant commits:
+
+b554e68 — assets: integrate canonical tabletop visual library (44 assets)
+54cfd4d — docs: update PROJECT_STATUS.md baseline
+
+DO NOT redo the visual-library integration.
+
+DO NOT regenerate any artwork.
+
+DO NOT replace or modify the canonical source images.
+
+This task is ONLY about creating non-destructive DERIVED runtime assets from approved composite/showcase artwork where the application needs individual assets.
+
+==================================================
+1. CORE RULE
+==================================================
+
+The existing canonical artwork is the source of truth.
+
+Canonical source files must remain untouched.
+
+We are creating derived runtime assets from those sources.
+
+The relationship must be:
+
+CANONICAL SOURCE
+        ↓
+DERIVED RUNTIME ASSET
+        ↓
+ASSET REGISTRY
+        ↓
+APPLICATION
+
+Never:
+
+DERIVED ASSET
+        ↓
+replace canonical source
+
+The original showcase sheets must remain available in the repository.
+
+==================================================
+2. FIRST INSPECT THE EXISTING IMPLEMENTATION
+==================================================
+
+Inspect:
+
+src/assets/types.ts
+src/assets/registry.ts
+src/assets/visualAssets.ts
+src/main.tsx
+
+Also inspect the existing renderer/components that consume:
+
+- character assets
+- terrain/floor assets
+- props
+
+Determine exactly where individual visual assets are required.
+
+Do not perform a broad architectural rewrite.
+
+==================================================
+3. MINIATURE DERIVATION
+==================================================
+
+The canonical miniature source currently contains the four approved miniature designs in a composite showcase:
+
+- Human Fighter
+- Human Spellcaster
+- Goblin Warrior
+- Orc Warrior
+
+Create individual derived runtime assets for those four miniatures.
+
+Desired logical IDs:
+
+character.human-fighter
+character.human-spellcaster
+character.goblin-warrior
+character.orc-warrior
+
+Desired derived files:
+
+public/assets/visual/miniatures/human-fighter.png
+public/assets/visual/miniatures/human-spellcaster.png
+public/assets/visual/miniatures/goblin-warrior.png
+public/assets/visual/miniatures/orc-warrior.png
+
+IMPORTANT:
+
+Do not redraw the characters.
+
+Do not regenerate them.
+
+Do not alter their appearance.
+
+Do not change their proportions.
+
+Do not change their colors.
+
+Do not add effects.
+
+Do not remove approved visual details.
+
+Use the existing canonical showcase image as the source.
+
+Crop only the appropriate individual character from the approved source sheet.
+
+Preserve the highest useful resolution.
+
+Use transparent backgrounds if the source/pipeline allows this without altering the actual character artwork.
+
+If transparency cannot be safely derived, preserve the original background and document the limitation rather than inventing a solution.
+
+==================================================
+4. FLOOR DERIVATION
+==================================================
+
+The canonical cobblestone source currently contains the approved floor variants in a composite showcase.
+
+Create individual derived runtime assets for:
+
+- Cobblestone Classic V1
+- Cobblestone Cleaner V1
+- Cobblestone Overgrown V1
+- Cobblestone Ruined V1
+- Dungeon Stone V1
+
+Desired logical IDs:
+
+floor.cobblestone-classic-v1
+floor.cobblestone-cleaner-v1
+floor.cobblestone-overgrown-v1
+floor.cobblestone-ruined-v1
+floor.dungeon-stone-v1
+
+Desired derived files:
+
+public/assets/visual/floors/cobblestone-classic-v1.png
+public/assets/visual/floors/cobblestone-cleaner-v1.png
+public/assets/visual/floors/cobblestone-overgrown-v1.png
+public/assets/visual/floors/cobblestone-ruined-v1.png
+public/assets/visual/floors/dungeon-stone-v1.png
+
+IMPORTANT:
+
+These are DERIVED runtime assets.
+
+The original:
+
+public/assets/visual/floors/cobblestone-floor-variant-showcase.png
+
+must remain untouched.
+
+Do not regenerate any floor.
+
+Do not repaint or alter the floor artwork.
+
+Do not introduce new textures.
+
+Only isolate the approved existing variants from the canonical source sheet.
+
+==================================================
+5. LARGE FLOOR / ROOM TILE
+==================================================
+
+Large Floor / Room Tile V1 already has its own source image.
+
+Do not create another derived version unless the current renderer requires a specific runtime format.
+
+First determine whether:
+
+floor.large-room-tile-v1
+
+already resolves correctly.
+
+If it does, leave it alone.
+
+==================================================
+6. IMAGE PROCESSING RULES
+==================================================
+
+Derived assets must be created deterministically from the canonical source.
+
+Do NOT use an AI image generator.
+
+Do NOT use generative fill.
+
+Do NOT hallucinate missing pixels.
+
+Do NOT change the artwork.
+
+Use ordinary image-processing/cropping tools available in the repository environment.
+
+If a crop requires a small amount of transparent-background cleanup, keep it strictly mechanical and non-generative.
+
+If there is ambiguity about where an asset begins/ends, STOP and report the ambiguity instead of guessing.
+
+==================================================
+7. REGISTRY
+==================================================
+
+Update:
+
+src/assets/visualAssets.ts
+
+so the individual logical IDs resolve to their new derived runtime files.
+
+The canonical source sheets should remain available as reference assets.
+
+Do not delete their existing registrations unless the registry architecture makes the derived asset the preferred runtime representation.
+
+Existing application IDs must continue to work.
+
+For example:
+
+character.fighter
+
+may continue resolving to the appropriate canonical/derived Human Fighter asset if that is already established by the application.
+
+Do not break compatibility with:
+
+character.fighter
+character.wizard
+character.goblin
+character.orc
+
+If existing IDs currently point to the composite showcase, migrate them carefully to the appropriate derived asset while preserving their behavior.
+
+==================================================
+8. SOURCE / DERIVED RELATIONSHIP
+==================================================
+
+Document the relationship.
+
+For example:
+
+character.human-fighter
+source:
+fantasy-miniature-showcase.png
+
+derived:
+human-fighter.png
+
+Do the same for every derived floor and miniature.
+
+Update:
+
+docs/VISUAL_ASSET_LIBRARY.md
+
+Add a section:
+
+## Derived Runtime Assets
+
+Explain:
+
+- canonical source remains untouched
+- derived runtime files are deterministic crops
+- derived assets are not new artistic designs
+- source/derived relationships are documented
+- future regeneration must always come from the canonical source
+
+==================================================
+9. DO NOT DERIVE UNNECESSARY ASSETS
+==================================================
+
+Do NOT create derived versions of every image simply because it is possible.
+
+Only derive assets where the current application actually benefits from an individual runtime asset.
+
+The immediate required set is:
+
+MINIATURES:
+- Human Fighter
+- Human Spellcaster
+- Goblin Warrior
+- Orc Warrior
+
+FLOORS:
+- Cobblestone Classic V1
+- Cobblestone Cleaner V1
+- Cobblestone Overgrown V1
+- Cobblestone Ruined V1
+- Dungeon Stone V1
+
+Everything else should continue using its existing individual source file unless the renderer demonstrates a specific need.
+
+==================================================
+10. VISUAL VALIDATION
+==================================================
+
+After creating the derived assets:
+
+Verify each miniature individually.
+
+Verify:
+
+- entire character is present
+- no accidental cropping of body/equipment
+- no unwanted neighboring character
+- no significant loss of detail
+- consistent scale
+- appropriate background/transparency
+
+Verify each floor individually.
+
+Verify:
+
+- complete intended floor area
+- no neighboring variant accidentally included
+- no missing edges
+- no distorted geometry
+- no altered colors/materials
+- consistent resolution
+
+If possible, create a temporary validation sheet showing:
+
+Human Fighter
+Human Spellcaster
+Goblin Warrior
+Orc Warrior
+
+and another showing:
+
+Cobblestone Classic
+Cobblestone Cleaner
+Cobblestone Overgrown
+Cobblestone Ruined
+Dungeon Stone
+
+This validation sheet is for development verification only.
+
+Do not add it as a canonical production asset unless useful.
+
+==================================================
+11. TESTS
+==================================================
+
+Run:
+
+- TypeScript --noEmit
+- Vitest
+- production build
+- relevant Playwright/E2E tests if applicable
+
+Additionally verify:
+
+- every new registry ID resolves
+- every referenced image exists
+- no broken image URLs
+- no existing asset IDs were broken
+- no canonical source files were modified
+
+==================================================
+12. GIT SAFETY
+==================================================
+
+Before committing, inspect:
+
+git status
+git diff
+git diff --stat
+
+Confirm that:
+
+- canonical source images are unchanged
+- only intended derived assets were added
+- registry changes are limited to the runtime derivation
+- documentation changes are limited to the derived-asset documentation
+
+Do NOT push to GitHub unless explicitly instructed.
+
+Create a commit:
+
+assets: add derived runtime miniature and floor assets
+
+==================================================
+13. FINAL REPORT
+==================================================
+
+Report:
+
+### Derived assets created
+List every new file.
+
+### Source relationships
+For every derived asset, identify its canonical source.
+
+### Registry changes
+List every logical ID changed/added.
+
+### Validation
+Report the image-validation results.
+
+### Tests
+Report TypeScript, Vitest, build, and E2E results.
+
+### Canonical integrity
+Explicitly confirm that the original showcase/source files were not modified.
+
+### Issues
+If any crop or source image was ambiguous, DO NOT silently guess. Report it.
+
+==================================================
+FINAL RULE
+
+The canonical artwork is LOCKED.
+
+We are not creating new art.
+
+We are simply turning approved composite source sheets into individually addressable runtime assets where the application requires them.
+
+Preserve the originals forever.
+
+Derived assets can be regenerated from the originals if necessary.
+
+The canonical source always wins.
