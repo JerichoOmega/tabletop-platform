@@ -1,0 +1,369 @@
+TASK: SYNCHRONIZE PROJECT DOCUMENTATION BEFORE PHASE 3 IMPLEMENTATION
+
+Repository:
+JerichoOmega/tabletop-platform
+
+IMPORTANT:
+This task is DOCUMENTATION SYNCHRONIZATION ONLY.
+
+DO NOT implement Phase 3.
+DO NOT modify gameplay logic.
+DO NOT modify the rules engine.
+DO NOT modify viewport code.
+DO NOT modify rendering architecture.
+DO NOT modify UI behavior.
+DO NOT generate or modify visual assets.
+DO NOT refactor source code.
+DO NOT introduce WorldState, WorldCoord, chunking, streaming, or viewport implementation.
+
+The purpose of this task is to make the repository documentation accurately reflect the ACTUAL current state of main before Phase 3 implementation begins.
+
+==================================================
+1. VERIFY CURRENT REPOSITORY STATE
+==================================================
+
+Inspect the actual repository at the current main HEAD.
+
+The current expected HEAD is:
+
+856ea403 — "Attach image and table documentation files"
+
+Do not assume this is still the HEAD. Verify it first.
+
+Review the relevant recent commits and current files, especially:
+
+- docs/ROADMAP.md
+- artifacts/tabletop/docs/PROJECT_STATUS.md
+- artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md
+- artifacts/tabletop/docs/VISUAL_ASSET_LIBRARY.md
+- artifacts/tabletop/docs/CI.md, if present
+- .github/workflows/ci.yml
+- current test/build status
+- current visual asset registration/state
+
+Use the actual repository state as the source of truth.
+
+==================================================
+2. UPDATE PROJECT_STATUS.md
+==================================================
+
+Update:
+
+artifacts/tabletop/docs/PROJECT_STATUS.md
+
+so that its "latest committed state" accurately reflects the current main HEAD.
+
+The current expected latest commit is:
+
+856ea403
+
+If verification shows a newer commit exists, use the actual current HEAD instead.
+
+The document must accurately distinguish:
+
+- completed implementation
+- completed documentation/specification
+- planned future implementation
+
+Do not claim that Phase 3 has been implemented.
+
+Phase 3 must remain:
+
+SPECIFICATION COMPLETE — IMPLEMENTATION NOT STARTED
+
+The document should make clear that the World Scale & Fixed Tabletop Viewport system exists as a technical specification only.
+
+==================================================
+3. CORRECT PHASE 2 STATUS
+==================================================
+
+Update docs/ROADMAP.md.
+
+Phase 2 — Core Tabletop UX is now COMPLETE.
+
+Change the Phase 2 status from:
+
+🔄 Current
+
+to:
+
+✅ Complete
+
+The completed Phase 2 work includes:
+
+- Hover / Target Preview
+- Targeting UX refinements
+- Tablet-first responsive layout
+- Keyboard navigation / accessibility work
+- WCAG 2.1 AA accessibility
+- Animation / tactile feedback
+
+Use the actual repository evidence when describing completion.
+
+Do not reopen or redesign completed Phase 2 architecture.
+
+==================================================
+4. CORRECT PHASE 3 STATUS
+==================================================
+
+Update docs/ROADMAP.md so Phase 3 accurately states:
+
+Phase 3 — World Representation
+SPECIFICATION COMPLETE / IMPLEMENTATION NEXT
+
+The specification exists.
+
+Implementation has NOT started.
+
+The canonical architectural principle remains:
+
+"The Table Is Fixed. The World Is Not."
+
+Preserve the existing Phase 3 architectural decisions.
+
+Do not rewrite or weaken the specification.
+
+Do not introduce implementation code during this task.
+
+==================================================
+5. FIX DOCUMENTATION PATH REFERENCES
+==================================================
+
+There is currently a path inconsistency.
+
+The World Scale specification actually exists at:
+
+artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md
+
+Ensure documentation references point to the actual repository location.
+
+Do not move the specification file unless there is a compelling existing repository convention that requires it.
+
+Prefer correcting references rather than restructuring directories.
+
+Check for references in:
+
+- docs/ROADMAP.md
+- artifacts/tabletop/docs/PROJECT_STATUS.md
+- other project documentation
+
+Fix stale references such as:
+
+docs/WORLD_SCALE_VIEWPORT.md
+
+when they incorrectly imply that file exists at repository root-level docs.
+
+==================================================
+6. SYNCHRONIZE VISUAL ASSET COUNT
+==================================================
+
+Review the actual canonical visual asset state.
+
+The repository currently contains:
+
+44 production visual assets from the canonical production sequence
+
+PLUS:
+
+1 foundational environment asset:
+
+Grand Gaming Table V1
+
+Therefore documentation must not ambiguously report the project as simultaneously having "44 assets" and "45 assets."
+
+Use terminology that clearly distinguishes:
+
+- 44 canonical production assets
+- 1 foundational environment asset
+- 45 total canonical visual assets
+
+If the repository's actual current asset count differs, verify it and use the actual count.
+
+Do not change any asset files.
+
+Do not regenerate assets.
+
+Do not rename assets.
+
+Do not modify the approved artwork.
+
+The Grand Gaming Table V1 remains a foundational environment/tabletop asset, not an ordinary prop.
+
+==================================================
+7. PRESERVE THE CANONICAL GRAND GAMING TABLE
+==================================================
+
+The following asset is canonical:
+
+TABLETOP — GRAND GAMING TABLE V1
+
+Its approved visual reference and documentation are authoritative.
+
+Do not:
+
+- regenerate it
+- redesign it
+- reinterpret it
+- modify its artwork
+- create a replacement
+- change its canonical identity
+
+Only documentation references may be corrected during this task.
+
+==================================================
+8. VERIFY CI DOCUMENTATION
+==================================================
+
+The CI workflow now exists at:
+
+.github/workflows/ci.yml
+
+It is intended to provide the quality gate:
+
+1. install dependencies
+2. typecheck
+3. unit tests
+4. production build
+5. E2E tests
+
+Verify the actual workflow rather than assuming these details.
+
+Do not modify the CI workflow during this task unless a documentation reference is demonstrably incorrect.
+
+The current CI run associated with the latest commit should be checked if possible.
+
+Report whether it is:
+
+- passing
+- failing
+- still running
+- unavailable
+
+Do not falsely claim that CI passed if it has not completed.
+
+==================================================
+9. DO NOT CHANGE THE WORLD SCALE SPECIFICATION
+==================================================
+
+Do not rewrite the architecture in:
+
+artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md
+
+The existing specification is already the canonical Phase 3 design.
+
+Preserve the major architectural decisions, including:
+
+- authoritative world coordinates
+- viewport state as presentation state
+- chunk coordinates as derived/cache concepts
+- persistent entity identity
+- separation of WorldState and encounter GameState
+- exploration mode vs tactical mode
+- tactical viewport stabilization
+- large environments
+- long corridors
+- world streaming
+- world-coordinate persistence
+- renderer separation
+- AI DM separation from rendering
+- rules-engine authority
+
+Only correct references to the document if necessary.
+
+==================================================
+10. DOCUMENTATION GOVERNANCE
+==================================================
+
+The documentation must clearly communicate:
+
+PHASE 2:
+COMPLETE
+
+PHASE 3:
+SPECIFICATION COMPLETE
+IMPLEMENTATION NOT STARTED
+
+The repository is now at the transition point between completed tabletop UX work and the beginning of World Representation implementation.
+
+Do not allow documentation to imply that Phase 3 code already exists.
+
+==================================================
+11. RUN VERIFICATION
+==================================================
+
+After documentation changes:
+
+Run the existing repository quality checks that are practical and relevant.
+
+At minimum verify:
+
+- TypeScript remains clean
+- unit tests remain passing
+- production build remains clean
+
+If practical, run the E2E suite as well.
+
+Documentation-only changes should not introduce regressions.
+
+Report the actual results.
+
+Do not alter tests merely to make them pass.
+
+==================================================
+12. FINAL REPORT
+==================================================
+
+When finished, provide a concise but complete report containing:
+
+1. Files changed
+2. Documentation corrections made
+3. Confirmed Phase 2 status
+4. Confirmed Phase 3 status
+5. Confirmed World Scale specification location
+6. Confirmed visual asset count
+7. CI status
+8. TypeScript result
+9. Unit test result
+10. E2E result
+11. Build result
+12. Commit SHA
+
+The final report must explicitly state:
+
+"Phase 3 implementation was NOT performed."
+
+==================================================
+13. COMMIT REQUIREMENT
+==================================================
+
+Commit the documentation synchronization changes.
+
+Use a clear commit message such as:
+
+docs: synchronize project status before phase 3
+
+Do not include unrelated changes.
+
+Do not begin Phase 3 implementation in this commit.
+
+==================================================
+FINAL CONSTRAINT
+==================================================
+
+This is a CLEANUP / SYNCHRONIZATION PASS.
+
+The desired result is:
+
+CURRENT IMPLEMENTATION
+        ↓
+Phase 2 UX COMPLETE
+        ↓
+DOCUMENTATION ACCURATELY SYNCHRONIZED
+        ↓
+CI / TESTS VERIFIED
+        ↓
+READY FOR PHASE 3
+        ↓
+STOP
+
+Do not proceed beyond that final "READY FOR PHASE 3" state.
