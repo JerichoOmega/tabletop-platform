@@ -1,0 +1,109 @@
+Continue the Intelligent Tabletop roadmap from the current repository state.
+
+Your current task is the ACCESSIBILITY PASS.
+
+Before making any changes, inspect the current repository because accessibility work may already be partially implemented. Do not duplicate existing work.
+
+Canonical roadmap:
+docs/ROADMAP.md
+
+Current canonical product direction:
+"The Table Is Fixed. The World Is Not."
+
+Do NOT implement World Scale, viewport streaming, exploration, or any Phase 3 work yet.
+
+For this task, finish and verify accessibility for the CURRENT tabletop experience.
+
+Focus on:
+
+- keyboard navigation
+- visible :focus-visible states
+- accessible board/combatant tokens
+- accessible active-actor/ACTING state
+- accessible Move / Attack / End Turn / ability controls
+- accessible disabled-action reasons
+- accessible targeting states
+- accessible target-preview information
+- non-color-only communication
+- Proposal / Query / Inspect accessibility
+- Assisted-mode input/accessibility
+- sensible focus behavior
+- touch + keyboard compatibility
+- prefers-reduced-motion support where appropriate
+
+Preserve all existing behavior from the current tabletop:
+
+- desktop layout
+- tablet landscape
+- tablet portrait
+- targeting
+- target preview
+- active actor
+- abilities
+- intent cards
+- assisted/traditional modes
+- asset registry
+- authoritative engine validation
+
+IMPORTANT ARCHITECTURAL RULE:
+
+Accessibility must remain presentation/interaction infrastructure.
+
+Do not put accessibility state into GameState.
+
+Do not move validation into the UI.
+
+Do not modify combat rules.
+
+Do not create a second targeting/validation system.
+
+Do not redesign the tabletop.
+
+Do not add new gameplay mechanics.
+
+Do not implement the World Scale / Fixed Tabletop system.
+
+TESTING
+
+First inspect the current test suite and determine what accessibility coverage already exists.
+
+Add only the missing regression coverage.
+
+Use semantic Playwright assertions where practical:
+- getByRole
+- getByLabel
+- getByText
+
+Do not weaken existing tests.
+
+Run the complete current verification suite:
+
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
+
+Report the ACTUAL test counts from the repository rather than assuming the previous 93/133 baseline.
+
+If accessibility work was already completed before this task, do not redo it. Instead, audit it, identify what remains, and finish only the missing pieces.
+
+Update docs/PROJECT_STATUS.md only if necessary to accurately reflect the completed accessibility milestone.
+
+Do not rewrite docs/ROADMAP.md.
+
+When complete:
+
+1. Report what accessibility work already existed.
+2. Report what you changed.
+3. List files changed.
+4. Report tests added/modified.
+5. Report exact typecheck result.
+6. Report exact unit-test result.
+7. Report exact E2E result.
+8. Report build result.
+9. Report any remaining accessibility limitations.
+10. Commit the work and provide the commit hash.
+
+STOP after the accessibility pass.
+
+Do not automatically begin animation, World Scale, or any other roadmap phase.
