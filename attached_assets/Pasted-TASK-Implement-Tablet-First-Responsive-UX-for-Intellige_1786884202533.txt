@@ -1,0 +1,351 @@
+TASK: Implement Tablet-First Responsive UX for Intelligent Tabletop
+
+Repository:
+JerichoOmega/tabletop-platform
+
+CURRENT CANONICAL BASELINE
+
+The current main branch contains:
+
+- 1c825d3 — Asset registry architecture
+- 9e489d5 — Gameplay interaction regression coverage
+- 5508399 — Engine/type-safety hardening
+- 8e966cf — Hover / Target Preview
+
+Current verified baseline from the latest implementation:
+- 93 unit tests passing
+- 69 E2E tests passing
+- TypeScript clean
+- Production build clean
+
+The canonical roadmap now establishes:
+
+"The Table Is Fixed. The World Is Not."
+
+The World Scale / Tabletop Viewport system is a future architectural phase. Do NOT implement it in this task.
+
+OBJECTIVE
+
+Make the existing Intelligent Tabletop experience work properly on tablet-sized screens, with particular attention to landscape tablet use.
+
+This is a RESPONSIVE UX task.
+
+The existing desktop tabletop interaction model is already established and should be preserved.
+
+Do not redesign the tabletop from scratch.
+
+Do not change gameplay rules.
+
+Do not change the action model.
+
+Do not change targeting semantics.
+
+Do not change the asset architecture.
+
+Do not implement the World Scale / Viewport system.
+
+PRIMARY TARGET
+
+Prioritize:
+
+1. Tablet landscape
+2. Tablet portrait
+3. Existing desktop layout preservation
+
+Phone-specific optimization can be addressed later unless the existing layout requires a small change to prevent obvious breakage.
+
+DESIGN PRINCIPLE
+
+The tabletop should feel like a physical game surface occupying the dominant portion of the screen.
+
+On a tablet:
+
+- The board should remain the primary visual element.
+- Action controls should remain immediately accessible.
+- Character/target information should remain readable.
+- The player should not need to continuously scroll the page to operate the game.
+- Touch targets must be comfortably tappable.
+- The board must not become so small that tactical positioning becomes difficult.
+
+LAYOUT REQUIREMENTS
+
+Inspect the current IntelligentTabletop.tsx and existing styling before changing anything.
+
+Determine the current layout structure rather than assuming it.
+
+Implement responsive behavior using the project's existing styling conventions.
+
+TABLETOP / BOARD
+
+On tablet landscape:
+
+- Give the board the majority of available horizontal space.
+- Preserve board aspect ratio.
+- Prevent the board from being unintentionally cropped.
+- Keep tokens readable.
+- Preserve existing tile coordinates and interaction behavior.
+- Do not change the logical grid dimensions.
+- Do not alter game state based on viewport size.
+
+On tablet portrait:
+
+- Adapt the layout gracefully.
+- Prioritize the board while keeping essential controls accessible.
+- Panels may stack or reposition if necessary.
+- Avoid forcing the entire desktop layout into a narrow width.
+
+ACTION BAR
+
+Preserve the existing two-tier action bar:
+
+Row 1:
+[Move] [Attack] [End Turn]
+
+Row 2:
+Abilities such as [Healing Touch] [Fire Bolt]
+
+Requirements:
+
+- End Turn remains in the primary row.
+- Buttons remain large enough for touch.
+- Disabled actions remain visible.
+- Existing disabled opacity and tooltip behavior must not be removed.
+- The ability row must wrap cleanly.
+- The action bar must not obscure the board unnecessarily.
+- Targeting status text must remain readable.
+
+TARGETING
+
+All existing targeting behavior must remain unchanged.
+
+Preserve:
+
+- Move → green
+- Hostile targeting → red
+- Beneficial targeting → blue
+- Invalid target → appropriate invalid state
+- Active actor → ACTING badge
+- Target preview from commit 8e966cf
+- Explicit status text accompanying color
+
+On touch devices:
+
+- Targeting must remain understandable without hover.
+- Existing click/tap behavior must remain functional.
+- Do not require hover to understand whether a target is valid.
+- The target-preview functionality introduced in 8e966cf must not regress.
+
+PANELS
+
+Review character, party, enemy, proposal, query, and inspect panels.
+
+On tablet:
+
+- They must remain readable.
+- They must not permanently consume excessive board space.
+- They may reposition, collapse, or stack where appropriate.
+- Do not remove information merely to make the layout fit.
+- Proposal/query/inspect semantic distinctions must remain unchanged.
+
+The existing visual hierarchy should remain:
+
+- Proposal → warm/amber/action-oriented
+- Query → cool/blue/information-oriented
+- Inspect → neutral
+
+TOUCH UX
+
+Review all primary interactive elements for touch suitability:
+
+- action buttons
+- ability buttons
+- board tiles
+- combatant tokens
+- proposal approval
+- proposal cancellation
+- query dismissal
+- inspect dismissal
+- End Turn
+
+Do not make controls unnecessarily huge.
+
+Aim for comfortable tablet interaction while preserving information density.
+
+IMPORTANT:
+
+Do not introduce gesture navigation or camera panning in this task.
+
+The future World Scale / Viewport system will define world movement behavior separately.
+
+PAGE BEHAVIOR
+
+The tabletop should behave like an application surface rather than a long scrolling webpage.
+
+Where appropriate:
+
+- use available viewport height
+- prevent accidental document scrolling during gameplay
+- allow intentional panel/content scrolling where necessary
+- preserve access to all required controls
+
+Do not make the entire page `overflow: hidden` if that would prevent legitimate panel scrolling or accessibility behavior.
+
+ACCESSIBILITY
+
+Do a basic responsive accessibility pass while making these changes:
+
+- preserve semantic buttons
+- preserve aria-labels
+- preserve keyboard accessibility
+- ensure focus-visible states remain usable
+- ensure text remains readable
+- do not rely exclusively on color
+- ensure touch controls remain understandable
+
+This is not the full accessibility phase.
+
+Do not attempt a comprehensive WCAG audit in this task.
+
+ARCHITECTURAL CONSTRAINTS
+
+The responsive layer must remain presentation-only.
+
+Do NOT modify authoritative GameState behavior simply because the viewport changed.
+
+Do NOT introduce viewport coordinates into GameState.
+
+Do NOT implement world scrolling.
+
+Do NOT implement world chunks.
+
+Do NOT implement map streaming.
+
+Do NOT implement camera/world-coordinate transformations.
+
+Those belong to the future World Scale / Tabletop Viewport phase.
+
+The conceptual boundary must remain:
+
+GameState
+    ↓
+existing tabletop presentation
+    ↓
+responsive layout
+
+not:
+
+GameState
+    ↓
+tablet-specific game logic
+
+TESTING
+
+Inspect the existing Playwright configuration and E2E suite.
+
+Add responsive E2E coverage where practical.
+
+At minimum verify:
+
+1. Desktop regression:
+   - Existing desktop tabletop still renders correctly.
+   - Core interaction controls remain accessible.
+
+2. Tablet landscape:
+   - Board is visible.
+   - Primary action row is visible.
+   - Ability row is accessible.
+   - End Turn is accessible.
+   - Active actor remains visible.
+   - Targeting controls remain usable.
+
+3. Tablet portrait:
+   - Board remains usable.
+   - Essential controls remain accessible.
+   - No critical content is clipped.
+   - Layout does not require uncontrolled page scrolling.
+
+4. Targeting:
+   - Move still works.
+   - Attack still works.
+   - Fire Bolt still works.
+   - Healing Touch still works.
+   - Target preview from 8e966cf remains functional.
+
+5. Intent cards:
+   - Proposal approval/cancellation remains usable.
+   - Query dismissal remains usable.
+   - Inspect dismissal remains usable.
+
+Use Playwright viewport configuration rather than relying only on CSS snapshots.
+
+Do not make tests depend on exact pixel positions unless absolutely necessary.
+
+REGRESSION REQUIREMENT
+
+The existing baseline must remain intact.
+
+Run:
+
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
+
+The existing 93 unit tests and 69 E2E tests must continue passing unless the current repository has legitimately changed those counts.
+
+If a test fails because the responsive implementation exposed a genuine existing bug, investigate and fix the bug rather than weakening the test.
+
+Do not remove or skip existing tests.
+
+SCOPE CONTROL
+
+Do NOT:
+
+- implement World Scale / Tabletop Viewport
+- implement map streaming
+- implement camera movement
+- implement exploration mode
+- add new combat mechanics
+- add new abilities
+- add LLM functionality
+- redesign the visual identity
+- replace the current action bar
+- remove current information
+- replace the asset registry
+- perform a large component refactor unrelated to responsive behavior
+
+If a component refactor is necessary to make the responsive layout maintainable, keep it small and explain it in the final report.
+
+DOCUMENTATION
+
+After implementation, update docs/PROJECT_STATUS.md only if it contains an outdated statement about responsive/tablet UX.
+
+Do not rewrite the entire project-status document.
+
+The roadmap remains the source of truth for future phases.
+
+VERIFICATION REPORT
+
+At completion report:
+
+1. Files created/modified
+2. Responsive layout strategy
+3. Desktop behavior preserved
+4. Tablet landscape behavior
+5. Tablet portrait behavior
+6. Touch-specific changes
+7. Accessibility changes
+8. Tests added/modified
+9. Exact typecheck result
+10. Exact unit-test result
+11. Exact build result
+12. Exact E2E result
+13. Any known limitations
+
+Commit the completed implementation and provide the commit hash.
+
+IMPORTANT:
+
+This task is about making the CURRENT tabletop experience work well on tablets.
+
+It is NOT permission to implement the future World Scale / Fixed Tabletop system.
