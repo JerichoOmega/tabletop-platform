@@ -1,0 +1,292 @@
+Update the Intelligent Tabletop repository documentation using the attached/previously provided canonical visual asset library.
+
+REPOSITORY
+JerichoOmega/tabletop-platform
+
+PRIMARY TASK
+
+Create:
+
+docs/VISUAL_ASSET_LIBRARY.md
+
+using the complete canonical asset list and rules provided in the visual asset library document.
+
+Then update:
+
+docs/PROJECT_STATUS.md
+
+to reference the new visual asset library and reflect the current visual-production checkpoint.
+
+IMPORTANT — CANONICAL STATUS
+
+The visual decisions in the asset library are APPROVED and LOCKED.
+
+Do NOT:
+- redesign locked assets
+- regenerate locked assets
+- rename locked assets
+- merge separate assets
+- remove assets
+- reinterpret locked assets
+- invent replacement versions
+- change the established visual language
+
+Only an explicit future revision request should permit changing a locked asset.
+
+CURRENT CANONICAL ASSET COUNT
+
+There are currently 44 locked canonical production assets.
+
+MINIATURES — 4
+
+1. Human Fighter
+2. Human Spellcaster
+3. Goblin Warrior
+4. Orc Warrior
+
+These are generic tabletop pieces, NOT named characters.
+
+FLOOR FAMILY — 6
+
+5. Cobblestone Classic V1
+6. Cobblestone Cleaner V1
+7. Cobblestone Overgrown V1
+8. Cobblestone Ruined V1
+9. Dungeon Stone V1
+10. Large Floor / Room Tile V1
+
+Each floor variant is its own independent production asset.
+
+TERRAIN / ARCHITECTURE — 13
+
+11. Full Wall V1
+12. Broken Wall V1
+13. Wall Corner V1
+14. Doorway V1
+15. Wall End Cap V1
+16. Pillar V1
+17. Staircase V1
+18. Raised Platform V1
+19. Archway V1
+20. Stone Bridge V1
+21. Chasm / Pit V1
+22. Cliff Edge V1
+23. Gate / Portcullis V1
+
+PROPS / ENVIRONMENT OBJECTS — 21
+
+24. Barrel V1
+25. Crate V1
+26. Chest V1
+27. Chest V2
+28. Torch V1
+29. Rocks & Debris V1
+30. Brazier / Fire Pit V1
+31. Bookshelf V1
+32. Bookshelf V2
+33. Table & Bench V1
+34. Table & Bench V2
+35. Weapon Rack V1
+36. Altar V1
+37. Lever / Wall Switch V1
+38. Trapdoor / Floor Hatch V1
+39. Banner / Wall Hanging V1
+40. Workbench / Crafting Table V1
+41. Anvil V1
+42. Crates & Supplies V1
+43. Wall Sconce V1
+44. Lantern V1
+
+SPECIAL APPROVED SCALE / STYLE NOTES
+
+Lever / Wall Switch V1:
+- Use the smaller approved version.
+- Do not revert to the larger version.
+
+Anvil V1:
+- Use the smaller approved version.
+- Do not revert to the larger version.
+
+Crates & Supplies V1:
+- Use the more stylized approved revision.
+- Do not revert to the earlier, more realistic version.
+
+WALL-FAMILY MASTER RULE
+
+Full Wall V1 is the visual master reference for the entire wall family.
+
+Wall Corner V1, Broken Wall V1, Doorway V1, Wall End Cap V1, Pillar V1, Archway V1, Gate / Portcullis V1, and future wall extensions must appear to be constructed from the same physical wall system.
+
+They must share:
+- chunky masonry
+- bluish-gray stone
+- capstones
+- wood reinforcement
+- brass/metal bands and hardware
+- proportions
+- moss/ground treatment
+- tabletop scale
+
+Do NOT redesign the wall for modular extensions.
+
+VISUAL LANGUAGE
+
+The entire collection uses:
+
+- stylized hand-painted 3D appearance
+- strong readable silhouettes
+- slightly exaggerated proportions
+- chunky tactile geometry
+- premium fantasy tabletop miniature presentation
+- bluish-gray stone
+- dark/weathered wood
+- restrained brass/bronze hardware
+- moss, grass, dirt and subtle environmental wear
+- consistent miniature scale/base treatment
+- dramatic but controlled studio lighting
+
+The assets are intentionally stylized.
+
+Do NOT shift the project toward photorealism.
+
+APPROVED VARIATION FAMILIES
+
+BOOKSHELF:
+- Bookshelf V1
+- Bookshelf V2
+
+TABLE:
+- Table & Bench V1
+- Table & Bench V2
+
+CHEST:
+- Chest V1
+- Chest V2
+
+BANNER / WALL HANGING:
+
+Banner / Wall Hanging V1 is the standardized physical mounting system.
+
+Approved visual variations:
+- Red / Sun
+- Blue / Lion
+- Green / Stag
+- Black / Skull
+- White / Temple
+- Purple / Arcane
+- Tattered / Worn
+- Bloodstained
+
+These are approved visual variations of the same physical banner system, not separate base construction assets.
+
+CURRENT PRODUCTION CHECKPOINT
+
+The visual production pass is currently PAUSED after:
+
+Lantern V1
+
+The next proposed asset is:
+
+Notice Board / Quest Board V1
+
+Do NOT create Notice Board / Quest Board V1 as part of this task.
+
+This task is documentation only.
+
+RUNTIME ASSET REGISTRY
+
+Preserve the distinction between the visual library and runtime registration.
+
+The repository already has:
+
+src/assets/types.ts
+src/assets/registry.ts
+
+The visual asset library is the approved visual source of truth.
+
+However:
+
+APPROVED VISUAL ASSET != REGISTERED RUNTIME ASSET
+
+Do not assume that an approved asset has already been registered in the application.
+
+Do not modify the rules engine or visual runtime implementation as part of this documentation task.
+
+ARCHITECTURE
+
+Preserve the existing separation:
+
+Content → Rules Engine → Intent → UI
+
+The rules engine should remain visual-agnostic.
+
+DOCUMENTATION REQUIREMENTS
+
+Create:
+
+docs/VISUAL_ASSET_LIBRARY.md
+
+It should contain:
+
+1. Established Visual Language
+2. Critical Wall-Family Rule
+3. Locked Miniatures
+4. Locked Floor Family
+5. Locked Terrain / Architecture
+6. Locked Props / Environment Objects
+7. Approved Variation Families
+8. Current Library Count
+9. What the Library Can Now Build
+10. Runtime Asset Registry Boundary
+11. Canonical Approval Workflow
+12. Current Pause Point
+13. Important Style Corrections Already Established
+14. Repository Context
+
+Every asset must be individually named and clearly categorized.
+
+Do not collapse the asset list into vague category descriptions.
+
+PROJECT STATUS
+
+Update docs/PROJECT_STATUS.md so it:
+- references docs/VISUAL_ASSET_LIBRARY.md
+- records that the visual library currently contains 44 locked canonical production assets
+- records that production is paused after Lantern V1
+- records that Notice Board / Quest Board V1 is the next proposed asset
+- preserves all existing application architecture/status information
+- does not falsely claim that the production art has already been registered in the runtime asset registry
+
+VALIDATION
+
+After editing:
+
+1. Verify docs/VISUAL_ASSET_LIBRARY.md exists.
+2. Verify every one of the 44 assets is present and correctly named.
+3. Verify the four miniature names.
+4. Verify all six floor assets.
+5. Verify all thirteen terrain/architecture assets.
+6. Verify all twenty-one props/environment assets.
+7. Verify the approved banner variations.
+8. Verify the wall-family rule.
+9. Verify the smaller approved scale for Lever / Wall Switch V1.
+10. Verify the smaller approved scale for Anvil V1.
+11. Verify the stylized revision of Crates & Supplies V1.
+12. Verify the Lantern V1 pause point.
+13. Verify Notice Board / Quest Board V1 is listed only as the NEXT proposed asset, not as an approved asset.
+14. Do not alter application behavior.
+15. Run appropriate documentation/typecheck/tests if useful.
+
+GIT
+
+Commit the documentation changes with a clear message such as:
+
+docs: add canonical visual asset library
+
+Report:
+- files changed
+- validation performed
+- commit hash
+
+This is a documentation synchronization task only.
+Do not modify runtime game behavior.
