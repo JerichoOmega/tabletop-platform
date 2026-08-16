@@ -1,3 +1,4 @@
 - [Module structure](module-structure.md) — 4-layer split: engine/content, engine/rules, intent/parser, ui/primitives; main component at src/IntelligentTabletop.tsx
 - [Bug fixes applied](bug-fixes.md) — turnKey useEffect, layout (controls above ENEMIES), newEncounter arrow wrapper, flexWrap
-- [Test setup](test-setup.md) — vitest 4.x, vitest.config.ts with @/ alias, 70 tests, node environment
+- [Test setup](test-setup.md) — vitest 4.x, vitest.config.ts with @/ alias, 93 unit tests, node environment; 133 E2E tests (Playwright)
+- [Accessibility implementation](accessibility-impl.md) — ARIA roles, keyboard nav, focus ring, sr-only, reduced-motion; board token aria-label collision trap
