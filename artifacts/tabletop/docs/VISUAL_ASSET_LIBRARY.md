@@ -273,6 +273,80 @@ The project has moved from individual terrain pieces to establishing a **modular
 
 ---
 
+# 10. Derived Runtime Assets
+
+Some canonical assets are composite showcase sheets that contain multiple approved assets in a single image. Where the application requires individually addressable runtime assets, deterministic **derived** files are produced by mechanical cropping of the canonical source. These are not new artwork.
+
+## Rules governing derived assets
+
+1. **The canonical source is the source of truth.** Derived files are downstream products; the source always wins.
+2. **Derived assets are deterministic.** They are produced by a mechanical crop (no generative fill, no AI modification, no pixel invention). Any derived asset can be regenerated identically from the canonical source using the documented crop parameters.
+3. **The canonical source is never modified.** Both the source showcase and its derived files coexist in the repository.
+4. **Derived assets are not new artistic designs.** They do not introduce changes to proportion, color, materials, or silhouette.
+5. **Future art needs always go back to the canonical source.** If a derived asset is lost or needs to be regenerated, reconstruct it from the canonical source using the parameters below.
+
+## Derived miniature assets
+
+**Canonical source:** `public/assets/visual/miniatures/fantasy-miniature-showcase.png` (1536×1024)
+
+The source sheet shows four miniatures in a 4-column top-half layout (front views, rows 1–2) and matching back views in the bottom half. Only the top half (front views) is used for runtime tokens.
+
+**Crop parameters (ImageMagick `magick` syntax):**
+
+| Derived file | Crop | Logical IDs |
+|---|---|---|
+| `miniatures/human-fighter.png` | `384x512+0+0` | `character.human-fighter`, `character.fighter` |
+| `miniatures/human-spellcaster.png` | `384x512+384+0` | `character.human-spellcaster`, `character.wizard` |
+| `miniatures/goblin-warrior.png` | `384x512+768+0` | `character.goblin-warrior`, `character.goblin` |
+| `miniatures/orc-warrior.png` | `384x512+1152+0` | `character.orc-warrior`, `character.orc` |
+
+**Regeneration command (from repo root):**
+```sh
+SRC=public/assets/visual/miniatures/fantasy-miniature-showcase.png
+DEST=public/assets/visual/miniatures
+magick $SRC -crop 384x512+0+0    +repage $DEST/human-fighter.png
+magick $SRC -crop 384x512+384+0  +repage $DEST/human-spellcaster.png
+magick $SRC -crop 384x512+768+0  +repage $DEST/goblin-warrior.png
+magick $SRC -crop 384x512+1152+0 +repage $DEST/orc-warrior.png
+```
+
+**Known crop note:** The characters' weapons and accessories may extend slightly across column boundaries in the source sheet. The Goblin Warrior's raised axe extends toward the right column edge; the Orc Warrior's body occupies the far-right column fully. At the token display size used by the current renderer (14×14 px), this has no visual impact. If larger display contexts require tighter crops, this document should be updated with revised crop parameters.
+
+## Derived floor assets
+
+**Canonical source:** `public/assets/visual/floors/cobblestone-floor-variant-showcase.png` (1536×1024)
+
+The source sheet has: a title area at top, a top row of 3 circular floor tiles, and a bottom row of 2 circular floor tiles, all on a black background with text labels.
+
+**Crop parameters:**
+
+| Derived file | Crop | Logical ID |
+|---|---|---|
+| `floors/cobblestone-classic-v1.png` | `512x530+0+0` | `floor.cobblestone-classic-v1`, `terrain.crypt.floor`, `terrain.trainingYard.floor` |
+| `floors/cobblestone-cleaner-v1.png` | `512x530+512+0` | `floor.cobblestone-cleaner-v1` |
+| `floors/cobblestone-overgrown-v1.png` | `512x530+1024+0` | `floor.cobblestone-overgrown-v1` |
+| `floors/cobblestone-ruined-v1.png` | `768x494+0+530` | `floor.cobblestone-ruined-v1` |
+| `floors/dungeon-stone-v1.png` | `768x494+768+530` | `floor.dungeon-stone-v1` |
+
+**Regeneration command (from repo root):**
+```sh
+SRC=public/assets/visual/floors/cobblestone-floor-variant-showcase.png
+DEST=public/assets/visual/floors
+magick $SRC -crop 512x530+0+0    +repage $DEST/cobblestone-classic-v1.png
+magick $SRC -crop 512x530+512+0  +repage $DEST/cobblestone-cleaner-v1.png
+magick $SRC -crop 512x530+1024+0 +repage $DEST/cobblestone-overgrown-v1.png
+magick $SRC -crop 768x494+0+530  +repage $DEST/cobblestone-ruined-v1.png
+magick $SRC -crop 768x494+768+530 +repage $DEST/dungeon-stone-v1.png
+```
+
+**Known crop note:** The showcase title text ("Cobblestone Floor Variants / Stylized Tabletop Terrain…") at the top of the source sheet partially overlaps the top-right corners of the Classic, Cleaner, and Overgrown crops. This text is part of the canonical source artwork and is not a crop error. Each floor tile itself is complete and unaltered.
+
+## Large Floor / Room Tile V1
+
+`floor.large-room-tile-v1` resolves to `floors/large-floor-room-tile-v1.png`, which already has its own individual source file from the canonical package. No derivation was needed or performed.
+
+---
+
 # 10. Runtime Asset Registry Boundary
 
 The visual asset library and the runtime asset registry are related but separate concerns.

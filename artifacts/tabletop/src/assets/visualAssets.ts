@@ -50,47 +50,63 @@ export function registerCanonicalAssets(): void {
   // ─────────────────────────────────────────────────────────────────────────
   // MINIATURES — 4 assets
   //
-  // Source: miniatures/fantasy-miniature-showcase.png
-  // One showcase sheet contains all four miniature pieces.
-  // Registered under BOTH the existing content-engine IDs (used by the
-  // live app) and the canonical library IDs (for future tooling).
+  // Canonical source:  miniatures/fantasy-miniature-showcase.png
+  // Derived runtime:   miniatures/{human-fighter,human-spellcaster,goblin-warrior,orc-warrior}.png
+  //
+  // Derived files are deterministic crops of the top half (front views) of
+  // the showcase sheet (384×512 per character, equal 4-column split).
+  // The source showcase is NOT modified and remains registered as a reference.
+  //
+  // Existing content-engine IDs (character.fighter etc.) are migrated to the
+  // appropriate derived individual files. Behaviour in the live app is unchanged.
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Existing IDs — referenced by COMBATANT_DEFS in engine/content.ts
-  registerAsset({ id: "character.fighter",  kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Human Fighter — canonical miniature showcase sheet" });
-  registerAsset({ id: "character.wizard",   kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Human Spellcaster — canonical miniature showcase sheet" });
-  registerAsset({ id: "character.goblin",   kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Goblin Warrior — canonical miniature showcase sheet" });
-  registerAsset({ id: "character.orc",      kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Orc Warrior — canonical miniature showcase sheet" });
+  // Existing IDs — referenced by COMBATANT_DEFS in engine/content.ts → derived files
+  registerAsset({ id: "character.fighter", kind: "character", src: v("miniatures/human-fighter.png"),      alt: "Human Fighter" });
+  registerAsset({ id: "character.wizard",  kind: "character", src: v("miniatures/human-spellcaster.png"),  alt: "Human Spellcaster" });
+  registerAsset({ id: "character.goblin",  kind: "character", src: v("miniatures/goblin-warrior.png"),     alt: "Goblin Warrior" });
+  registerAsset({ id: "character.orc",     kind: "character", src: v("miniatures/orc-warrior.png"),        alt: "Orc Warrior" });
 
-  // Canonical library IDs
-  registerAsset({ id: "character.human-fighter",    kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Human Fighter" });
-  registerAsset({ id: "character.human-spellcaster",kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Human Spellcaster" });
-  registerAsset({ id: "character.goblin-warrior",   kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Goblin Warrior" });
-  registerAsset({ id: "character.orc-warrior",      kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Orc Warrior" });
+  // Canonical library IDs → derived files
+  registerAsset({ id: "character.human-fighter",     kind: "character", src: v("miniatures/human-fighter.png"),     alt: "Human Fighter" });
+  registerAsset({ id: "character.human-spellcaster", kind: "character", src: v("miniatures/human-spellcaster.png"), alt: "Human Spellcaster" });
+  registerAsset({ id: "character.goblin-warrior",    kind: "character", src: v("miniatures/goblin-warrior.png"),    alt: "Goblin Warrior" });
+  registerAsset({ id: "character.orc-warrior",       kind: "character", src: v("miniatures/orc-warrior.png"),       alt: "Orc Warrior" });
+
+  // Source showcase — retained as reference (resolves to full composite sheet)
+  registerAsset({ id: "character.showcase-sheet", kind: "character", src: v("miniatures/fantasy-miniature-showcase.png"), alt: "Miniature showcase sheet (canonical source)" });
 
   // ─────────────────────────────────────────────────────────────────────────
   // FLOOR FAMILY — 6 assets
   //
-  // Cobblestone Classic/Cleaner/Overgrown/Ruined and Dungeon Stone are
-  // represented by a single showcase sheet. Large Floor / Room Tile has
-  // its own individual file.
+  // Canonical source:  floors/cobblestone-floor-variant-showcase.png
+  // Derived runtime:   floors/{cobblestone-classic,cleaner,overgrown,ruined,dungeon-stone}-v1.png
+  //
+  // Derived files are deterministic crops of the showcase sheet:
+  //   Top row (3 tiles): 512×530 crops at x=0, x=512, x=1024 from y=0
+  //   Bottom row (2 tiles): 768×494 crops at x=0, x=768 from y=530
+  // The source showcase is NOT modified and remains registered as a reference.
+  //
+  // Large Floor / Room Tile V1 already has its own individual source file —
+  // no derivation needed.
   // ─────────────────────────────────────────────────────────────────────────
 
-  const cobblestoneSheet = v("floors/cobblestone-floor-variant-showcase.png");
+  registerAsset({ id: "floor.cobblestone-classic-v1",   kind: "terrain", src: v("floors/cobblestone-classic-v1.png"),   alt: "Cobblestone Classic V1" });
+  registerAsset({ id: "floor.cobblestone-cleaner-v1",   kind: "terrain", src: v("floors/cobblestone-cleaner-v1.png"),   alt: "Cobblestone Cleaner V1" });
+  registerAsset({ id: "floor.cobblestone-overgrown-v1", kind: "terrain", src: v("floors/cobblestone-overgrown-v1.png"), alt: "Cobblestone Overgrown V1" });
+  registerAsset({ id: "floor.cobblestone-ruined-v1",    kind: "terrain", src: v("floors/cobblestone-ruined-v1.png"),    alt: "Cobblestone Ruined V1" });
+  registerAsset({ id: "floor.dungeon-stone-v1",         kind: "terrain", src: v("floors/dungeon-stone-v1.png"),         alt: "Dungeon Stone V1" });
+  registerAsset({ id: "floor.large-room-tile-v1",       kind: "terrain", src: v("floors/large-floor-room-tile-v1.png"), alt: "Large Floor / Room Tile V1" });
 
-  registerAsset({ id: "floor.cobblestone-classic-v1",   kind: "terrain", src: cobblestoneSheet,                          alt: "Cobblestone Classic V1" });
-  registerAsset({ id: "floor.cobblestone-cleaner-v1",   kind: "terrain", src: cobblestoneSheet,                          alt: "Cobblestone Cleaner V1" });
-  registerAsset({ id: "floor.cobblestone-overgrown-v1", kind: "terrain", src: cobblestoneSheet,                          alt: "Cobblestone Overgrown V1" });
-  registerAsset({ id: "floor.cobblestone-ruined-v1",    kind: "terrain", src: cobblestoneSheet,                          alt: "Cobblestone Ruined V1" });
-  registerAsset({ id: "floor.dungeon-stone-v1",         kind: "terrain", src: cobblestoneSheet,                          alt: "Dungeon Stone V1" });
-  registerAsset({ id: "floor.large-room-tile-v1",       kind: "terrain", src: v("floors/large-floor-room-tile-v1.png"),  alt: "Large Floor / Room Tile V1" });
+  // Source showcase — retained as reference
+  registerAsset({ id: "floor.cobblestone-showcase", kind: "terrain", src: v("floors/cobblestone-floor-variant-showcase.png"), alt: "Cobblestone floor variant showcase (canonical source)" });
 
-  // Existing content-engine terrain IDs — wired to closest canonical assets
-  registerAsset({ id: "terrain.crypt.floor",         kind: "terrain", src: cobblestoneSheet,                   alt: "Cobblestone floor (crypt)" });
-  registerAsset({ id: "terrain.crypt.wall",          kind: "terrain", src: v("terrain/walls/full-wall-v1.png"),alt: "Full Wall V1 (crypt)" });
-  registerAsset({ id: "terrain.crypt.pillar",        kind: "terrain", src: v("terrain/walls/pillar-v1.png"),   alt: "Pillar V1 (crypt)" });
-  registerAsset({ id: "terrain.trainingYard.floor",  kind: "terrain", src: cobblestoneSheet,                   alt: "Cobblestone floor (training yard)" });
-  registerAsset({ id: "terrain.trainingYard.wall",   kind: "terrain", src: v("terrain/walls/full-wall-v1.png"),alt: "Full Wall V1 (training yard)" });
+  // Existing content-engine terrain IDs — wired to closest canonical derived assets
+  registerAsset({ id: "terrain.crypt.floor",        kind: "terrain", src: v("floors/cobblestone-classic-v1.png"),     alt: "Cobblestone floor (crypt)" });
+  registerAsset({ id: "terrain.crypt.wall",         kind: "terrain", src: v("terrain/walls/full-wall-v1.png"),        alt: "Full Wall V1 (crypt)" });
+  registerAsset({ id: "terrain.crypt.pillar",       kind: "terrain", src: v("terrain/walls/pillar-v1.png"),           alt: "Pillar V1 (crypt)" });
+  registerAsset({ id: "terrain.trainingYard.floor", kind: "terrain", src: v("floors/cobblestone-classic-v1.png"),     alt: "Cobblestone floor (training yard)" });
+  registerAsset({ id: "terrain.trainingYard.wall",  kind: "terrain", src: v("terrain/walls/full-wall-v1.png"),        alt: "Full Wall V1 (training yard)" });
 
   // ─────────────────────────────────────────────────────────────────────────
   // TERRAIN / ARCHITECTURE — 13 assets
