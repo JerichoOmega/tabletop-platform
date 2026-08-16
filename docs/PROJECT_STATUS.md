@@ -1,9 +1,14 @@
 # Intelligent Tabletop — Project Status
 
-**Last updated:** 2026-08-15 (asset registry foundation)
+**Last updated:** 2026-08-16 (hover/target preview — Phase 2 UX)
+**Baseline commit:** `8e966cf`
 **Build:** passing (TypeScript, Vitest, Playwright E2E)
 **Deployed at:** `/` (Replit preview)
 **GitHub:** `JerichoOmega/tabletop-platform` @ `main`
+
+> **Roadmap:** See [`docs/ROADMAP.md`](ROADMAP.md) for the canonical phase-by-phase
+> roadmap, the "The Table Is Fixed. The World Is Not." design principle, and
+> governance rules for future agents.
 
 ---
 
@@ -94,9 +99,9 @@ Abilities are fully data-driven. `ABILITY_DEFS` describes targeting (`self | all
 | `engine/rules.ts` | ✅ Fully typed — `@ts-nocheck` removed |
 | `assets/types.ts` | ✅ Fully typed (new) |
 | `assets/registry.ts` | ✅ Fully typed (new) |
-| `intent/parser.ts` | `@ts-nocheck` retained (complex inference) |
+| `intent/parser.ts` | ✅ Fully typed — `@ts-nocheck` removed |
 | `ui/primitives.tsx` | `@ts-nocheck` retained |
-| `IntelligentTabletop.tsx` | `@ts-nocheck` retained |
+| `IntelligentTabletop.tsx` | ✅ Fully typed — `@ts-nocheck` removed |
 | `__tests__/engine.test.ts` | `@ts-nocheck` retained |
 
 `pnpm --filter @workspace/tabletop run typecheck` passes clean.
@@ -162,8 +167,11 @@ All three modes use exactly the same rules engine.
 | `assisted.spec.ts` | Natural-language attack, heal, Fire Bolt |
 | `victory.spec.ts` | Quick Battle fixture → Victory banner visible |
 | `defeat.spec.ts` | Quick Defeat fixture → Defeat banner visible |
+| `target-preview.spec.ts` | Hover preview — attack (valid, invalid, out-of-range, clear); ability (Fire Bolt, Healing Touch); mode-transition clearing |
 
-Test fixtures (`quickBattle`, `quickDefeat`) are deterministic and hidden from the normal encounter picker. They appear only when `?e2e` is present in the URL.
+**Total: 93 unit tests · 69 E2E tests** (all passing at baseline `8e966cf`).
+
+Test fixtures (`quickBattle`, `quickDefeat`, `quickOutOfRange`) are deterministic and hidden from the normal encounter picker. They appear only when `?e2e` is present in the URL.
 
 ---
 
@@ -188,11 +196,11 @@ Test fixtures (`quickBattle`, `quickDefeat`) are deterministic and hidden from t
 
 ## Roadmap
 
-- [ ] Drop in production character/terrain art via `registerAsset()` — architecture is ready
-- [ ] Replace regex intent parser with an LLM call
-- [ ] Responsive tablet/phone layouts (Blueprint §12)
-- [ ] Animations (Blueprint §14)
-- [ ] Accessibility pass (Blueprint §15)
-- [ ] Fog of war / visibility
-- [ ] Status effects via new `EFFECT_HANDLERS` entries
-- [ ] Enemy AI abilities
+See **[`docs/ROADMAP.md`](ROADMAP.md)** for the full canonical roadmap including:
+
+- Completed Phase 1 milestones
+- Current Phase 2 — Core Tabletop UX work
+- Planned Phase 3 — World Scale & Fixed Tabletop Viewport (the next major architectural phase)
+- Planned Phases 4–6
+- The "The Table Is Fixed. The World Is Not." design principle
+- Governance rules for future agents
