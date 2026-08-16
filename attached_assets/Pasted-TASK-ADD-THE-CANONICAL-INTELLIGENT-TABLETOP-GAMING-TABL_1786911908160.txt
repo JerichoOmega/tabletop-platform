@@ -1,0 +1,602 @@
+TASK: ADD THE CANONICAL INTELLIGENT TABLETOP GAMING TABLE
+
+Repository:
+JerichoOmega/tabletop-platform
+
+I am providing an approved visual reference image for the physical tabletop that serves as the foundation/stage of Intelligent Tabletop.
+
+This image has been explicitly approved and is now CANONICAL.
+
+DO NOT generate a new image.
+
+DO NOT redesign it.
+
+DO NOT reinterpret it.
+
+DO NOT modify the artwork.
+
+The supplied image is the visual source of truth for:
+
+TABLETOP — GRAND GAMING TABLE V1
+
+==================================================
+1. PURPOSE
+==================================================
+
+This is not a normal terrain prop.
+
+This is the physical gaming table around which the Intelligent Tabletop experience is conceptually built.
+
+The dungeon, terrain, miniatures, props, encounters, and other game elements exist ON the tabletop.
+
+The table should therefore be treated as a foundational environment asset.
+
+It should not be categorized as an ordinary dungeon prop.
+
+==================================================
+2. CANONICAL VISUAL DESIGN
+==================================================
+
+The approved table is:
+
+- Large
+- Thick
+- Rectangular
+- Fantasy-themed
+- Heavy
+- Elegant
+- Premium
+- Master-crafted
+- Built primarily from substantial oak
+- Slightly weathered but well maintained
+- Designed to feel like an heirloom piece of fantasy furniture
+
+The overall visual language is:
+
+HEAVY FOUNDATION + ELEGANT FANTASY CRAFTSMANSHIP
+
+It should feel physically substantial.
+
+The table should communicate:
+
+"This is a massive, beautifully crafted piece of furniture."
+
+==================================================
+3. TABLETOP
+==================================================
+
+The tabletop is thick and substantial.
+
+It has:
+
+- A large rectangular footprint
+- Gracefully rounded corners
+- A substantial raised oak perimeter
+- A recessed central play surface
+- Natural visible oak grain
+- Carefully crafted edges
+- Subtle wear consistent with a treasured, frequently used heirloom
+
+The rounded corners are an intentional design feature.
+
+Do not convert them into sharp rectangular corners.
+
+==================================================
+4. PLAY SURFACE
+==================================================
+
+The center contains a large recessed dark play surface.
+
+The play surface is intentionally neutral and subdued.
+
+Its purpose is to allow:
+
+- dungeon floors
+- walls
+- terrain
+- miniatures
+- props
+- effects
+- encounters
+
+to remain visually dominant.
+
+Do not add decorative fantasy artwork to the play surface.
+
+Do not permanently bake dungeon imagery into the table.
+
+The play surface must remain a reusable neutral stage.
+
+==================================================
+5. GOLD / BRASS DETAILING
+==================================================
+
+The table includes restrained aged-gold/brass detailing.
+
+Gold is an accent, not the dominant material.
+
+Use it primarily as:
+
+- perimeter inlay
+- corner detailing
+- structural accent bands
+- decorative hardware
+- selected dragon-carving highlights
+- small ornamental details
+
+The gold should look aged/brushed and integrated into the furniture.
+
+It should NOT look like:
+
+- bright plastic gold
+- excessive jewelry
+- gaudy ornamentation
+- gold-plated furniture
+
+The oak remains visually dominant.
+
+==================================================
+6. CORNERS
+==================================================
+
+The four tabletop corners have graceful rounded designs.
+
+The corners are more than simple radius cuts.
+
+They contain:
+
+- carved detailing
+- gold/brass inlay
+- carefully crafted transitions
+- reinforced construction
+- elegant fantasy ornamentation
+
+The corner treatment should feel like it was intentionally designed by a master furniture maker.
+
+==================================================
+7. LEGS
+==================================================
+
+The legs are intentionally MASSIVE.
+
+They are not thin furniture legs.
+
+Each leg is:
+
+- thick
+- structural
+- architectural in appearance
+- made from substantial oak
+- carefully carved
+- visually capable of supporting the enormous tabletop
+
+==================================================
+8. DRAGON CARVINGS
+==================================================
+
+The most distinctive feature of the table is the dragon carving.
+
+ALL FOUR LEGS USE THE SAME DRAGON DESIGN.
+
+This is important.
+
+Do NOT create four different dragons.
+
+Do NOT give each leg a different motif.
+
+Do NOT create unique dragon poses.
+
+The exact same approved dragon-carved-leg design should be reused consistently across all four legs.
+
+The dragon is carved directly into the oak.
+
+It is a relief carving rather than an attached ornament.
+
+The carving has:
+
+- strong three-dimensional depth
+- scales
+- wings
+- horns
+- claws
+- long body
+- expressive head
+- integrated ornamental carving
+
+Selected portions of the dragon can contain restrained aged-gold/brass accents consistent with the approved reference.
+
+Do not make the dragons glow.
+
+Do not add magical effects.
+
+Do not redesign the dragon.
+
+The supplied approved image is the visual reference.
+
+==================================================
+9. APRON / FRAME
+==================================================
+
+The apron and structural frame continue the same craftsmanship language.
+
+Use:
+
+- deep oak carving
+- interwoven fantasy motifs
+- subtle knotwork
+- restrained gold/brass accents
+- heavy structural construction
+- visible joinery
+
+The apron should visually connect the tabletop and dragon legs into one coherent piece of furniture.
+
+==================================================
+10. DRAGON CREST
+==================================================
+
+The approved table includes a restrained dragon crest on the front apron.
+
+Keep this as part of the canonical design.
+
+It should remain a decorative identity element rather than becoming a large magical emblem.
+
+==================================================
+11. MATERIAL LANGUAGE
+==================================================
+
+Primary material:
+
+Rich, warm dark oak.
+
+The oak should retain visible:
+
+- grain
+- knots
+- natural variation
+- carved surfaces
+- subtle wear
+
+Secondary material:
+
+Aged gold / antique brass.
+
+Use it sparingly.
+
+The overall material balance should remain predominantly oak.
+
+==================================================
+12. STYLE
+==================================================
+
+The visual style is:
+
+STYLIZED FANTASY 3D
+
+The table must visually belong with the existing Intelligent Tabletop visual library.
+
+Match the established collection's:
+
+- stylized 3D presentation
+- strong silhouettes
+- tactile materials
+- slightly exaggerated proportions
+- premium fantasy aesthetic
+- readable forms
+- controlled detail
+
+Do NOT make it photorealistic furniture photography.
+
+Do NOT make it cartoon furniture.
+
+Do NOT make it hyper-realistic architectural visualization.
+
+The supplied approved image is the visual master reference.
+
+==================================================
+13. ASSET CLASSIFICATION
+==================================================
+
+Do NOT register this as:
+
+prop.table
+prop.furniture
+
+unless the existing architecture requires those categories.
+
+Prefer a dedicated foundational category such as:
+
+environment.table
+environment.tabletop
+tabletop.grand-gaming-table-v1
+
+Use the repository's existing conventions if an appropriate category already exists.
+
+The logical asset ID should be:
+
+tabletop.grand-gaming-table-v1
+
+unless an existing naming convention requires an equivalent ID.
+
+==================================================
+14. SOURCE FILE
+==================================================
+
+Preserve the supplied approved image as the canonical source.
+
+Suggested location:
+
+public/assets/visual/tabletop/grand-gaming-table-v1.png
+
+If the repository has a better existing asset location, use it instead.
+
+Do not overwrite unrelated assets.
+
+Do not create multiple copies of the source image.
+
+==================================================
+15. CANONICAL SOURCE VS RUNTIME ASSET
+==================================================
+
+Treat the supplied image as the canonical visual reference.
+
+If the application requires a separate runtime representation, derive it NON-DESTRUCTIVELY.
+
+Never modify the canonical source.
+
+Do not crop or alter the source unless the existing renderer explicitly requires a derived asset.
+
+If a derived asset is required, document:
+
+Canonical source:
+grand-gaming-table-v1.png
+
+Derived runtime asset:
+[filename]
+
+The canonical source must remain untouched.
+
+==================================================
+16. ASSET REGISTRY
+==================================================
+
+Inspect:
+
+src/assets/types.ts
+src/assets/registry.ts
+src/assets/visualAssets.ts
+
+Register:
+
+tabletop.grand-gaming-table-v1
+
+through the existing asset registry.
+
+Do NOT hardcode the image path throughout React components.
+
+The registry should remain the logical seam between:
+
+asset ID → visual source
+
+==================================================
+17. APPLICATION ARCHITECTURE
+==================================================
+
+Do not modify the rules engine to understand the table's image.
+
+The architecture must remain:
+
+Content
+→ Rules Engine
+→ Intent
+→ UI / Rendering
+
+The table is a visual/environment concern.
+
+Do not introduce game logic into the asset registration.
+
+==================================================
+18. FUTURE CAMERA / PRESENTATION SUPPORT
+==================================================
+
+The table should be integrated in a way that allows future presentation where:
+
+ZOOMED OUT:
+
+The player can perceive the physical table and its substantial structure.
+
+ZOOMED IN:
+
+The table itself can move outside the camera framing while the player becomes immersed in the tabletop encounter.
+
+Do NOT implement a new camera system as part of this task.
+
+Simply ensure the asset architecture does not prevent this future presentation.
+
+==================================================
+19. DO NOT ADD GAMEPLAY FEATURES
+==================================================
+
+Do NOT implement:
+
+- player seating
+- dice trays
+- inventory UI
+- cards
+- physical player avatars
+- magical table effects
+- table interaction mechanics
+- table customization
+- table damage
+- table upgrades
+
+Those may be future features.
+
+This task is only:
+
+CANONICAL TABLE ASSET INTEGRATION
+
+==================================================
+20. DOCUMENTATION
+==================================================
+
+Update:
+
+docs/VISUAL_ASSET_LIBRARY.md
+
+Add:
+
+## Tabletop / Physical Gaming Table
+
+Document:
+
+TABLETOP — GRAND GAMING TABLE V1
+
+Status:
+LOCKED / CANONICAL
+
+Purpose:
+Foundational physical tabletop environment.
+
+Visual characteristics:
+- thick oak construction
+- rounded corners
+- recessed dark play surface
+- aged-gold/brass detailing
+- massive carved legs
+- identical dragon carving on all four legs
+- carved apron
+- dragon crest
+- stylized fantasy 3D presentation
+
+Also document that this is a foundational environment asset rather than an ordinary dungeon prop.
+
+==================================================
+21. PROJECT STATUS
+==================================================
+
+Update:
+
+docs/PROJECT_STATUS.md
+
+Add the Grand Gaming Table V1 to the visual asset milestone/history.
+
+Do not alter unrelated project-status information.
+
+The current visual production checkpoint remains:
+
+Lantern V1
+
+This table is an additional foundational environment asset.
+
+Do NOT automatically advance the proposed asset-production sequence to Notice Board / Quest Board unless the existing project documentation already requires that.
+
+==================================================
+22. VALIDATION
+==================================================
+
+Verify:
+
+- source image exists
+- asset registry resolves correctly
+- logical ID is correct
+- image path is correct
+- no broken imports
+- no duplicate source files
+- no existing assets were overwritten
+- TypeScript passes
+- Vitest passes
+- production build passes
+
+If the table is not yet rendered anywhere in the application, that is acceptable.
+
+Do NOT force it into an existing gameplay screen merely to prove that the asset loads.
+
+==================================================
+23. VISUAL INTEGRATION
+==================================================
+
+If the existing application already has a dedicated environment/tabletop rendering layer, register the table there.
+
+If no appropriate rendering layer exists yet:
+
+DO NOT create a large new system.
+
+Register the asset and document that presentation integration remains a future step.
+
+==================================================
+24. GIT
+==================================================
+
+Before committing:
+
+git status
+git diff
+git diff --stat
+
+Confirm:
+
+- canonical table image is unchanged
+- only intended files were added/modified
+- no unrelated gameplay changes occurred
+
+Suggested commit:
+
+assets: add canonical grand gaming table
+
+Do not push to GitHub unless explicitly instructed.
+
+==================================================
+25. FINAL REPORT
+==================================================
+
+Report:
+
+### Asset
+Grand Gaming Table V1
+
+### Canonical source
+File path
+
+### Asset ID
+tabletop.grand-gaming-table-v1
+
+### Registry
+How it was registered
+
+### Documentation
+Files updated
+
+### Runtime
+Whether it is currently rendered or only registered
+
+### Tests
+TypeScript
+Vitest
+Build
+Other relevant checks
+
+### Git
+Commit hash
+
+### Issues
+Any unresolved implementation questions
+
+==================================================
+FINAL RULE
+==================================================
+
+The supplied table image is APPROVED and LOCKED.
+
+It is the canonical visual reference.
+
+Do not generate another version.
+
+Do not redesign it.
+
+Do not "improve" the dragon.
+
+Do not create different dragon designs for different legs.
+
+The exact same dragon-carved leg design must be used on all four legs.
+
+Preserve the approved visual exactly.
