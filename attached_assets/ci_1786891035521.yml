@@ -1,0 +1,99 @@
+# CI — tabletop-platform
+#
+# Intended location in the repository: .github/workflows/ci.yml
+#
+# Single quality-gate job: install -> typecheck -> unit tests -> build -> E2E.
+# All commands below are taken as given/specified rather than independently
+# re-derived by inspecting the repository in this pass — see the
+# accompanying report for that distinction.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    name: Typecheck, unit tests, build, and E2E
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Must run before actions/setup-node's pnpm cache (below), which
+      # shells out to `pnpm store path` and needs pnpm already on PATH.
+      #
+      # No pnpm version is pinned anywhere in the repository (no
+      # "packageManager" field in package.json, no version in .npmrc), and
+      # this task explicitly says not to add one just for CI. Pinned here to
+      # a current pnpm major (10) so the workflow is reproducible; if a
+      # "packageManager" field is ever added, this step can drop the
+      # `version` input and read it automatically instead.
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # Node version per the repository's .replit: modules = ["nodejs-24", ...]
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      # Uses the committed lockfile as-is; fails rather than silently
+      # updating it if package.json and the lockfile have drifted apart.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Root script: builds referenced libs first (e.g. lib/api-client-react),
+      # then typechecks recursively. Deliberately not run scoped to
+      # @workspace/tabletop alone, since the tabletop package depends on
+      # those libs being typechecked/built first.
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      # vitest run --config vitest.config.ts, via the package's own script.
+      # No --if-present here: this command is expected to exist and run.
+      - name: Unit tests (@workspace/tabletop)
+        run: pnpm --filter @workspace/tabletop run test
+
+      # The tabletop Vite build reads PORT/BASE_PATH from the environment;
+      # GitHub Actions does not set these, so they're supplied explicitly.
+      - name: Build (@workspace/tabletop)
+        run: PORT=3000 BASE_PATH=/ pnpm --filter @workspace/tabletop run build
+        env:
+          PORT: '3000'
+          BASE_PATH: '/'
+
+      # test:e2e's own `pretest:e2e` hook installs Chromium
+      # (`playwright install chromium`) — relied on here rather than adding
+      # a separate/duplicate browser-install step. The Playwright config's
+      # own `webServer` (PORT=22382 BASE_PATH=/) starts the dev server
+      # itself; nothing is started manually here.
+      - name: E2E tests (@workspace/tabletop)
+        run: pnpm --filter @workspace/tabletop run test:e2e
+
+      # Playwright's default HTML report/trace output, for debugging a
+      # failed E2E run. Path is inferred (pnpm --filter runs the script
+      # with the package directory as cwd, and Playwright's default report
+      # directory is "playwright-report" relative to its config), not
+      # independently confirmed against the actual playwright.config.ts.
+      # Uploading is best-effort: if the path doesn't match reality, this
+      # step just finds nothing and continues — it never masks a real test
+      # failure, since it only runs after the E2E step has already
+      # determined the job's pass/fail state.
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: artifacts/tabletop/playwright-report/
+          retention-days: 7

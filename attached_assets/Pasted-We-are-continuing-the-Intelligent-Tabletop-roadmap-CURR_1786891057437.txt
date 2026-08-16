@@ -1,0 +1,389 @@
+We are continuing the Intelligent Tabletop roadmap.
+
+CURRENT CANONICAL STATE
+
+Repository:
+JerichoOmega/tabletop-platform
+
+Current relevant milestones:
+
+- 1c825d3 — Asset registry architecture
+- 9e489d5 — Gameplay interaction regression coverage
+- 5508399 — Engine/type-safety hardening
+- 8e966cf — Hover / Target Preview
+- 58004b2 — Canonical roadmap documentation
+- 8529cda — Tablet-first responsive UX
+
+Read `docs/ROADMAP.md` before making changes. It is now the canonical roadmap for all future agents.
+
+The current design principle is:
+
+"The Table Is Fixed. The World Is Not."
+
+IMPORTANT:
+Do NOT implement the World Scale / Tabletop Viewport system yet.
+
+That is Phase 3.
+
+We are finishing Phase 2 first.
+
+CURRENT TASK:
+ACCESSIBILITY PASS
+
+The next roadmap item is accessibility.
+
+Perform a focused accessibility pass on the CURRENT tabletop experience.
+
+This is not a redesign and not a gameplay task.
+
+OBJECTIVES
+
+Make the existing tabletop usable and understandable through:
+
+- keyboard navigation
+- visible keyboard focus
+- semantic controls
+- accessible board tokens
+- accessible targeting states
+- accessible active-actor state
+- accessible action/ability states
+- accessible Proposal / Query / Inspect cards
+- non-color-dependent state communication
+- touch + keyboard compatibility
+- reduced-motion support
+
+PRESERVE EVERYTHING THAT ALREADY WORKS
+
+Do not regress:
+
+- desktop layout
+- tablet landscape layout
+- tablet portrait layout
+- Move
+- Attack
+- End Turn
+- abilities
+- targeting
+- target preview
+- active actor / ACTING indicator
+- Proposal cards
+- Query cards
+- Inspect cards
+- Assisted mode
+- Traditional mode
+- existing asset registry behavior
+
+CURRENT TEST BASELINE
+
+The latest repository state should contain:
+
+- 93 unit tests
+- 133 E2E tests
+
+The E2E count is now 133 because the accessibility work may already exist in the current branch/history. Do NOT assume the old 92-test baseline.
+
+Before changing anything:
+
+1. Inspect the current repository.
+2. Check whether an accessibility implementation has already been partially completed.
+3. Check `e2e/accessibility.spec.ts`.
+4. Check the current `PROJECT_STATUS.md`.
+5. Check `docs/ROADMAP.md`.
+6. Determine exactly what remains incomplete.
+
+Do not duplicate work that is already present.
+
+ACCESSIBILITY REQUIREMENTS
+
+### 1. Keyboard navigation
+
+Ensure keyboard users can reach and operate:
+
+- Move
+- Attack
+- End Turn
+- abilities
+- actionable combatant tokens
+- proposal approval/cancellation
+- query dismissal
+- inspect controls
+- encounter selection
+- Assisted-mode controls
+
+Use native semantic buttons wherever possible.
+
+Do not replace buttons with clickable divs.
+
+### 2. Focus visibility
+
+Every interactive control needs a clear `:focus-visible` state.
+
+Focus must remain distinguishable from:
+
+- hover
+- active actor
+- selected target
+- valid target
+- invalid target
+
+Do not remove browser focus indicators without providing an equivalent visible replacement.
+
+### 3. Board tokens
+
+Interactive combatants must:
+
+- be keyboard focusable
+- have meaningful accessible names
+- expose relevant state
+- have visible focus
+- remain compatible with mouse and touch interaction
+
+Examples of useful accessible descriptions:
+
+"Sable, acting"
+
+"Orc, valid attack target"
+
+"Aldric, invalid Fire Bolt target: wrong target type"
+
+Use the actual application's terminology where appropriate.
+
+Do not make decorative board elements unnecessarily focusable.
+
+### 4. Targeting
+
+Preserve the existing semantic targeting system:
+
+Move:
+- green visual language
+- explicit instruction text
+
+Attack:
+- red hostile targeting
+- explicit instruction text
+
+Harmful abilities:
+- red hostile targeting
+- explicit instruction text
+
+Beneficial abilities:
+- blue beneficial targeting
+- explicit instruction text
+
+Invalid targets:
+- explicit invalid indication/reason where available
+
+Never rely on color alone.
+
+The existing target-preview information introduced by `8e966cf` must remain accessible.
+
+Do not create a noisy screen-reader announcement for every pointer movement.
+
+Prefer meaningful state-change announcements.
+
+### 5. Active actor
+
+Preserve the visible `ACTING` indicator.
+
+Make the acting character understandable to assistive technology.
+
+Do not confuse acting, selected, and targeted states.
+
+### 6. Actions and abilities
+
+Disabled actions must remain visible.
+
+Their disabled state must be semantically exposed.
+
+Where practical, expose the reason an action is unavailable.
+
+For example:
+
+"Fire Bolt, unavailable: action already used this turn"
+
+Do not rely only on visual opacity or tooltips.
+
+### 7. Intent cards
+
+Preserve:
+
+Proposal:
+- action-oriented
+- Approve
+- Cancel
+
+Query:
+- informational
+- no Approve action
+
+Inspect:
+- neutral informational state
+
+Ensure their controls are keyboard accessible and their structure is understandable.
+
+If focus management is added, avoid stealing focus unnecessarily.
+
+If a modal-like interaction genuinely requires focus management, return focus sensibly when dismissed.
+
+### 8. Assisted mode
+
+Ensure:
+
+- text input has an accessible label
+- Interpret control is keyboard accessible
+- errors are understandable
+- resulting proposal/query states are accessible
+
+Do not modify the intent architecture.
+
+Do not add LLM functionality.
+
+### 9. Reduced motion
+
+Add an appropriate:
+
+`@media (prefers-reduced-motion: reduce)`
+
+path for any existing/non-essential UI motion.
+
+Do not build the future animation system in this task.
+
+Do not change gameplay timing.
+
+### 10. Touch
+
+The tablet work from `8529cda` must remain intact.
+
+Do not introduce hover-only functionality.
+
+Touch users must not need hover to understand targeting.
+
+Do not introduce gesture navigation or camera panning.
+
+WORLD SCALE EXPLICITLY OUT OF SCOPE
+
+Do NOT implement:
+
+- world coordinates
+- viewport coordinates
+- camera/world transformations
+- map streaming
+- chunk generation
+- continuous corridors
+- exploration mode
+- large-world behavior
+- encounter viewport locking
+
+Those belong to Phase 3.
+
+ARCHITECTURAL RULE
+
+Accessibility is presentation/interaction infrastructure.
+
+Do not put accessibility state into authoritative `GameState`.
+
+Do not modify combat legality for accessibility.
+
+Do not move validation into the UI.
+
+Keep:
+
+GameState
+    ↓
+Rules / validation
+    ↓
+UI state
+    ↓
+Accessible presentation
+
+TESTING
+
+Add or improve automated accessibility regression tests where useful.
+
+Use semantic assertions:
+
+- getByRole()
+- getByLabel()
+- getByText()
+
+Avoid pixel-coordinate tests.
+
+Test at minimum:
+
+1. Keyboard access to primary action controls.
+2. Disabled action behavior.
+3. Keyboard focus on actionable tokens.
+4. Accessible token names.
+5. Active actor state.
+6. Targeting state without relying on color.
+7. Invalid-target messaging.
+8. Proposal controls.
+9. Query/Inspect controls.
+10. Assisted-mode controls.
+11. Desktop responsive regression.
+12. Tablet landscape regression.
+13. Tablet portrait regression.
+
+Run:
+
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
+
+Do not weaken or remove existing tests.
+
+If the repository's test count has already increased beyond 93/133, report the actual count.
+
+DOCUMENTATION
+
+Update `docs/PROJECT_STATUS.md` only after the implementation is genuinely complete.
+
+Mark accessibility complete only if the implementation and verification support that claim.
+
+Do not rewrite `docs/ROADMAP.md`.
+
+The roadmap is already canonical.
+
+SCOPE CONTROL
+
+Do NOT:
+
+- redesign the tabletop
+- redesign the action bar
+- redesign the visual identity
+- change combat rules
+- add abilities
+- add LLM functionality
+- implement World Scale
+- implement exploration
+- perform unrelated refactoring
+- change the asset architecture
+
+If a small component refactor is genuinely necessary for semantic accessibility, keep it focused and explain it.
+
+FINAL REPORT
+
+When finished, report:
+
+1. What accessibility work already existed before this task.
+2. What you changed.
+3. Files changed.
+4. Accessibility issues discovered.
+5. Keyboard-navigation changes.
+6. Board-token changes.
+7. Targeting changes.
+8. Active-actor changes.
+9. Intent-card changes.
+10. Reduced-motion changes.
+11. Tests added/modified.
+12. Exact unit-test result.
+13. Exact E2E result.
+14. Typecheck result.
+15. Build result.
+16. Any remaining limitations.
+17. Commit hash.
+
+Do not start another roadmap phase after this task.
+
+Stop after the accessibility pass and report the result.
