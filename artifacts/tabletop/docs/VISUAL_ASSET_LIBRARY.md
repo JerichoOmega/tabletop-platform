@@ -171,6 +171,52 @@ Each floor variant is its own independent production asset.
 
 ---
 
+# 6.4 Foundational Environment Assets
+
+These assets are not in-world dungeon props. They are the physical environment around which the Intelligent Tabletop experience is built. Registered under `AssetKind = "environment"`.
+
+| # | Asset | Canonical ID | Source File | Notes | Status |
+|---|---|---|---|---|---|
+| E1 | Grand Gaming Table V1 | `tabletop.grand-gaming-table-v1` | `tabletop/grand-gaming-table-v1.png` | Foundational physical tabletop stage | Locked / Canonical |
+
+---
+
+## Tabletop / Physical Gaming Table
+
+### TABLETOP — GRAND GAMING TABLE V1
+
+**Status:** LOCKED / CANONICAL
+
+**Purpose:** Foundational physical tabletop environment. This is not a dungeon prop. It is the physical gaming table around which all of Intelligent Tabletop is conceptually built. All dungeon terrain, miniatures, props, encounters, and effects exist *on* this table. It should be treated as the stage itself.
+
+**Visual characteristics:**
+- Thick, massive, rectangular oak construction with gracefully rounded corners
+- Large recessed dark play surface — intentionally neutral to keep game content dominant
+- Restrained aged-gold / brass detailing: perimeter inlay, corner ornamentation, structural accent bands, dragon-crest hardware
+- Four massive architectural legs — each carved with an identical relief dragon design
+- Dragon carving: three-dimensional depth, scales, wings, horns, claws, long body, expressive head; selected accents in aged gold
+- Carved apron with interwoven knotwork and fantasy motifs connecting tabletop to legs
+- Dragon crest on the front apron — decorative identity element
+- Stylized fantasy 3D presentation consistent with the established Intelligent Tabletop visual library
+
+**Material language:**
+- Primary: rich warm dark oak with visible grain, knots, carved surfaces, and subtle heirloom wear
+- Secondary: aged gold / antique brass used sparingly as accent
+
+**Style classification:** STYLIZED FANTASY 3D — matches the established library's stylized 3D presentation, strong silhouettes, tactile materials, slightly exaggerated proportions, and premium fantasy aesthetic.
+
+**Canonical source:** `public/assets/visual/tabletop/grand-gaming-table-v1.png` (1536×1024)
+
+**Asset ID:** `tabletop.grand-gaming-table-v1`
+
+**Kind:** `environment` (foundational stage asset — not a prop)
+
+**Runtime:** Registered. Not yet rendered in any gameplay screen. Presentation integration (zoom-out camera, table-framing view) is a future step.
+
+**Important — dragon consistency rule:** All four legs must use the *same* dragon design. Do not create four different dragons. Do not give each leg a different motif. Do not create unique dragon poses. The approved canonical image is the visual master reference.
+
+---
+
 # 7. Approved Variation Families
 
 These are approved variations of established asset families. They preserve the same base construction language.

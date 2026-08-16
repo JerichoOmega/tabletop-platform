@@ -16,7 +16,8 @@ export type AssetKind =
   | "map"         // full-map backdrop image
   | "prop"        // in-world object (chest, altar, barrel…)
   | "effect"      // transient visual (spell flash, healing sparkle…)
-  | "icon";       // UI icon that is not a class-icon placeholder
+  | "icon"        // UI icon that is not a class-icon placeholder
+  | "environment"; // foundational environment / stage asset (e.g. the physical gaming table)
 
 /**
  * A registered visual asset.

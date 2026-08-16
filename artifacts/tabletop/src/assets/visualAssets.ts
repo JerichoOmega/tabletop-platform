@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 // VISUAL ASSETS BOOTSTRAP
 //
-// Registers all 44 canonical production assets from the Intelligent Tabletop
+// Registers all canonical production assets from the Intelligent Tabletop
 // Visual Asset Library into the asset registry.
+// Current count: 45 (44 original props/terrain/miniatures + 1 foundational environment).
 //
 // Import this module once at application startup (main.tsx) — BEFORE React
 // renders. Registration is additive; the rules engine is never imported here.
@@ -172,4 +173,30 @@ export function registerCanonicalAssets(): void {
   registerAsset({ id: "prop.crates-supplies-v1",      kind: "prop", src: v("props/storage-furniture/crates-supplies-v1.png"),     alt: "Crates & Supplies V1 — more stylized canonical revision" });
   registerAsset({ id: "prop.wall-sconce-v1",          kind: "prop", src: v("props/lighting-decor/wall-sconce-v1.png"),            alt: "Wall Sconce V1" });
   registerAsset({ id: "prop.lantern-v1",              kind: "prop", src: v("props/lighting-decor/lantern-v1.png"),                alt: "Lantern V1" });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FOUNDATIONAL ENVIRONMENT — Physical Gaming Table
+  //
+  // This is NOT an ordinary dungeon prop. It is the physical gaming table
+  // around which the entire Intelligent Tabletop experience is conceptually
+  // built. All dungeon terrain, miniatures, and encounters exist ON this table.
+  //
+  // Registered under the "environment" kind to distinguish it from in-world
+  // props. The table is a stage / environment asset, not a placeable game object.
+  //
+  // Future camera / presentation work can use this ID to render the table as the
+  // zoomed-out stage surrounding the encounter. No camera system is implemented
+  // here — the registry is the seam for that future integration.
+  //
+  // The canonical source is preserved unmodified at:
+  //   public/assets/visual/tabletop/grand-gaming-table-v1.png
+  // No derived runtime crop is required (the source IS the runtime asset).
+  // ─────────────────────────────────────────────────────────────────────────
+
+  registerAsset({
+    id:   "tabletop.grand-gaming-table-v1",
+    kind: "environment",
+    src:   v("tabletop/grand-gaming-table-v1.png"),
+    alt:  "Grand Gaming Table V1 — foundational physical tabletop environment, massive dragon-carved oak construction",
+  });
 }
