@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ---------------------------------------------------------------------------
 // INTELLIGENT TABLETOP — main React component.
 //
@@ -24,7 +23,9 @@ import {
   Footprints, Sword, Sparkles, ScrollText, Dice5, ChevronRight, X, Check, Info,
 } from "lucide-react";
 
-import { ENCOUNTER_DEFS, ABILITY_DEFS, buildEncounter, mulberry32 } from "@/engine/content";
+import type { GameState, HealResult, DamageResult } from "@/engine/content";
+import { ENCOUNTER_DEFS, ABILITY_DEFS, buildEncounter, mulberry32, getProductionEncounters } from "@/engine/content";
+import type { AttackResult, ValidationResult } from "@/engine/rules";
 import {
   resolveLeadingEnemyTurns, endTurn,
   executeMove, executeAttack, executeAbility,
@@ -33,9 +34,29 @@ import {
   reachableTiles, occupiedSet,
   key, isWall, isPillar,
 } from "@/engine/rules";
+import type { Step, RevalidationCheck, ProposedAction } from "@/intent/parser";
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
 import { FONT_IMPORT, ClassIcon, CharacterPanel, actionBtnStyle } from "@/ui/primitives";
 import { resolveAsset } from "@/assets/registry";
+
+// ---------------------------------------------------------------------------
+// LOCAL TYPES — owned by the React layer; engine types are imported above.
+// ---------------------------------------------------------------------------
+
+type AttackRoll  = { kind: "attack";  actor: string; targetName: string }  & AttackResult;
+type AbilityRoll =
+  | ({ kind: "ability"; actor: string; abilityName: string } & HealResult)
+  | ({ kind: "ability"; actor: string; abilityName: string } & DamageResult);
+type LastRoll = AttackRoll | AbilityRoll | null;
+
+interface ProposalState {
+  steps:   Step[];
+  summary: string;
+  checks:  RevalidationCheck[];
+  actorId: string;
+  text:    string;
+  stale:   boolean;
+}
 
 // True when running under Playwright or any other harness that appends ?e2e to
 // the URL.  Test-only encounters are hidden from the picker in normal usage.
@@ -44,7 +65,7 @@ const isE2E = typeof window !== "undefined" && new URLSearchParams(window.locati
 export default function IntelligentTabletop() {
   const seedRef        = useRef(1337);
   const encounterIdRef = useRef("crypt");
-  const rngRef         = useRef(null);
+  const rngRef         = useRef<(() => number) | null>(null);
 
   const [gameState, setGameState] = useState(() => {
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);
@@ -52,14 +73,14 @@ export default function IntelligentTabletop() {
     rngRef.current = rng;
     return resolveLeadingEnemyTurns(fresh, rng);
   });
-  const [mode, setMode]               = useState("traditional"); // traditional | assisted | adventure
-  const [selectedId, setSelectedId]   = useState(null);
-  const [pendingAction, setPendingAction] = useState(null);       // 'move' | 'attack' | 'ability:<id>' | null
-  const [lastRoll, setLastRoll]       = useState(null);
+  const [mode, setMode]               = useState<"traditional" | "assisted" | "adventure">("traditional");
+  const [selectedId, setSelectedId]   = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null); // 'move' | 'attack' | 'ability:<id>' | null
+  const [lastRoll, setLastRoll]       = useState<LastRoll>(null);
   const [textInput, setTextInput]     = useState("");
-  const [proposal, setProposal]       = useState(null);           // {steps, summary, checks, actorId, text, stale}
-  const [infoResult, setInfoResult]   = useState(null);           // {type:'query'|'inspect', ...}
-  const [banner, setBanner]           = useState(null);           // transient error/warning messages
+  const [proposal, setProposal]       = useState<ProposalState | null>(null);
+  const [infoResult, setInfoResult]   = useState<ProposedAction | null>(null);
+  const [banner, setBanner]           = useState<string | null>(null);
 
   const currentActorId = gameState.turnOrder[gameState.turnIndex];
   const currentActor   = gameState.combatants[currentActorId];
@@ -101,8 +122,8 @@ export default function IntelligentTabletop() {
   }, [gameState, pendingAction, selected, currentActorId, isPlayerTurn]);
 
   const attackPreview = useMemo(() => {
-    if (!isPlayerTurn || pendingAction !== "attack" || !selected || selected.id !== currentActorId) return {};
-    const map = {};
+    if (!isPlayerTurn || pendingAction !== "attack" || !selected || selected.id !== currentActorId) return {} as Record<string, ValidationResult>;
+    const map: Record<string, ValidationResult> = {};
     Object.values(gameState.combatants).forEach((c) => {
       if (c.type === "enemy" && c.alive) map[c.id] = validateAttack(gameState, selected.id, c.id);
     });
@@ -117,8 +138,8 @@ export default function IntelligentTabletop() {
   const abilityIsHarmful = pendingAbility?.targeting === "enemy";
 
   const abilityPreview = useMemo(() => {
-    if (!isPlayerTurn || !pendingAbilityId || !selected || selected.id !== currentActorId) return {};
-    const map = {};
+    if (!isPlayerTurn || !pendingAbilityId || !selected || selected.id !== currentActorId) return {} as Record<string, ValidationResult>;
+    const map: Record<string, ValidationResult> = {};
     Object.values(gameState.combatants).forEach((c) => {
       if (c.alive) map[c.id] = validateAbility(gameState, selected.id, pendingAbilityId, c.id);
     });
@@ -128,20 +149,20 @@ export default function IntelligentTabletop() {
   // ---------------------------------------------------------------------------
   // EVENT HANDLERS
   // ---------------------------------------------------------------------------
-  function pushLogAndSet(next) { setGameState(next); }
-  function afterPlayerAction(next) { pushLogAndSet(next); }
-  function doEndTurnAndMaybeAI(state) {
+  function pushLogAndSet(next: GameState) { setGameState(next); }
+  function afterPlayerAction(next: GameState) { pushLogAndSet(next); }
+  function doEndTurnAndMaybeAI(state: GameState) {
     const next = endTurn(state);
-    return resolveLeadingEnemyTurns(next, rngRef.current);
+    return resolveLeadingEnemyTurns(next, rngRef.current!);
   }
 
-  const handleSelectToken = useCallback((id) => {
+  const handleSelectToken = useCallback((id: string) => {
     setSelectedId(id);
     setPendingAction(null);
     setProposal(null);
   }, []);
 
-  function handleTileClick(x, y) {
+  function handleTileClick(x: number, y: number) {
     if (mode !== "traditional" || pendingAction !== "move" || !selected) return;
     const res = executeMove(gameState, selected.id, { x, y });
     if (res.ok) {
@@ -153,7 +174,7 @@ export default function IntelligentTabletop() {
     }
   }
 
-  function handleAttackTarget(targetId) {
+  function handleAttackTarget(targetId: string) {
     if (mode !== "traditional" || pendingAction !== "attack" || !selected) return;
     const v = attackPreview[targetId];
     if (!v || !v.valid) {
@@ -165,10 +186,10 @@ export default function IntelligentTabletop() {
       setTimeout(() => setBanner(null), 2800);
       return;
     }
-    const res = executeAttack(gameState, selected.id, targetId, rngRef.current);
+    const res = executeAttack(gameState, selected.id, targetId, rngRef.current!);
     setPendingAction(null);
     if (res.ok) {
-      setLastRoll({ kind: "attack", actor: selected.name, ...res.result, targetName: gameState.combatants[targetId].name });
+      setLastRoll({ kind: "attack", actor: selected.name, ...(res.result as AttackResult), targetName: gameState.combatants[targetId].name });
     }
     afterPlayerAction(res.state);
   }
@@ -177,7 +198,7 @@ export default function IntelligentTabletop() {
   // here, NOT through handleSelectToken. The early-return guard checks the
   // exact pendingAction string so enemy clicks during "move" mode don't
   // accidentally trigger an ability.
-  function handleAbilityTarget(abilityId, targetId) {
+  function handleAbilityTarget(abilityId: string, targetId: string) {
     if (mode !== "traditional" || pendingAction !== "ability:" + abilityId || !selected) return;
     const v = validateAbility(gameState, selected.id, abilityId, targetId);
     if (!v.valid) {
@@ -187,10 +208,11 @@ export default function IntelligentTabletop() {
       setTimeout(() => setBanner(null), 2800);
       return;
     }
-    const res = executeAbility(gameState, selected.id, abilityId, targetId, rngRef.current);
+    const res = executeAbility(gameState, selected.id, abilityId, targetId, rngRef.current!);
     setPendingAction(null);
     if (res.ok) {
-      setLastRoll({ kind: "ability", actor: selected.name, abilityName: ABILITY_DEFS[abilityId].name, ...res.result });
+      const r = res.result as HealResult | DamageResult;
+      setLastRoll({ kind: "ability", actor: selected.name, abilityName: ABILITY_DEFS[abilityId].name, ...r });
     }
     afterPlayerAction(res.state);
   }
@@ -244,7 +266,7 @@ export default function IntelligentTabletop() {
       return;
     }
     // Atomic: either every step applies, or none do.
-    const exec = executeProposalSteps(gameState, proposal.actorId, proposal.steps, rngRef.current);
+    const exec = executeProposalSteps(gameState, proposal.actorId, proposal.steps, rngRef.current!);
     if (!exec.ok) {
       setBanner(exec.events[0] || "That action could not be resolved.");
       setTimeout(() => setBanner(null), 2800);
@@ -252,11 +274,16 @@ export default function IntelligentTabletop() {
       return;
     }
     if (exec.lastAttackResult) {
-      const atkStep = proposal.steps.find((s) => s.kind === "attack");
-      setLastRoll({ kind: "attack", actor: exec.state.combatants[proposal.actorId].name, targetName: exec.state.combatants[atkStep.targetId].name, ...exec.lastAttackResult });
+      const atkStep = proposal.steps.find((s): s is Extract<Step, { kind: "attack" }> => s.kind === "attack");
+      if (atkStep) {
+        setLastRoll({ kind: "attack", actor: exec.state.combatants[proposal.actorId].name, targetName: exec.state.combatants[atkStep.targetId]?.name ?? "Unknown", ...exec.lastAttackResult });
+      }
     } else if (exec.lastAbilityResult) {
-      const abilityStep = proposal.steps.find((s) => s.kind === "ability");
-      setLastRoll({ kind: "ability", actor: exec.state.combatants[proposal.actorId].name, abilityName: ABILITY_DEFS[abilityStep.abilityId].name, ...exec.lastAbilityResult });
+      const abilityStep = proposal.steps.find((s): s is Extract<Step, { kind: "ability" }> => s.kind === "ability");
+      if (abilityStep) {
+        const r = exec.lastAbilityResult as HealResult | DamageResult;
+        setLastRoll({ kind: "ability", actor: exec.state.combatants[proposal.actorId].name, abilityName: ABILITY_DEFS[abilityStep.abilityId].name, ...r });
+      }
     }
     setProposal(null);
     setTextInput("");
@@ -268,7 +295,7 @@ export default function IntelligentTabletop() {
     const parsed = parseIntent(proposal.text, gameState, proposal.actorId);
     if (parsed.type !== "proposal") {
       setProposal(null);
-      setBanner(parsed.message || "That is no longer possible.");
+      setBanner(parsed.type === "error" ? parsed.message : "That is no longer possible.");
       setTimeout(() => setBanner(null), 2800);
       return;
     }
@@ -280,7 +307,7 @@ export default function IntelligentTabletop() {
   function cancelInfo()     { setInfoResult(null); }
 
   // FIX 3: arrow wrapper prevents SyntheticEvent from being passed as encounterId.
-  function newEncounter(encounterId) {
+  function newEncounter(encounterId?: string) {
     if (encounterId) encounterIdRef.current = encounterId;
     seedRef.current += 1;
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);
@@ -301,7 +328,7 @@ export default function IntelligentTabletop() {
   // ---------------------------------------------------------------------------
   const reachSet    = useMemo(() => new Set(reachable.map((t) => key(t.x, t.y))), [reachable]);
   const tokensByTile = useMemo(() => {
-    const m = {};
+    const m: Record<string, typeof gameState.combatants[string]> = {};
     Object.values(gameState.combatants).forEach((c) => { if (c.alive) m[key(c.x, c.y)] = c; });
     return m;
   }, [gameState]);
@@ -335,9 +362,9 @@ export default function IntelligentTabletop() {
         </div>
         <div style={{ display: "flex", gap: 6, background: "#241a12", border: "1px solid #5a4326", borderRadius: 10, padding: 4 }}>
           {[
-            { id: "traditional", label: "Traditional" },
-            { id: "assisted",    label: "Assisted"    },
-            { id: "adventure",   label: "Adventure"   },
+            { id: "traditional" as const, label: "Traditional" },
+            { id: "assisted"    as const, label: "Assisted"    },
+            { id: "adventure"   as const, label: "Adventure"   },
           ].map((m) => (
             <button
               key={m.id}
@@ -363,7 +390,7 @@ export default function IntelligentTabletop() {
 
       {/* Encounter switcher — test-only encounters are hidden unless ?e2e is in the URL */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        {Object.values(ENCOUNTER_DEFS).filter((enc) => !enc.testOnly || isE2E).map((enc) => (
+        {Object.values(isE2E ? ENCOUNTER_DEFS : getProductionEncounters()).map((enc) => (
           <button
             key={enc.id}
             onClick={() => newEncounter(enc.id)}
@@ -612,10 +639,12 @@ export default function IntelligentTabletop() {
                           title={tok.name}
                         >
                           {/* Resolve visual asset if registered; fall back to icon placeholder. */}
-                          {resolveAsset(`character.${tok.defId}`)
-                            ? <img src={resolveAsset(`character.${tok.defId}`).src} alt={tok.name} style={{ width: 18, height: 18, objectFit: "cover", borderRadius: "50%", pointerEvents: "none" }} />
-                            : <ClassIcon icon={tok.icon} size={18} className="" />
-                          }
+                          {(() => {
+                            const asset = resolveAsset(`character.${tok.defId}`);
+                            return asset
+                              ? <img src={asset.src} alt={tok.name} style={{ width: 18, height: 18, objectFit: "cover", borderRadius: "50%", pointerEvents: "none" }} />
+                              : <ClassIcon icon={tok.icon} size={18} className="" />;
+                          })()}
                         </div>
                       )}
                     </div>

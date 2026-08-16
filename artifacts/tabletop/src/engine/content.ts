@@ -133,7 +133,7 @@ interface EncounterEntry {
   y: number;
 }
 
-interface EncounterDef {
+export interface EncounterDef {
   id: string;
   name: string;
   mapId: string;
@@ -438,6 +438,17 @@ export const ENCOUNTER_DEFS: Record<string, EncounterDef> = {
   },
 };
 
+/**
+ * Returns only encounters intended for production play (no `testOnly: true`).
+ * UI encounter pickers should call this instead of reading ENCOUNTER_DEFS
+ * directly, so test fixtures never appear to players.
+ */
+export function getProductionEncounters(): Record<string, EncounterDef> {
+  return Object.fromEntries(
+    Object.entries(ENCOUNTER_DEFS).filter(([, enc]) => !enc.testOnly)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // DEFINITION → RUNTIME INSTANCE
 // A CombatantDefinition is a template. A runtime instance is one mutable
@@ -455,6 +466,11 @@ export function createCombatantInstance(
   if (!def) throw new Error(`Unknown combatant definition: "${defId}"`);
   const weaponDef = WEAPON_DEFS[def.weaponId];
   if (!weaponDef) throw new Error(`Unknown weapon "${def.weaponId}" referenced by "${defId}"`);
+  for (const abilityId of def.abilities ?? []) {
+    if (!ABILITY_DEFS[abilityId]) {
+      throw new Error(`Unknown ability "${abilityId}" on combatant definition "${defId}"`);
+    }
+  }
   return {
     id: instanceId,
     defId,

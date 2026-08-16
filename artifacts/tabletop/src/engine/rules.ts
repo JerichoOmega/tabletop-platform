@@ -10,7 +10,35 @@
 // ---------------------------------------------------------------------------
 
 import { ABILITY_DEFS, EFFECT_HANDLERS, rollDie } from "./content";
-import type { Combatant, GameState, MapDef } from "./content";
+import type { Combatant, GameState, MapDef, AbilityDef, EffectResult, EffectHandler } from "./content";
+
+// ---------------------------------------------------------------------------
+// VALIDATION CODE — stable machine-readable codes for all validate* results.
+// The union is exhaustive: every code returned by the engine must appear here.
+// ---------------------------------------------------------------------------
+export type ValidationCode =
+  // Actor checks
+  | "ACTOR_UNKNOWN"
+  | "ACTOR_DEAD"
+  | "NOT_YOUR_TURN"
+  | "ACTION_USED"
+  // Move checks
+  | "BLOCKED_TILE"
+  | "TILE_OCCUPIED"
+  | "OUT_OF_MOVEMENT_RANGE"
+  // Target checks
+  | "TARGET_UNKNOWN"
+  | "TARGET_DEAD"
+  | "INVALID_TARGET_TYPE"
+  // Range / line-of-sight checks
+  | "OUT_OF_RANGE"
+  | "BLOCKED_LINE_OF_SIGHT"
+  // Ability checks
+  | "ABILITY_UNKNOWN"
+  | "ABILITY_NOT_LEARNED"
+  | "NO_EFFECT_HANDLER"
+  // Success
+  | "OK";
 
 // ---------------------------------------------------------------------------
 // VALIDATION RESULT — returned by all validate* functions.
@@ -19,7 +47,7 @@ import type { Combatant, GameState, MapDef } from "./content";
 // ---------------------------------------------------------------------------
 export interface ValidationResult {
   valid: boolean;
-  code: string;
+  code: ValidationCode;
   reason?: string;
   /** Distance in movement steps (validateMove success). */
   cost?: number;
@@ -30,14 +58,26 @@ export interface ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
+// ATTACK RESULT — structured result returned by executeAttack on success.
+// ---------------------------------------------------------------------------
+export interface AttackResult {
+  hit: boolean;
+  crit: boolean;
+  d20: number;
+  atkTotal: number;
+  effectiveAc: number;
+  dmgTotal: number;
+}
+
+// ---------------------------------------------------------------------------
 // EXECUTION RESULT — returned by all execute* functions.
 // ---------------------------------------------------------------------------
 export interface ExecutionResult {
   state: GameState;
   events: string[];
   ok: boolean;
-  code?: string;
-  result?: unknown;
+  code?: ValidationCode;
+  result?: AttackResult | EffectResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +230,7 @@ export function validateAttack(
 }
 
 export function isValidAbilityTarget(
-  targeting: string,
+  targeting: AbilityDef["targeting"],
   actor: Combatant,
   target: Combatant,
 ): boolean {
@@ -237,7 +277,11 @@ export function validateAbility(
 // EXECUTION — the ONLY functions permitted to produce new game state.
 // ---------------------------------------------------------------------------
 export function cloneState(state: GameState): GameState {
-  return { ...state, combatants: JSON.parse(JSON.stringify(state.combatants)) as Record<string, Combatant>, log: [...state.log] };
+  const cloned: Record<string, Combatant> = {};
+  for (const [id, c] of Object.entries(state.combatants)) {
+    cloned[id] = { ...c, weapon: { ...c.weapon }, abilities: [...c.abilities] };
+  }
+  return { ...state, combatants: cloned, log: [...state.log] };
 }
 
 export function executeMove(
@@ -318,7 +362,7 @@ export function executeAbility(
   const v = validateAbility(state, actorId, abilityId, targetId);
   if (!v.valid) return { state, events: [v.reason ?? v.code], ok: false, code: v.code };
   const ability = ABILITY_DEFS[abilityId];
-  const handler = EFFECT_HANDLERS[ability.effect.type];
+  const handler = EFFECT_HANDLERS[ability.effect.type] as EffectHandler | undefined;
   if (!handler) return { state, events: [`No handler for effect type "${ability.effect.type}".`], ok: false, code: "NO_EFFECT_HANDLER" };
 
   const next   = cloneState(state);

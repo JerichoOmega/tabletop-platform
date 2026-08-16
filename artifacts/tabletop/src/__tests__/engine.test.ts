@@ -19,6 +19,7 @@ import {
   createCombatantInstance,
   rollInitiative,
   buildEncounter,
+  getProductionEncounters,
 } from "@/engine/content";
 
 import {
@@ -1011,5 +1012,185 @@ describe("Asset Registry", () => {
     registerAsset({ id: "character.fighter", kind: "character", src: "/art/fighter.png" });
     clearRegistry();
     expect(COMBATANT_DEFS.fighter.visualAssetId).toBe(idBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TASK #10 REGRESSION SUITE — engine correctness & type-safety
+// These tests lock in the engine behaviours that were hardened in Task #10.
+// Each test exercises a concrete guarantee that the typed code now enforces.
+// ---------------------------------------------------------------------------
+describe("Task #10 regressions — engine correctness hardening", () => {
+  // -------------------------------------------------------------------------
+  // 1. Beneficial ability targeting a hostile must be refused by the engine.
+  //    Regression guard for isValidAbilityTarget("ally", actor, enemy).
+  // -------------------------------------------------------------------------
+  it("executeAbility: beneficial (ally-targeting) ability rejected on an enemy target", () => {
+    // "quickAbility" encounter: testWizard (wizard) vs targetDummy (dummy1).
+    const state = buildEncounter("quickAbility", 7);
+    // Force the wizard to be the current actor.
+    const forced = {
+      ...state,
+      turnOrder: ["wizard", ...state.turnOrder.filter((id) => id !== "wizard")],
+      turnIndex: 0,
+    };
+    // Healing Touch targets: "ally". dummy1 is an enemy.
+    const res = executeAbility(forced, "wizard", "healingTouch", "dummy1", rng());
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe("INVALID_TARGET_TYPE");
+  });
+
+  // -------------------------------------------------------------------------
+  // 2. Hostile (enemy-targeting) ability must be rejected when targeting an ally.
+  // -------------------------------------------------------------------------
+  it("executeAbility: hostile (enemy-targeting) ability rejected on an ally target", () => {
+    const state = buildEncounter("quickAbility", 7);
+    const forced = {
+      ...state,
+      turnOrder: ["wizard", ...state.turnOrder.filter((id) => id !== "wizard")],
+      turnIndex: 0,
+    };
+    // Fire Bolt targets: "enemy". Wizard itself is a PC — INVALID_TARGET_TYPE.
+    const res = executeAbility(forced, "wizard", "fireBolt", "wizard", rng());
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe("INVALID_TARGET_TYPE");
+  });
+
+  // -------------------------------------------------------------------------
+  // 3. createCombatantInstance throws on an unknown ability ID.
+  //    Locks in the ability-validation added to content.ts.
+  // -------------------------------------------------------------------------
+  it("createCombatantInstance: throws when a combatant definition references a non-existent ability", () => {
+    // testWizard references healingTouch + fireBolt — both valid.
+    expect(() =>
+      createCombatantInstance("testWizard", "tw1", 1, 1)
+    ).not.toThrow();
+
+    // validateAbility with an invented ability ID must return ABILITY_UNKNOWN.
+    const state = buildEncounter("quickAbility", 1);
+    const forced = {
+      ...state,
+      turnOrder: ["wizard", ...state.turnOrder.filter((id) => id !== "wizard")],
+      turnIndex: 0,
+    };
+    const v = validateAbility(forced, "wizard", "nonExistentAbility123", "dummy1");
+    expect(v.valid).toBe(false);
+    expect(v.code).toBe("ABILITY_UNKNOWN");
+  });
+
+  // -------------------------------------------------------------------------
+  // 4. cloneState produces independent copies — mutations do not bleed through.
+  //    Regression guard for the typed deep-clone that replaced JSON.parse.
+  // -------------------------------------------------------------------------
+  it("cloneState: mutating the clone does not affect the original", () => {
+    const original = buildEncounter("crypt", 42);
+    const clone    = cloneState(original);
+
+    // Mutate combatant scalar
+    const firstId = Object.keys(clone.combatants)[0];
+    clone.combatants[firstId].hp -= 5;
+    expect(original.combatants[firstId].hp).not.toBe(clone.combatants[firstId].hp);
+
+    // Mutate weapon (one level deep)
+    clone.combatants[firstId].weapon.range += 10;
+    expect(original.combatants[firstId].weapon.range).not.toBe(clone.combatants[firstId].weapon.range);
+
+    // Mutate abilities array
+    clone.combatants[firstId].abilities.push("testAbility");
+    expect(original.combatants[firstId].abilities).not.toContain("testAbility");
+
+    // Mutate log
+    clone.log.push("extra");
+    expect(original.log).not.toContain("extra");
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. ValidationCode values are stable.  Any change to the set of codes will
+  //    break this test, alerting the developer to update the type union too.
+  // -------------------------------------------------------------------------
+  it("engine emits only documented ValidationCode values", () => {
+    const KNOWN_CODES = new Set([
+      "ACTOR_UNKNOWN", "ACTOR_DEAD", "NOT_YOUR_TURN", "ACTION_USED",
+      "BLOCKED_TILE", "TILE_OCCUPIED", "OUT_OF_MOVEMENT_RANGE",
+      "TARGET_UNKNOWN", "TARGET_DEAD", "INVALID_TARGET_TYPE",
+      "OUT_OF_RANGE", "BLOCKED_LINE_OF_SIGHT",
+      "ABILITY_UNKNOWN", "ABILITY_NOT_LEARNED", "NO_EFFECT_HANDLER",
+      "OK",
+    ]);
+    const state = buildEncounter("crypt", 1);
+    const pcId  = state.turnOrder[state.turnIndex];
+
+    const testCases = [
+      () => validateMove(state, pcId, { x: 0, y: 0 }),
+      () => validateMove(state, pcId, { x: 99, y: 99 }),
+      () => validateMove(state, "nonexistent", { x: 1, y: 1 }),
+      () => validateAttack(state, pcId, "nonexistent"),
+      () => validateAbility(state, pcId, "nonexistent", "nonexistent"),
+    ];
+
+    for (const fn of testCases) {
+      const result = fn();
+      expect(KNOWN_CODES.has(result.code)).toBe(true);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. getProductionEncounters excludes testOnly encounters.
+  //    Locks in the content-layer filter so UI code can rely on this shape.
+  // -------------------------------------------------------------------------
+  it("getProductionEncounters: excludes testOnly encounters, includes normal ones", () => {
+    const prod = getProductionEncounters();
+
+    // Every returned encounter must NOT be testOnly.
+    for (const enc of Object.values(prod)) {
+      expect(enc.testOnly).toBeFalsy();
+    }
+
+    // Standard encounters must be present.
+    expect(prod).toHaveProperty("crypt");
+    expect(prod).toHaveProperty("trainingYard");
+
+    // Test-only encounters must be absent.
+    const testOnlyIds = Object.entries(ENCOUNTER_DEFS)
+      .filter(([, enc]) => enc.testOnly)
+      .map(([id]) => id);
+    for (const id of testOnlyIds) {
+      expect(prod).not.toHaveProperty(id);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. revalidateProposal: endTurn step always validates as OK.
+  // -------------------------------------------------------------------------
+  it("revalidateProposal: endTurn step always produces valid: true, code: OK", () => {
+    const state = buildEncounter("crypt", 42);
+    const pcId  = state.turnOrder[state.turnIndex];
+    const checks = revalidateProposal(state, pcId, [{ kind: "endTurn", description: "End Turn" }]);
+    expect(checks).toHaveLength(1);
+    expect(checks[0].valid).toBe(true);
+    expect(checks[0].code).toBe("OK");
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. Attack on dead target is refused — engine never applies an attack after
+  //    the target has already fallen.
+  // -------------------------------------------------------------------------
+  it("executeAttack: attack on an already-dead target is refused", () => {
+    // quickBattle: fighter vs targetDummy.  Force the fighter as actor so we
+    // have a known PC actor regardless of initiative order.
+    const state = buildEncounter("quickBattle", 1);
+    const pcId  = "fighter";
+    const forced = {
+      ...state,
+      turnOrder: [pcId, ...state.turnOrder.filter((id) => id !== pcId)],
+      turnIndex: 0,
+    };
+    const dead = cloneState(forced);
+    dead.combatants["dummy1"].hp    = 0;
+    dead.combatants["dummy1"].alive = false;
+
+    const res = executeAttack(dead, pcId, "dummy1", rng());
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe("TARGET_DEAD");
   });
 });

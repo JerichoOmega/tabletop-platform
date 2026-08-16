@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ---------------------------------------------------------------------------
 // INTENT ENGINE — text → ProposedAction.
 //
@@ -19,12 +18,14 @@
 //   { kind: "move",    dest: {x,y}, description }
 //   { kind: "attack",  targetId,    description }
 //   { kind: "ability", abilityId, targetId, description }
-//   { kind: "endTurn" }
+//   { kind: "endTurn", description }
 //
 // Dependency: content.ts (ABILITY_DEFS) + rules.ts (validation + pathfinding).
 // ---------------------------------------------------------------------------
 
+import type { Combatant, GameState, AbilityDef, EffectResult } from "@/engine/content";
 import { ABILITY_DEFS } from "@/engine/content";
+import type { ValidationCode, AttackResult } from "@/engine/rules";
 import {
   chebyshev,
   lineOfSight,
@@ -41,10 +42,58 @@ import {
 } from "@/engine/rules";
 
 // ---------------------------------------------------------------------------
+// EXPORTED TYPES — shared by the parser, the UI, and the execution layer.
+// ---------------------------------------------------------------------------
+
+export interface CheckItem {
+  ok: boolean;
+  label: string;
+}
+
+/** A single executable step in a proposed action sequence. */
+export type Step =
+  | { kind: "move";    dest: { x: number; y: number }; description: string }
+  | { kind: "attack";  targetId: string;                description: string }
+  | { kind: "ability"; abilityId: string; targetId: string; description: string }
+  | { kind: "endTurn"; description: string };
+
+/** The result of parseIntent — drives the UI card shown to the player. */
+export type ProposedAction =
+  | { type: "proposal"; steps: Step[];     summary: string }
+  | { type: "query";    question: string;  items: CheckItem[]; overall: boolean; headline: string }
+  | { type: "inspect";  lines: string[] }
+  | { type: "error";    message: string };
+
+/** One entry in the per-step revalidation checklist. */
+export interface RevalidationCheck {
+  step: Step;
+  valid: boolean;
+  reason?: string;
+  code: ValidationCode;
+  cover?: boolean;
+}
+
+/** Returned by executeProposalSteps on atomic execution of a proposal. */
+export interface ProposalExecutionResult {
+  ok: boolean;
+  state: GameState;
+  events: string[];
+  lastAttackResult?: AttackResult;
+  lastAbilityResult?: EffectResult;
+}
+
+// ---------------------------------------------------------------------------
+// INTERNAL TILE TYPES — used only within this module.
+// ---------------------------------------------------------------------------
+type Tile = { x: number; y: number; dist: number };
+type CloserTile  = Tile & { dToTarget: number };
+type RetreatTile = Tile & { safety: number };
+
+// ---------------------------------------------------------------------------
 // CONTEXTUAL VIEW — not yet used as the primary dispatch path, but kept here
 // so it can be the shape handed to a real LLM in a future iteration.
 // ---------------------------------------------------------------------------
-function buildIntentContext(state, actorId) {
+function buildIntentContext(state: GameState, actorId: string) {
   const actor = state.combatants[actorId];
   if (!actor) return null;
   const enemies = Object.values(state.combatants)
@@ -71,6 +120,10 @@ function buildIntentContext(state, actorId) {
   };
 }
 
+// Suppress the unused-variable warning for the LLM-context helper; it will be
+// wired in once the LLM integration lands.
+void buildIntentContext;
+
 // ---------------------------------------------------------------------------
 // INTENT VOCABULARY
 // ---------------------------------------------------------------------------
@@ -86,7 +139,7 @@ const RETREAT_PHRASE   = /\b(retreat|back away|fall back|away from)\b/;
 const STAY_PHRASE      = /\b(stay|remain|don'?t move|from here|where i am|without moving)\b/;
 const GENERIC_TARGET_WORDS = /\benemy\b|\bit\b|\bhim\b|\bthat\b|closest|nearest/;
 
-function classifyIntent(t) {
+function classifyIntent(t: string) {
   return {
     isQuery:      QUERY_PREFIX.test(t),
     isInspect:    INSPECT_PHRASE.test(t),
@@ -101,14 +154,14 @@ function classifyIntent(t) {
   };
 }
 
-function normalizeForMatch(s) {
+function normalizeForMatch(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 // Used only for example/hint copy (error messages, input placeholders) so
 // that text doesn't hardcode "the goblin" — it names whatever enemy is
 // actually present in the current encounter.
-export function exampleTargetPhrase(state) {
+export function exampleTargetPhrase(state: GameState): string {
   const enemies = Object.values(state.combatants).filter((c) => c.type === "enemy" && c.alive);
   if (!enemies.length) return "your target";
   return "the " + enemies[0].cls.toLowerCase();
@@ -120,7 +173,11 @@ export function exampleTargetPhrase(state) {
 // never hardcoded enemy type. "Attack the orc" works only because an Orc
 // happens to be present. No per-species branching.
 // ---------------------------------------------------------------------------
-function findTargetByText(text, state, actorPos) {
+function findTargetByText(
+  text: string,
+  state: GameState,
+  actorPos: { x: number; y: number },
+): Combatant | null {
   const enemies = Object.values(state.combatants).filter((c) => c.type === "enemy" && c.alive);
   if (!enemies.length) return null;
   const norm = normalizeForMatch(text);
@@ -149,13 +206,13 @@ function findTargetByText(text, state, actorPos) {
 // myself" works for any ability whose effect.type is "heal", the same way
 // ATTACK_VERBS works for any weapon.
 // ---------------------------------------------------------------------------
-const EFFECT_TYPE_VERBS = {
+const EFFECT_TYPE_VERBS: Record<string, RegExp> = {
   heal:   /\b(heal|healing|cure|mend)\b/,
   damage: /\b(fire|flame|burn|scorch|blast|bolt|spell)\b/,
 };
 
-function findAbilityByText(text, actor) {
-  const abilities = actor.abilities || [];
+function findAbilityByText(text: string, actor: Combatant): string | null {
+  const abilities = actor.abilities ?? [];
   if (!abilities.length) return null;
   const norm = normalizeForMatch(text);
   const byName = abilities.find((id) => ABILITY_DEFS[id] && norm.includes(normalizeForMatch(ABILITY_DEFS[id].name)));
@@ -166,12 +223,12 @@ function findAbilityByText(text, actor) {
     const verbPattern = ability && EFFECT_TYPE_VERBS[ability.effect.type];
     return verbPattern && verbPattern.test(t);
   });
-  return byEffectVerb || null;
+  return byEffectVerb ?? null;
 }
 
 // Ally/self target resolution for abilities (as opposed to findTargetByText,
 // which resolves enemies for attacks).
-function findAllyTargetByText(text, state, actor) {
+function findAllyTargetByText(text: string, state: GameState, actor: Combatant): Combatant | null {
   const t = text.toLowerCase();
   if (/\b(myself|herself|himself|itself|on me|on herself|on himself|on myself)\b/.test(t)) return actor;
   const allies = Object.values(state.combatants).filter((c) => c.type === actor.type && c.alive);
@@ -184,12 +241,20 @@ function findAllyTargetByText(text, state, actor) {
 // Generic target resolution for ANY ability, dispatched on the ability's
 // own `targeting` rule — this is what lets Fire Bolt (targeting: "enemy")
 // and Healing Touch (targeting: "ally") share one intent-parsing path.
-function findAbilityTargetByText(text, state, actor, ability) {
+//
+// Returns null when no suitable target is found; callers MUST return an
+// explicit error to the player rather than silently substituting the actor.
+function findAbilityTargetByText(
+  text: string,
+  state: GameState,
+  actor: Combatant,
+  ability: AbilityDef,
+): Combatant | null {
   if (ability.targeting === "self")  return actor;
   if (ability.targeting === "enemy") return findTargetByText(text, state, actor);
-  if (ability.targeting === "ally")  return findAllyTargetByText(text, state, actor) || actor;
+  if (ability.targeting === "ally")  return findAllyTargetByText(text, state, actor);
   // "any": try enemy first, then ally/self
-  return findTargetByText(text, state, actor) || findAllyTargetByText(text, state, actor);
+  return findTargetByText(text, state, actor) ?? findAllyTargetByText(text, state, actor);
 }
 
 // ---------------------------------------------------------------------------
@@ -197,10 +262,10 @@ function findAbilityTargetByText(text, state, actor, ability) {
 // Each finds a reachable tile satisfying an intent. Reads terrain from
 // state.map (never a module-level map reference).
 // ---------------------------------------------------------------------------
-function findCoverTile(state, actor, target) {
+function findCoverTile(state: GameState, actor: Combatant, target: Combatant | null): Tile | null {
   const occ   = occupiedSet(state.combatants, actor.id);
   const reach = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
-  let best = null;
+  let best: Tile | null = null;
   for (const tile of reach) {
     if (!state.map.pillars.some((p) => chebyshev(p, tile) === 1)) continue;
     if (target && lineOfSight(state.map, tile, target).blocked) continue;
@@ -208,10 +273,10 @@ function findCoverTile(state, actor, target) {
   }
   return best;
 }
-function findAttackPositionTile(state, actor, target) {
+function findAttackPositionTile(state: GameState, actor: Combatant, target: Combatant): Tile | null {
   const occ   = occupiedSet(state.combatants, actor.id);
   const reach = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
-  let best = null;
+  let best: Tile | null = null;
   for (const tile of reach) {
     if (chebyshev(tile, target) > actor.weapon.range) continue;
     if (lineOfSight(state.map, tile, target).blocked) continue;
@@ -219,21 +284,21 @@ function findAttackPositionTile(state, actor, target) {
   }
   return best;
 }
-function findAdjacentTile(state, actor, target) {
+function findAdjacentTile(state: GameState, actor: Combatant, target: Combatant): Tile | null {
   const occ   = occupiedSet(state.combatants, actor.id);
   const reach = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
-  let best = null;
+  let best: Tile | null = null;
   for (const tile of reach) {
     if (chebyshev(tile, target) !== 1) continue;
     if (!best || tile.dist < best.dist) best = tile;
   }
   return best;
 }
-function findCloserTile(state, actor, target) {
+function findCloserTile(state: GameState, actor: Combatant, target: Combatant): CloserTile | null {
   const occ     = occupiedSet(state.combatants, actor.id);
   const reach   = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
   const curDist = chebyshev(actor, target);
-  let best = null;
+  let best: CloserTile | null = null;
   for (const tile of reach) {
     const d = chebyshev(tile, target);
     if (d >= curDist) continue;
@@ -242,14 +307,15 @@ function findCloserTile(state, actor, target) {
   }
   return best;
 }
-function findRetreatTile(state, actor) {
+function findRetreatTile(state: GameState, actor: Combatant): RetreatTile | null {
   const occ     = occupiedSet(state.combatants, actor.id);
   const reach   = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
   const enemies = Object.values(state.combatants).filter((c) => c.type === "enemy" && c.alive);
   if (!enemies.length) return null;
-  const minDistToEnemies = (tile) => Math.min(...enemies.map((e) => chebyshev(tile, e)));
+  const minDistToEnemies = (tile: { x: number; y: number }) =>
+    Math.min(...enemies.map((e) => chebyshev(tile, e)));
   const curSafety = minDistToEnemies(actor);
-  let best = null;
+  let best: RetreatTile | null = null;
   for (const tile of reach) {
     const safety = minDistToEnemies(tile);
     if (safety <= curSafety) continue;
@@ -262,11 +328,15 @@ function findRetreatTile(state, actor) {
 // "CAN I…?" EXPLAINABILITY
 // Itemised check lists built ONLY from real validation — never invented.
 // ---------------------------------------------------------------------------
-function explainAttack(state, actorId, targetId) {
+function explainAttack(
+  state: GameState,
+  actorId: string,
+  targetId: string,
+): { overall: boolean; items: CheckItem[] } {
   const actor  = state.combatants[actorId];
   const target = state.combatants[targetId];
   if (!target) return { overall: false, items: [{ ok: false, label: "No such target." }] };
-  const items = [];
+  const items: CheckItem[] = [];
   items.push({ ok: target.alive, label: target.alive ? `${target.name} is alive` : `${target.name} is already defeated` });
   const turnOk = state.turnOrder[state.turnIndex] === actorId;
   items.push({ ok: turnOk, label: turnOk ? `It is ${actor.name}'s turn` : `It is not ${actor.name}'s turn` });
@@ -279,21 +349,29 @@ function explainAttack(state, actorId, targetId) {
   if (!los.blocked && los.cover) items.push({ ok: true, label: "Target has pillar cover (+2 effective AC)" });
   return { overall: items.every((i) => i.ok), items };
 }
-function explainReachCover(state, actorId) {
+function explainReachCover(
+  state: GameState,
+  actorId: string,
+): { overall: boolean; items: CheckItem[]; tile: Tile | null } {
   const actor = state.combatants[actorId];
   const tile  = findCoverTile(state, actor, null);
-  const items = [
+  const items: CheckItem[] = [
     { ok: !!tile, label: tile ? `A tile beside a pillar is reachable (${actor.moveRemaining} movement available)` : "No reachable tile is adjacent to a pillar" },
   ];
   return { overall: items.every((i) => i.ok), items, tile };
 }
-function explainAbility(state, actorId, abilityId, targetId) {
+function explainAbility(
+  state: GameState,
+  actorId: string,
+  abilityId: string,
+  targetId: string,
+): { overall: boolean; items: CheckItem[] } {
   const actor   = state.combatants[actorId];
   const target  = state.combatants[targetId];
   const ability = ABILITY_DEFS[abilityId];
   if (!target || !ability) return { overall: false, items: [{ ok: false, label: "No such ability or target." }] };
-  const items = [];
-  items.push({ ok: (actor.abilities || []).includes(abilityId), label: (actor.abilities || []).includes(abilityId) ? `${actor.name} knows ${ability.name}` : `${actor.name} does not know ${ability.name}` });
+  const items: CheckItem[] = [];
+  items.push({ ok: (actor.abilities ?? []).includes(abilityId), label: (actor.abilities ?? []).includes(abilityId) ? `${actor.name} knows ${ability.name}` : `${actor.name} does not know ${ability.name}` });
   const turnOk = state.turnOrder[state.turnIndex] === actorId;
   items.push({ ok: turnOk, label: turnOk ? `It is ${actor.name}'s turn` : `It is not ${actor.name}'s turn` });
   items.push({ ok: !actor.actionUsed, label: !actor.actionUsed ? "Action is available" : "Action already used this turn" });
@@ -312,7 +390,7 @@ function explainAbility(state, actorId, abilityId, targetId) {
 // ---------------------------------------------------------------------------
 // THE INTERPRETER — text + state + actorId → ProposedAction
 // ---------------------------------------------------------------------------
-export function parseIntent(text, state, actorId) {
+export function parseIntent(text: string, state: GameState, actorId: string): ProposedAction {
   const raw   = text.trim();
   const t     = raw.toLowerCase();
   const actor = state.combatants[actorId];
@@ -388,9 +466,10 @@ export function parseIntent(text, state, actorId) {
   if ((c.wantsNextTo || c.wantsToward) && !target && !c.wantsAttack)
     return { type: "error", message: `Could not identify what to move toward in "${raw}".` };
 
-  const steps = [];
+  const steps: Step[] = [];
   if (c.wantsMove && !c.staysPut) {
-    let tile = null, moveDescription = null;
+    let tile: Tile | null = null;
+    let moveDescription: string | null = null;
     // Propose a literal blocked tile so the rules engine rejects it with a
     // real explanation instead of quietly rerouting.
     if (/\b(through|into|onto)\b.*\bpillar\b/.test(t)) {
@@ -422,7 +501,7 @@ export function parseIntent(text, state, actorId) {
       return { type: "error", message: 'Move where? Try mentioning a landmark, e.g. "move behind the pillar".' };
     }
     if (tile && !(tile.x === actor.x && tile.y === actor.y)) {
-      steps.push({ kind: "move", dest: { x: tile.x, y: tile.y }, description: moveDescription });
+      steps.push({ kind: "move", dest: { x: tile.x, y: tile.y }, description: moveDescription ?? "Move" });
     }
   }
 
@@ -446,9 +525,13 @@ export function parseIntent(text, state, actorId) {
 // execution; if anything has changed (target moved, died, action already
 // used), nothing is applied.
 // ---------------------------------------------------------------------------
-export function revalidateProposal(state, actorId, steps) {
+export function revalidateProposal(
+  state: GameState,
+  actorId: string,
+  steps: Step[],
+): RevalidationCheck[] {
   let sim = cloneState(state);
-  const checks = [];
+  const checks: RevalidationCheck[] = [];
   for (const step of steps) {
     if (step.kind === "move") {
       const v = validateMove(sim, actorId, step.dest);
@@ -457,7 +540,7 @@ export function revalidateProposal(state, actorId, steps) {
         const a = sim.combatants[actorId];
         a.x = step.dest.x;
         a.y = step.dest.y;
-        a.moveRemaining -= v.cost;
+        a.moveRemaining -= v.cost ?? 0;
       }
     } else if (step.kind === "attack") {
       const v = validateAttack(sim, actorId, step.targetId);
@@ -466,7 +549,7 @@ export function revalidateProposal(state, actorId, steps) {
       const v = validateAbility(sim, actorId, step.abilityId, step.targetId);
       checks.push({ step, valid: v.valid, reason: v.reason, code: v.code });
     } else if (step.kind === "endTurn") {
-      checks.push({ step, valid: true, reason: null, code: "OK" });
+      checks.push({ step, valid: true, code: "OK" });
     }
   }
   return checks;
@@ -475,11 +558,16 @@ export function revalidateProposal(state, actorId, steps) {
 // Executes a pre-validated sequence atomically. If any step turns out to be
 // invalid when actually applied, the ORIGINAL input state is returned
 // untouched — no partial mutation is possible.
-export function executeProposalSteps(state, actorId, steps, rng) {
+export function executeProposalSteps(
+  state: GameState,
+  actorId: string,
+  steps: Step[],
+  rng: () => number,
+): ProposalExecutionResult {
   let cur = state;
-  const events = [];
-  let lastAttackResult  = null;
-  let lastAbilityResult = null;
+  const events: string[] = [];
+  let lastAttackResult:  AttackResult | undefined  = undefined;
+  let lastAbilityResult: EffectResult | undefined  = undefined;
   for (const step of steps) {
     if (step.kind === "move") {
       const res = executeMove(cur, actorId, step.dest);
@@ -491,13 +579,13 @@ export function executeProposalSteps(state, actorId, steps, rng) {
       if (!res.ok) return { ok: false, state, events: res.events };
       cur = res.state;
       events.push(...res.events);
-      lastAttackResult = res.result;
+      lastAttackResult = res.result as AttackResult | undefined;
     } else if (step.kind === "ability") {
       const res = executeAbility(cur, actorId, step.abilityId, step.targetId, rng);
       if (!res.ok) return { ok: false, state, events: res.events };
       cur = res.state;
       events.push(...res.events);
-      lastAbilityResult = res.result;
+      lastAbilityResult = res.result as EffectResult | undefined;
     }
     // 'endTurn' steps are handled by the caller (turn cycling + enemy AI
     // live outside this pure engine call) — see handleEndTurn / approveProposal.
