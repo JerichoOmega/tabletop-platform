@@ -1,0 +1,848 @@
+TASK: Design the World Scale & Fixed Tabletop Viewport System
+
+Repository:
+JerichoOmega/tabletop-platform
+
+CURRENT CANONICAL BASELINE
+
+Phase 2 is complete.
+
+Latest commit:
+7f35369 — Animation / Tactile Feedback
+
+Recent milestones:
+
+- 1c825d3 — Asset registry architecture
+- 9e489d5 — Gameplay interaction regression coverage
+- 5508399 — Engine/type-safety hardening
+- 8e966cf — Hover / Target Preview
+- 58004b2 — Canonical roadmap
+- 8529cda — Tablet-first responsive UX
+- aafb5a9 — Accessibility pass
+- 7f35369 — Animation / Tactile Feedback
+
+Current verified baseline:
+
+- 93/93 unit tests
+- 148/148 E2E tests
+- TypeScript clean
+- Production build clean
+
+Read these documents before beginning:
+
+- docs/ROADMAP.md
+- docs/PROJECT_STATUS.md
+
+PHASE 3 IS NOW BEGINNING:
+
+WORLD REPRESENTATION
+
+The core design principle is:
+
+"The Table Is Fixed. The World Is Not."
+
+The tabletop is a fixed-size presentation surface.
+
+The world represented by that tabletop may be substantially larger than the visible tabletop.
+
+A player should be able to explore environments that extend far beyond the physical dimensions of the visible board without the game feeling like it has reached an artificial map boundary.
+
+IMPORTANT:
+
+THIS TASK IS SPECIFICATION/DESIGN ONLY.
+
+Do NOT implement the World Scale / Viewport system.
+
+Do NOT modify gameplay code.
+
+Do NOT modify GameState.
+
+Do NOT modify the rules engine.
+
+Do NOT modify the renderer.
+
+Do NOT add world-coordinate code.
+
+Do NOT add map streaming code.
+
+Do NOT add camera movement.
+
+Do NOT add chunk generation.
+
+Do NOT add exploration mode.
+
+Do NOT add new tests for an unimplemented system.
+
+Do NOT begin Phase 4.
+
+The purpose of this task is to produce a detailed technical specification that another agent can implement later without having to reinvent the architecture.
+
+==================================================
+1. CREATE THE CANONICAL SPECIFICATION
+==================================================
+
+Create:
+
+docs/WORLD_SCALE_VIEWPORT.md
+
+This becomes the canonical technical specification for the World Scale / Fixed Tabletop system.
+
+Update docs/PROJECT_STATUS.md only enough to point to this specification and indicate that Phase 3 specification work has begun.
+
+Do not duplicate the entire specification inside PROJECT_STATUS.md.
+
+==================================================
+2. CORE PRINCIPLE
+==================================================
+
+Document prominently:
+
+"The Table Is Fixed. The World Is Not."
+
+Explain the intended experience:
+
+The tabletop should behave like a fixed physical game table.
+
+The world should not be constrained to the tabletop's dimensions.
+
+The player is effectively viewing a window into a larger persistent world.
+
+The desired player perception is:
+
+"The world comes to the table."
+
+Avoid framing this merely as camera scrolling.
+
+The system is a world-representation architecture, not simply a visual scrolling trick.
+
+==================================================
+3. SEPARATE WORLD SPACE FROM TABLETOP SPACE
+==================================================
+
+Define the conceptual coordinate systems.
+
+At minimum specify:
+
+WORLD SPACE
+
+Persistent coordinates describing where an entity or tile actually exists in the game world.
+
+TABLETOP / VIEWPORT SPACE
+
+The currently visible region presented on the fixed tabletop.
+
+Clearly establish:
+
+World coordinates are authoritative for persistent world identity.
+
+Viewport movement does not change world coordinates.
+
+An entity at world coordinate:
+
+(142, 37)
+
+must remain at:
+
+(142, 37)
+
+regardless of how the viewport moves.
+
+The tabletop is merely displaying a different portion of world space.
+
+Define the conceptual relationship:
+
+World Space
+    ↓
+World Region
+    ↓
+Viewport
+    ↓
+Visible World Section
+    ↓
+Tabletop Renderer
+
+Do not assume that the exact data structures above are already correct. This is a design specification.
+
+==================================================
+4. AUTHORITATIVE GAME STATE
+==================================================
+
+Determine which information belongs in authoritative GameState and which belongs in transient world-presentation state.
+
+Explicitly address:
+
+- entity world position
+- tile/world position
+- active actor
+- combat state
+- encounter state
+- viewport position
+- visible world bounds
+- loaded chunks/regions
+- exploration state
+- tactical state
+
+The specification must preserve the existing architectural rule:
+
+The rules engine remains authoritative over gameplay.
+
+The viewport must never become a second game-state system.
+
+Do not move gameplay legality into viewport logic.
+
+Explain which viewport information is transient presentation state versus persistent world state.
+
+==================================================
+5. GRID AND WORLD COORDINATES
+==================================================
+
+The current game uses grid/tile-based tactical positioning.
+
+Determine how that grid should extend into larger world spaces.
+
+Address:
+
+- integer tile coordinates
+- negative coordinates if appropriate
+- very large coordinates
+- entity positioning
+- tile identity
+- adjacency
+- movement
+- range calculations
+- line of sight
+- map boundaries
+
+Do not change the existing rules engine in this task.
+
+Instead, specify how the future system should integrate with it.
+
+Explicitly address whether existing:
+
+- chebyshev()
+- movement validation
+- attack range
+- ability range
+- line of sight
+
+should continue operating in world coordinates.
+
+The preferred architecture should preserve deterministic world-coordinate calculations.
+
+==================================================
+6. VIEWPORT MODEL
+==================================================
+
+Define the viewport.
+
+Specify:
+
+- viewport width
+- viewport height
+- origin/center
+- visible tile bounds
+- viewport position
+- recentering behavior
+- margins/dead zones
+- how the party relates to the viewport
+
+Do not hardcode today's CSS cell size into the world model.
+
+The viewport should operate in logical/world units.
+
+Rendering converts those logical units into screen pixels.
+
+Conceptually:
+
+World Coordinates
+    ↓
+Viewport Transform
+    ↓
+Visible Logical Tiles
+    ↓
+Pixel Layout
+
+==================================================
+7. PLAYER MOVEMENT AND VIEWPORT MOVEMENT
+==================================================
+
+Define exactly when the viewport should move.
+
+Consider at least:
+
+- player comfortably inside viewport
+- player approaching viewport edge
+- player crossing a recenter threshold
+- player moving continuously in one direction
+- player moving backward
+- player changing direction
+- player moving diagonally
+- multiple party members
+- active combatant versus party center
+
+Do not assume the active actor should always be centered.
+
+Define a reasonable dead-zone / follow model.
+
+The goal is to avoid:
+
+- constant jitter
+- camera snapping
+- characters being glued permanently to the center
+- characters hitting an artificial board boundary
+
+==================================================
+8. SMALL AREAS
+==================================================
+
+Define behavior when the entire environment fits on the tabletop.
+
+Example:
+
+Small room.
+
+Desired behavior:
+
+The entire room can remain visible.
+
+No unnecessary scrolling.
+
+The tabletop behaves like a traditional tactical board.
+
+==================================================
+9. LARGE AREAS
+==================================================
+
+Define behavior when an environment is larger than the tabletop.
+
+Examples:
+
+- large chamber
+- cathedral
+- courtyard
+- cavern
+- battlefield
+
+The viewport should allow the player to explore the larger area without changing the tabletop's physical dimensions.
+
+Define:
+
+- how the viewport moves
+- what happens at world edges
+- whether the player can freely reposition the viewport
+- how the system recenters
+- how tactical encounters interact with the viewport
+
+==================================================
+10. LONG CORRIDORS / CONTINUOUS ENVIRONMENTS
+==================================================
+
+This is a primary use case.
+
+Example:
+
+A dungeon corridor is 100+ tiles long.
+
+The tabletop may only display approximately 8–12 tiles at once.
+
+As the party moves:
+
+- terrain behind the party leaves the visible viewport
+- terrain ahead becomes visible
+- the tabletop remains the same physical size
+- the party continues moving through persistent world coordinates
+
+The player should perceive this as one continuous corridor.
+
+Do NOT make the implementation depend on literally moving the same DOM elements indefinitely.
+
+The future system may recycle presentation chunks, but world identity must remain persistent.
+
+Define how:
+
+- terrain chunks
+- entities
+- doors
+- props
+- encounter triggers
+- environmental state
+
+remain consistent as the viewport moves.
+
+==================================================
+11. WORLD REGIONS / CHUNKS
+==================================================
+
+Design a future region/chunk model.
+
+Specify:
+
+- chunk dimensions
+- chunk coordinate system
+- loading
+- unloading
+- recycling
+- caching
+- generation
+- persistence
+- deterministic identity
+
+Do not implement it.
+
+Determine whether chunks are:
+
+- purely rendering structures
+- persistent world structures
+- generated representations of persistent world data
+
+Be explicit about what happens when a chunk leaves the viewport.
+
+It must not simply cease to exist if the underlying world state still matters.
+
+==================================================
+12. ENTITY PERSISTENCE
+==================================================
+
+This is critical.
+
+Define how entities maintain identity when leaving and re-entering the viewport.
+
+Example:
+
+Goblin A exists at world coordinate:
+
+(142, 37)
+
+The party moves 50 tiles away.
+
+The goblin leaves the viewport.
+
+Later the party returns.
+
+The system must not accidentally create a different Goblin A.
+
+Address:
+
+- stable entity IDs
+- world coordinates
+- persistent state
+- defeated entities
+- moved entities
+- opened doors
+- looted containers
+- changed terrain
+- environmental state
+
+This should work regardless of whether the environment is currently rendered.
+
+==================================================
+13. EXPLORATION MODE VS TACTICAL MODE
+==================================================
+
+Define the distinction.
+
+EXPLORATION:
+
+- viewport can move
+- large environments can be traversed
+- continuous environments can stream
+- the player can discover new world space
+
+TACTICAL:
+
+- relevant combat area becomes stable
+- viewport should not unexpectedly drift
+- movement/targeting operate against a stable presentation
+- tactical decisions should not be interrupted by camera movement
+
+Define what causes the transition.
+
+==================================================
+14. ENCOUNTER TRANSITION
+==================================================
+
+Define the intended flow:
+
+EXPLORATION
+    ↓
+Encounter detected
+    ↓
+Relevant tactical area established
+    ↓
+Viewport stabilizes
+    ↓
+Combat begins
+    ↓
+Combat resolves
+    ↓
+Exploration resumes
+
+Address:
+
+- what happens if an encounter begins near the viewport edge
+- whether the tabletop recenters
+- how much surrounding terrain is included
+- how party/enemies are positioned
+- how the viewport becomes stable
+- what happens after combat
+
+Do not implement encounter transitions yet.
+
+==================================================
+15. COMBAT IN LARGE ENVIRONMENTS
+==================================================
+
+A major use case is a combat encounter inside a world region larger than the tabletop.
+
+Example:
+
+A giant battlefield.
+
+The entire battlefield cannot be visible.
+
+The combat encounter still needs a stable tactical area.
+
+Define how the system can:
+
+- establish a tactical viewport
+- preserve world coordinates
+- keep nearby enemies visible
+- keep relevant terrain visible
+- prevent unwanted viewport drift
+- handle combatants moving toward the viewport edge
+
+Do not assume every combat encounter must fit entirely within the full world region.
+
+==================================================
+16. WORLD EDGES
+==================================================
+
+Define what happens at:
+
+- finite world boundaries
+- generated boundaries
+- unexplored boundaries
+- intentionally infinite/continuous environments
+
+The specification should distinguish:
+
+"there is no world here"
+
+from:
+
+"the world exists but has not yet been represented/loaded."
+
+Do not let viewport logic accidentally create artificial boundaries.
+
+==================================================
+17. PERFORMANCE
+==================================================
+
+Define conceptual performance requirements.
+
+Address:
+
+- maximum visible region
+- loaded region
+- prefetch region
+- unloading distance
+- entity lookup
+- chunk caching
+- deterministic generation
+- avoiding unnecessary React re-renders
+
+Do not optimize prematurely.
+
+The goal is to establish safe architectural boundaries, not micro-optimize.
+
+==================================================
+18. RENDERING ARCHITECTURE
+==================================================
+
+Define the separation between:
+
+World Model
+    ↓
+Viewport
+    ↓
+Visible Tile/Entity Query
+    ↓
+Renderer
+
+The renderer should not become responsible for deciding what exists in the world.
+
+The world should not depend on pixel coordinates.
+
+CSS `cellPx` / responsive screen sizing must remain a rendering concern.
+
+Logical world coordinates must remain independent of screen dimensions.
+
+==================================================
+19. INPUT / INTERACTION
+==================================================
+
+Define how player interaction maps to world coordinates.
+
+For example:
+
+Screen pointer
+    ↓
+Tabletop tile
+    ↓
+Viewport transform
+    ↓
+World coordinate
+    ↓
+Rules engine
+
+Ensure future implementation can determine the actual world tile from a clicked tabletop tile.
+
+Targeting must continue to operate against authoritative world positions.
+
+Do not implement this mapping yet.
+
+==================================================
+20. RESPONSIVE TABLETOP
+==================================================
+
+The tabletop already supports:
+
+- desktop
+- tablet landscape
+- tablet portrait
+
+The world model must not depend on those screen sizes.
+
+A tablet and desktop may display different numbers of logical tiles or different pixel sizes while representing the same world location.
+
+Define this explicitly.
+
+==================================================
+21. ASSET SYSTEM
+==================================================
+
+Preserve the asset architecture established in 1c825d3.
+
+World representation may reference logical assets.
+
+The world/rules engine must not import production asset files.
+
+Terrain/entity rendering remains responsible for resolving assets through the existing registry.
+
+==================================================
+22. AI DM FUTURE INTEGRATION
+==================================================
+
+Explain how this architecture prepares for future AI-generated environments.
+
+The AI should be able to describe or generate world-level concepts such as:
+
+"The corridor continues another hundred feet before opening into a massive underground chamber."
+
+The AI should not directly manipulate viewport pixels or React components.
+
+Conceptually:
+
+AI DM
+    ↓
+World/Environment Description
+    ↓
+World Model / Generator
+    ↓
+Persistent World
+    ↓
+Viewport
+    ↓
+Tabletop Renderer
+
+The AI can eventually influence world content.
+
+It does not own rendering.
+
+It does not bypass rules.
+
+==================================================
+23. FAILURE / EDGE CASES
+==================================================
+
+Explicitly discuss:
+
+- player moving backward
+- player moving diagonally
+- party members splitting
+- active actor far from party center
+- enemy outside current viewport
+- combat beginning at viewport edge
+- target outside visible region
+- returning to a previously visited region
+- destroyed objects
+- dead entities
+- opened/closed doors
+- viewport moving across chunk boundaries
+- rapidly changing direction
+- very large rooms
+- very narrow corridors
+- world boundaries
+- missing/generated terrain
+- save/load in a streamed region
+
+==================================================
+24. TEST STRATEGY
+==================================================
+
+Design the future testing strategy.
+
+Do not implement tests yet.
+
+Specify what will eventually require:
+
+UNIT TESTS
+
+- world coordinate transforms
+- viewport bounds
+- chunk coordinate calculations
+- entity persistence
+- deterministic generation
+- world/tile lookup
+
+INTEGRATION TESTS
+
+- world → viewport → renderer
+- movement across viewport boundaries
+- chunk loading/unloading
+- encounter transitions
+- returning to previous regions
+
+E2E TESTS
+
+- long corridor traversal
+- large room exploration
+- viewport following
+- combat locking
+- exploration resuming
+- responsive viewport behavior
+
+The specification should clearly distinguish what is deterministic and testable from what is purely visual.
+
+==================================================
+25. IMPLEMENTATION PHASES
+==================================================
+
+End the specification with a staged implementation plan.
+
+Suggested order:
+
+PHASE A
+Logical world-coordinate abstraction
+
+PHASE B
+Viewport model and world-to-visible-tile mapping
+
+PHASE C
+Render only the visible world region
+
+PHASE D
+Viewport follow/recenter behavior
+
+PHASE E
+Large-area support
+
+PHASE F
+Chunk/region streaming
+
+PHASE G
+Persistent world/entity state
+
+PHASE H
+Exploration → encounter transition
+
+PHASE I
+Tactical viewport locking
+
+PHASE J
+Large-scale environment testing
+
+Do not begin any of these phases during this task.
+
+==================================================
+26. ARCHITECTURAL DECISIONS
+==================================================
+
+At the end of the document include a concise list of explicit decisions.
+
+At minimum establish:
+
+1. The tabletop is fixed.
+2. The world is not fixed to tabletop dimensions.
+3. World coordinates are authoritative.
+4. Viewport coordinates are presentation state.
+5. Moving the viewport never moves entities in world space.
+6. Rules validation operates against authoritative world coordinates.
+7. Rendering does not own world state.
+8. Assets remain decoupled from the rules engine.
+9. Tactical combat stabilizes the relevant viewport.
+10. Exploration can move through environments larger than the tabletop.
+11. Entity identity persists outside the currently visible region.
+12. Future AI can describe/generate world content without owning rendering or rules.
+
+==================================================
+27. DOCUMENTATION QUALITY
+==================================================
+
+Write this as a real engineering specification.
+
+It should be useful to:
+
+- Replit
+- Claude
+- future coding agents
+- future AI architecture agents
+- human developers
+
+Do not write vague product prose.
+
+Use:
+
+- diagrams
+- tables
+- examples
+- invariants
+- explicit responsibilities
+- explicit non-responsibilities
+- state-transition descriptions
+- coordinate examples
+
+Clearly label:
+
+IMPLEMENTED TODAY
+
+versus:
+
+PLANNED / SPECIFICATION ONLY
+
+Do not claim any World Scale functionality currently exists.
+
+==================================================
+FINAL REPORT
+
+When complete:
+
+1. Report the new specification file.
+2. Report any existing documentation updated.
+3. Summarize the major architectural decisions.
+4. Identify any unresolved design questions.
+5. Explicitly state that no World Scale implementation was performed.
+6. Run documentation-safe verification if appropriate.
+7. Commit the specification and provide the commit hash.
+
+IMPORTANT:
+
+This is a DESIGN/SPECIFICATION task only.
+
+Do not write implementation code.
+
+Do not modify the existing game architecture.
+
+Do not begin the World Scale implementation automatically.
+
+STOP after the specification is complete.

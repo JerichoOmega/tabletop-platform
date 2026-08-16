@@ -1,14 +1,14 @@
 # Intelligent Tabletop — Project Status
 
-_Last updated: accessibility pass commit (post tablet-responsive baseline)_
+_Last updated: Phase 3 specification begun_
 
 ## Baseline (latest committed state)
 
 | Metric | Value |
 |---|---|
-| Commit | `a10c634` — Import tablet-first responsive UX |
+| Commit | `7f35369` — Animation / tactile feedback |
 | Unit tests | 93 passing |
-| E2E tests | 133 passing (92 pre-existing + 41 accessibility) |
+| E2E tests | 148 passing (133 prior + 15 animation) |
 | TypeScript | Clean (0 errors, `--noEmit`) |
 | Build | Vite production build clean |
 
@@ -36,7 +36,19 @@ See `docs/ROADMAP.md` for the full phase breakdown and governance rules.
 | 14 | Animation / tactile feedback | ✅ Done |
 | 15 | Accessibility — WCAG 2.1 AA | ✅ Done |
 | 16 | Automated game-engine tests | ⬜ Pending |
-| 17 | World-scale viewport (Phase 3) | ⬜ Future phase |
+| 17 | World-scale viewport (Phase 3) | 📋 Specified — see `docs/WORLD_SCALE_VIEWPORT.md` |
+
+---
+
+## Phase 3 — World Scale & Fixed Tabletop Viewport
+
+**Status:** Specification complete. No implementation has occurred.
+
+Full technical specification: **`docs/WORLD_SCALE_VIEWPORT.md`**
+
+The spec covers all 26 required sections: coordinate systems, authoritative vs presentation state, viewport model, follow/dead-zone behavior, chunk streaming, entity persistence, exploration vs tactical modes, encounter transitions, large-environment combat, world edges, rendering architecture, AI DM integration, test strategy, and a staged 10-phase implementation plan (Phase A through Phase J).
+
+The Phase 2 test baseline (93 unit / 148 E2E) is unchanged. Phase A and Phase B of the implementation are designed to be transparent rewrites — all existing tests must pass without modification.
 
 ---
 
