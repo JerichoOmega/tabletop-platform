@@ -1,0 +1,202 @@
+Task: Harden Engine Correctness and Type Safety
+
+Commit 9e489d5 is live.
+
+The current verified baseline is:
+
+* pnpm typecheck — clean
+* Unit tests — 85 passing
+* E2E tests — 56/56 passing
+* Production build — clean
+* Existing victory/defeat/traditional/assisted flows remain passing
+
+The gameplay interaction loop now has regression coverage. The next task is to strengthen the underlying engine and type boundaries without changing gameplay behavior.
+
+Objective
+
+Audit the engine, content model, intent/action pipeline, and UI-facing state contracts for places where TypeScript weaknesses, unchecked values, broad types, silent failures, or implicit assumptions could allow real gameplay bugs to hide.
+
+This is a hardening task, not a feature task.
+
+Areas to audit
+
+1. Engine state
+
+Identify state that can currently contain invalid or ambiguous values.
+
+Pay particular attention to:
+
+* active actor
+* selected token
+* pending action / targeting mode
+* turn transitions
+* action availability
+* encounter state
+* combatant IDs
+* target IDs
+* ability IDs
+* map/tile references
+
+Where appropriate, replace loosely typed strings or nullable values with explicit types or discriminated unions.
+
+Do not over-engineer types where a simple existing type is sufficient.
+
+2. Action and targeting model
+
+Audit the action/ability pipeline.
+
+The following concepts should remain explicit and distinguishable:
+
+* movement
+* hostile targeting
+* beneficial targeting
+* invalid/non-targetable
+* action already used
+* action unavailable
+* no active actor
+* no valid target
+
+Ensure invalid combinations cannot silently reach execution.
+
+For example, a beneficial ability should not be able to reach combat resolution with a hostile target merely because the UI failed to prevent the selection.
+
+The engine must remain the final authority on legality.
+
+3. Content definitions
+
+Audit src/engine/content.ts and related content structures.
+
+Look for:
+
+* IDs that can drift from their expected references
+* required fields that are currently optional without justification
+* duplicated literal values
+* unchecked references between combatants, abilities, maps, and encounters
+* test-only content leaking into production encounters
+
+Preserve the logical asset-ID architecture introduced by 1c825d3.
+
+Content definitions must continue to reference logical asset IDs only, never filesystem paths.
+
+4. Intent / proposal safety
+
+Audit the intent/proposal pathway.
+
+AI or assisted input must never be able to directly mutate authoritative game state without passing through the same validation rules as normal player actions.
+
+If an intent requests an invalid action:
+
+* reject it cleanly
+* preserve game state
+* provide a useful reason for rejection where the current architecture supports it
+
+Do not expand the natural-language AI system in this task.
+
+5. Error handling
+
+Find places where errors are:
+
+* swallowed
+* converted into undefined without explanation
+* logged but treated as successful
+* caught and ignored
+* represented by ambiguous return values
+
+Improve these only where doing so increases correctness or observability.
+
+Do not introduce noisy logging into normal gameplay.
+
+6. Test the discovered risks
+
+For every meaningful engine weakness discovered, add a regression test.
+
+Prioritize tests around:
+
+* invalid targets
+* invalid action states
+* stale selections
+* stale pending actions
+* turn transitions
+* missing IDs
+* invalid ability references
+* malformed intent proposals
+* impossible state transitions
+
+Do not create tests merely to increase the test count.
+
+Architectural constraints
+
+Maintain these boundaries:
+
+Rules engine
+
+* owns authoritative game legality and state transitions
+* must not depend on UI components
+* must not depend on production assets
+
+Content
+
+* owns semantic game definitions
+* references logical asset IDs only
+
+Asset registry
+
+* owns presentation asset resolution
+* must remain optional
+* missing assets must not invalidate gameplay
+
+UI
+
+* presents state and collects player input
+* must not become the authoritative source of gameplay legality
+
+AI / intent layer
+
+* interprets or proposes actions
+* must pass through engine validation
+* must never bypass authoritative rules
+
+Important constraint
+
+Do not redesign the current UX.
+
+Do not add:
+
+* natural-language action input
+* new abilities
+* new combat mechanics
+* new visual effects
+* new asset content
+* responsive layouts
+* animations
+
+Those are separate tasks.
+
+This task is specifically about making the existing foundation harder to break.
+
+Verification
+
+Run all of the following before completion:
+
+* pnpm typecheck
+* pnpm test
+* pnpm build
+* pnpm test:e2e
+
+The existing 56 E2E tests must continue passing.
+
+Report:
+
+1. Files changed
+2. Type-safety issues discovered
+3. Engine weaknesses discovered
+4. Changes made
+5. New tests added
+6. Final unit-test count
+7. Final E2E count
+8. Typecheck/build results
+9. Any issues intentionally left unchanged and why
+
+Do not weaken existing tests to make the suite pass.
+
+Commit the completed work and provide the commit hash.
