@@ -1,0 +1,538 @@
+This is a very good preflight, and I agree with the GO WITH CHANGES verdict.
+
+But there is one thing I would not do exactly as Replit proposed: I would not let it start writing a replacement WORLD_SCALE_VIEWPORT.md from scratch until we establish whether the document was accidentally omitted from the current repository state or whether the architecture has moved ahead of the documentation.
+
+The report itself is strong enough that we can now resolve the blocking decisions cleanly.
+
+The eight decisions I would lock
+
+1. Chunk size: 16×16
+2. Negative coordinates: supported mathematically; use floor division, never % directly
+3. ResidentGeometrySnapshot: formal immutable boundary between async world infrastructure and synchronous simulation
+4. PINNED: required residency state
+5. Entity ownership: WorldState/WorldEntityRegistry owns persistent entity position; chunks do not
+6. Missing snapshot chunk: deterministic void result, while treating missing required encounter geometry as an invariant violation
+7. ChunkStore ownership: WorldState owns it; GameState never receives the live store
+8. Generation RNG: completely separate deterministic stream derived from world seed + chunk coordinates
+
+And I agree with the two implementation-level decisions:
+
+* Convert pillar lookup to a Set as chunk geometry is introduced.
+* Fix buildIntentContext() before the LLM context becomes live.
+
+One correction to the proposed chunk model
+
+I would not make ChunkDynamicState itself immutable while also giving it a mutable dirty property:
+
+interface ChunkDynamicState {
+  readonly ...
+  dirty: boolean;
+}
+
+That’s internally contradictory.
+
+Instead, make the live ChunkStore own mutable residency/mutation state, while snapshots contain immutable copies.
+
+Conceptually:
+
+LIVE WORLD
+ChunkStore
+ ├─ ChunkRecord
+ │   ├─ geometry
+ │   ├─ dynamicState
+ │   ├─ residency
+ │   └─ dirty
+ │
+ └─ WorldEntityRegistry
+          ↓
+     snapshot barrier
+          ↓
+IMMUTABLE SIMULATION
+ResidentGeometrySnapshot
+          ↓
+TileQueryFn
+          ↓
+GameState
+
+That keeps the async/live side and deterministic/snapshot side very cleanly separated.
+
+⸻
+
+What I’d send Replit next
+
+We don’t need another enormous audit. We need Replit to resolve the eight blocking decisions in the documentation, recover/restore the authoritative Phase 3 spec if possible, and stop before implementation.
+
+Send this:
+
+Phase E Preflight Resolution — Documentation Only
+
+The Phase E preflight has completed at commit 73e7f3d with a verdict of GO WITH CHANGES.
+
+Do not implement Phase E yet.
+
+Do not create ChunkStore.
+
+Do not create chunk generation.
+
+Do not modify gameplay code.
+
+The purpose of this task is to resolve the architectural decisions identified by the preflight and establish the written contract that Phase E implementation will follow.
+
+⸻
+
+1. First investigate WORLD_SCALE_VIEWPORT.md
+
+The Phase E preflight reports that:
+
+docs/WORLD_SCALE_VIEWPORT.md
+
+does not currently exist on disk.
+
+Before creating anything, search the repository thoroughly for:
+
+* WORLD_SCALE_VIEWPORT.md
+* WORLD SCALE VIEWPORT
+* previous versions
+* copied/renamed versions
+* references to its sections
+* generated documentation containing its contents
+
+Determine whether the specification was:
+
+* deleted
+* renamed
+* moved
+* replaced
+* accidentally omitted from the repository
+
+If an authoritative version exists elsewhere in the repository, recover that version rather than recreating it from memory.
+
+If no recoverable version exists, reconstruct the specification from:
+
+* the existing implementation
+* Phase A–D commits
+* architecture documentation
+* the Phase E preflight findings
+
+If reconstruction is necessary, clearly mark which portions are reconstructed rather than pretending they were previously authoritative.
+
+⸻
+
+2. Resolve the Phase E architectural decisions
+
+Update the authoritative Phase 3 specification so the following decisions are explicit.
+
+Decision 1 — Chunk size
+
+Establish:
+
+CHUNK_W = 16
+CHUNK_H = 16
+
+unless the recovered authoritative specification contains a compelling conflicting requirement.
+
+Document why 16×16 is being selected.
+
+These must be named architectural constants, not unexplained magic numbers.
+
+⸻
+
+Decision 2 — Negative world coordinates
+
+World-coordinate mathematics must support negative coordinates correctly at the utility level.
+
+Use mathematical floor division:
+
+cx = Math.floor(wx / CHUNK_W)
+lx = wx - cx * CHUNK_W
+
+This guarantees:
+
+lx ∈ [0, CHUNK_W)
+
+explicitly prohibit relying on JavaScript’s raw % operator for local-coordinate calculation because:
+
+-1 % 16 === -1
+
+rather than 15.
+
+Document boundary examples including:
+
+0
+15
+16
+-1
+-16
+-17
+
+⸻
+
+Decision 3 — ResidentGeometrySnapshot
+
+Formally define:
+
+ResidentGeometrySnapshot
+
+as the immutable boundary between asynchronous world infrastructure and synchronous simulation.
+
+The architecture must be:
+
+live ChunkStore
+      ↓
+residency preparation
+      ↓
+immutable snapshot
+      ↓
+TileQueryFn
+      ↓
+GameState
+
+GameState must never receive a live ChunkStore.
+
+TileQueryFn must never close over a mutable ChunkStore.
+
+cloneState() must remain safe to share tileQuery by reference.
+
+⸻
+
+Decision 4 — PINNED residency
+
+Add PINNED to the formal residency lifecycle.
+
+Define the lifecycle explicitly.
+
+At minimum:
+
+UNLOADED
+    ↓
+LOADING
+    ↓
+RESIDENT
+    ↓
+UNLOADED
+
+with encounter protection:
+
+RESIDENT
+    ↓
+PINNED
+    ↓
+RESIDENT
+
+and dirty/pinned state as required by the architecture.
+
+Define:
+
+* who may pin
+* who may unpin
+* whether pinned chunks may be evicted
+* what happens to dirty pinned chunks
+* when encounter-required chunks become unpinned
+
+Establish as an invariant:
+
+A chunk required by an active encounter cannot be evicted while that encounter is active.
+
+⸻
+
+Decision 5 — Entity ownership
+
+Explicitly establish:
+
+Persistent entity identity and world position belong to WorldState/WorldEntityRegistry. Chunks do not become an authoritative entity-position store.
+
+A chunk may contain:
+
+* static geometry
+* terrain
+* persistent terrain mutations
+* other chunk-local world mutations
+
+but persistent entity identity remains:
+
+worldId
+wx
+wy
+
+in the authoritative world entity registry.
+
+Moving an entity between chunks must never change worldId.
+
+Evicting and reloading a chunk must never create a new entity identity.
+
+⸻
+
+Decision 6 — TileQuery behavior for missing chunks
+
+Define the exact behavior of:
+
+tileQuery(wx, wy)
+
+when the requested coordinate is not present in the ResidentGeometrySnapshot.
+
+Use the deterministic fallback:
+
+{
+  passable: false,
+  blocksLOS: true,
+  providesCover: false,
+  type: "void"
+}
+
+unless the recovered authoritative specification explicitly requires another behavior.
+
+Also document:
+
+A valid active encounter must never depend on missing required geometry. Encounter setup must establish the required resident snapshot before GameState is created.
+
+This means "void" is a deterministic safety fallback, not a substitute for residency guarantees.
+
+⸻
+
+Decision 7 — ChunkStore ownership
+
+Establish:
+
+WorldState
+   ↓ owns
+ChunkStore
+
+The live ChunkStore must not be owned by:
+
+* React
+* Viewport
+* Renderer
+* GameState
+* rules engine
+
+GameState receives only the immutable geometry snapshot/query required for the active encounter.
+
+⸻
+
+Decision 8 — Generation RNG isolation
+
+Establish that world/chunk generation has its own deterministic random stream.
+
+It must never consume:
+
+* combat RNG
+* initiative RNG
+* proposal RNG
+* the existing gameplay Rng
+
+Define the conceptual seed:
+
+worldSeed + chunk coordinate + generation version
+
+→ deterministic generation seed.
+
+The exact hashing/PRNG implementation can be chosen during Phase E implementation, but the architectural requirement must be explicit now.
+
+⸻
+
+3. Correct the snapshot mutability model
+
+The Phase E preflight proposed a ChunkDynamicState containing:
+
+readonly ...
+dirty: boolean
+
+Do not reproduce this contradictory design.
+
+Establish a clear distinction:
+
+Live ChunkStore state
+
+Mutable:
+
+* residency
+* dirty state
+* dynamic mutations
+* loading state
+
+ResidentGeometrySnapshot
+
+Immutable:
+
+* geometry
+* applicable dynamic overrides
+* chunk identity
+* generation version
+
+The snapshot must contain no mutable references back into the live ChunkStore.
+
+State this explicitly.
+
+⸻
+
+4. Document the async/synchronous barrier
+
+Make this a formal architectural invariant:
+
+Asynchronous
+
+* chunk generation/loading
+* persistence
+* prefetch
+* residency preparation
+
+Synchronous
+
+* TileQueryFn
+* movement validation
+* LOS
+* targeting
+* ability validation
+* proposal revalidation
+* proposal execution
+* enemy AI resolution
+
+The transition must be:
+
+async residency preparation
+             ↓
+immutable snapshot barrier
+             ↓
+synchronous simulation
+
+Never:
+
+rules engine → await chunk
+
+⸻
+
+5. Define encounter residency
+
+Document how an encounter determines its required chunk set.
+
+Establish that required chunks are fully resident before the active GameState is created.
+
+Define that required chunks are protected for the duration of the encounter.
+
+Do not require the rules engine to request or await chunks.
+
+If the exact radius calculation is not sufficiently specified by the recovered document, document it as an implementation decision to be resolved during Phase E. Do not invent a false invariant such as a fixed “11 tile radius” unless the content/rules actually guarantee that maximum.
+
+⸻
+
+6. Document chunk coordinate math
+
+Include the conversion model:
+
+world coordinate
+      ↓
+chunk coordinate + local coordinate
+
+and the inverse.
+
+Include negative-coordinate tests as specification examples.
+
+⸻
+
+7. Document chunk-boundary invariants
+
+Add explicit invariants:
+
+* chunk boundaries do not alter world coordinates
+* chunk boundaries do not alter entity identity
+* chunk boundaries do not alter movement legality
+* chunk boundaries do not alter LOS
+* chunk boundaries do not alter cover
+* chunk boundaries do not alter range
+* chunk boundaries do not alter RNG
+* chunk boundaries do not alter turn state
+
+⸻
+
+8. Document the pillar lookup migration
+
+Record the Phase E implementation requirement:
+
+mapDefToTileQuery() currently performs pillar lookup through Array.some.
+
+When chunk geometry is introduced:
+
+* chunk-local geometry should use efficient coordinate-keyed structures
+* mapDefToTileQuery() should precompute a Set if it remains active
+
+This should be treated as part of the chunk-geometry implementation, not as an unrelated optimization project.
+
+⸻
+
+9. Document the buildIntentContext() leak
+
+Record the known future issue:
+
+src/intent/parser.ts
+buildIntentContext()
+
+currently exposes state.map.pillars.
+
+Establish that this must be corrected before the LLM context becomes authoritative/live in a chunk-backed world.
+
+Do not wire the LLM now.
+
+⸻
+
+10. Do NOT implement Phase E
+
+This task is documentation/architecture only.
+
+Do not create:
+
+* ChunkStore
+* ChunkGeometryData
+* ResidentGeometrySnapshot implementation
+* chunk generation
+* chunk loading
+* persistence
+* WorldState
+* WorldEntityRegistry
+
+Do not change rules code.
+
+Do not change viewport code.
+
+Do not change gameplay.
+
+⸻
+
+11. Validation
+
+Because this is documentation-only:
+
+* verify the specification is internally consistent
+* verify all referenced existing types/functions actually exist
+* verify no proposed interface contradicts Phase A–D architecture
+
+Do not change production code merely to satisfy documentation.
+
+If you discover an actual contradiction that cannot be resolved in documentation, report it instead of making a speculative code change.
+
+⸻
+
+Final report
+
+Report:
+
+1. Whether WORLD_SCALE_VIEWPORT.md was recovered or reconstructed.
+2. Exact documentation files changed.
+3. The eight architectural decisions resolved.
+4. Final chunk ownership model.
+5. Final async/synchronous boundary.
+6. Final snapshot model.
+7. Final entity ownership model.
+8. Final negative-coordinate policy.
+9. Final residency state machine.
+10. Any remaining unresolved decisions.
+11. Whether Phase E is now ready for implementation.
+
+Give exactly one final verdict:
+
+GO — Phase E can begin.
+
+GO WITH CHANGES — additional documentation decisions remain.
+
+NO-GO — architectural contradiction remains.
+
+Do not commit production implementation. Stop after the documentation resolution.

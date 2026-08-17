@@ -1,51 +1,40 @@
 ---
-name: Viewport architecture
-description: Phase 3 World-Scale / Viewport design decisions and invariants. ViewportState is presentation-only; VisibleTile carries authoritative world coords.
+name: Viewport architecture phase progress
+description: Tracks which Phase 3 viewport/world-scale phases are complete and what comes next
 ---
 
-## Phase B — complete (commit 0eac85d)
+## Phase completion status
 
-### Core rule
-`ViewportState` is **never** placed in `GameState`. It lives as React state (`useState`) in the UI layer only. The rules engine, parser, and content module have zero knowledge of it.
+| Phase | Description | Status |
+|---|---|---|
+| A | Logical world-coordinate abstraction (`wx/wy`, `TileQueryFn`, `tileQuery` in `GameState`) | ✅ COMPLETE |
+| B | ViewportState model, `getVisibleTiles()`, coordinate transforms | ✅ COMPLETE |
+| C | Renderer switches to virtualized tile grid (only visible tiles rendered) | ✅ COMPLETE |
+| D | Viewport follow/recenter: dead-zone logic, `shouldRecenter()`, `computeNewOrigin()` | ✅ COMPLETE |
+| E | Large-area support: 40×40 `grandHall`, dead zone active, all mechanics valid at scale | ✅ COMPLETE — commit `73e7f3d`, 217 unit tests, 154 E2E tests |
+| F | Chunk/Region Streaming: `ChunkStore`, streaming, 100-tile corridor | 🔒 DECISIONS LOCKED — ready to implement |
+| G | Persistent WorldState, entity survival across chunk eviction | PLANNED |
+| H | Exploration → encounter transition | PLANNED |
 
-**Why:** Rules correctness must be independent of what portion of the world is visible. Mixing viewport into GameState would corrupt RNG snapshots, cloneState, and replay.
+## Phase F locked decisions (see §26 Decisions 21–28 in WORLD_SCALE_VIEWPORT.md)
 
-### Coordinate chain
-```
-World Space (wx, wy) — authoritative, rules engine only
-  ↓ viewportToWorld / worldToViewport
-Viewport-relative logical tiles (vx, vy)
-  ↓ multiply by cellPx (renderer only)
-Screen pixels
-```
+1. `CHUNK_W = CHUNK_H = 16` (square, power of 2)
+2. Floor division only — never `%` for chunk/local coordinate math
+3. `ResidentGeometrySnapshot`: immutable barrier between async ChunkStore and sync rules engine
+4. `PINNED` residency state: encounter-required chunks cannot be evicted during encounter
+5. Entity ownership: WorldState/WorldEntityRegistry owns worldId/wx/wy; chunks own geometry only
+6. Missing-snapshot tile → deterministic `"void"`; participant-tile miss → invariant violation
+7. ChunkStore owned exclusively by WorldState; GameState never receives live store reference
+8. Generation RNG isolated from combat/initiative RNG: seeded from `(worldSeed, cx, cy, generationVersion)`
 
-### VisibleTile invariant
-Every `VisibleTile` always carries `wx`/`wy` (world coord) alongside `vx`/`vy` (display position). The renderer **must** use `tile.wx, tile.wy` for:
-- token lookup (`tokensByTile[key(tile.wx, tile.wy)]`)
-- reachability set (`reachSet.has(key(tile.wx, tile.wy))`)
-- move destination passed to rules engine
+## Key constants (implemented)
 
-Never substitute `vx/vy` for a world coordinate in any rules call.
+- `VIEWPORT_TILE_W = 12`, `VIEWPORT_TILE_H = 10` — in `IntelligentTabletop.tsx`
+- `DEAD_ZONE_MARGIN = 3` — in `viewport.ts`
+- `CHUNK_W = CHUNK_H = 16` — PLANNED for Phase F (only in spec so far)
 
-### findCoverTile (parser.ts)
-Uses `tileQuery(wx, wy).providesCover` with 8-neighbor (Chebyshev-1) scan. Does NOT read `MapDef.pillars` directly — Phase F chunk data automatically provides cover without changing this function.
+## Known latent issue (must fix before Phase F/H LLM integration)
 
-### Phase B invariants
-- `originWx = 0, originWy = 0` for all current 8×6 encounters
-- `tileW = map.width, tileH = map.height` — whole map always visible
-- `newEncounter()` resets viewport via `setViewport(initViewport(next.map))`
+`buildIntentContext()` in `src/intent/parser.ts` reads `state.map.pillars` directly — currently voided/unused but must be replaced with `state.tileQuery` queries before live use. Do not ship with the direct `map.pillars` access.
 
-### Files
-- `src/engine/viewport.ts` — pure functions: `ViewportState`, `VisibleTile`, `worldToViewport`, `viewportToWorld`, `getVisibleTiles`, `initViewport`, `clampViewportOrigin`
-- `src/IntelligentTabletop.tsx` — `viewport` state, `visibleTiles` memo, board renderer loop
-- `src/intent/parser.ts` — `findCoverTile` via tileQuery
-
-### Next phases
-- **Phase C**: viewport following — camera tracks party leader toward map edges (non-zero origin)
-- **Phase F**: chunk-backed geometry — `tileQuery` wraps chunk data; viewport/rules code unchanged
-
-### Build notes
-Production build (`pnpm build`) requires `PORT` and `BASE_PATH` env vars:
-```sh
-PORT=5173 BASE_PATH=/tabletop pnpm build
-```
+**Why:** After Phase F, encounters may use chunk-backed geometry where `map.pillars` is empty/absent. The tileQuery is the only valid geometry source.
