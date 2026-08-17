@@ -26,6 +26,11 @@
 //   - Tile internal type updated to {wx, wy, dist}.
 //   - Pillar coords in MapDef are still {x, y}; adapted at call sites.
 //
+// Phase B changes:
+//   - findCoverTile() no longer reads state.map.pillars directly.
+//     Cover adjacency is detected via state.tileQuery(wx, wy).providesCover
+//     so that Phase F chunk data is automatically respected.
+//
 // Dependency: content.ts (ABILITY_DEFS) + rules.ts (validation + pathfinding).
 // ---------------------------------------------------------------------------
 
@@ -269,12 +274,35 @@ function findAbilityTargetByText(
 // wx/wy world coordinates throughout (never accesses state.map for tile queries).
 // Pillar positions in MapDef are {x, y}; adapted to {wx, wy} at call sites.
 // ---------------------------------------------------------------------------
+// The eight Chebyshev-1 offsets (all neighbors at distance 1).
+const COVER_NEIGHBOR_OFFSETS: [number, number][] = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1,  0],           [1,  0],
+  [-1,  1], [0,  1], [1,  1],
+];
+
+/**
+ * Finds the nearest reachable tile that is adjacent (Chebyshev distance 1)
+ * to a cover-providing tile (e.g. a pillar), with optional line-of-sight to
+ * a target.
+ *
+ * Phase B: uses state.tileQuery(nx, ny).providesCover rather than reading
+ * state.map.pillars directly. This means Phase F chunk data that introduces
+ * new cover-providing tile types will be automatically respected without
+ * changing this function.
+ */
 function findCoverTile(state: GameState, actor: Combatant, target: Combatant | null): Tile | null {
   const occ   = occupiedSet(state.combatants, actor.id);
   const reach = reachableTiles(state.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
   let best: Tile | null = null;
   for (const tile of reach) {
-    if (!state.map.pillars.some((p) => chebyshev({ wx: p.x, wy: p.y }, tile) === 1)) continue;
+    // A tile is "beside cover" if at least one Chebyshev-1 neighbor provides cover.
+    // Using tileQuery rather than MapDef.pillars decouples from the specific
+    // storage format and makes this correct for future chunk-backed geometry.
+    const adjacentCover = COVER_NEIGHBOR_OFFSETS.some(
+      ([dx, dy]) => state.tileQuery(tile.wx + dx, tile.wy + dy).providesCover
+    );
+    if (!adjacentCover) continue;
     if (target && lineOfSight(state.tileQuery, tile, target).blocked) continue;
     if (!best || tile.dist < best.dist) best = tile;
   }

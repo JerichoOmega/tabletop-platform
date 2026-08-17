@@ -1432,6 +1432,343 @@ describe("Phase A regressions — wx/wy rename + TileQueryFn abstraction", () =>
 });
 
 // ---------------------------------------------------------------------------
+// PHASE B — VIEWPORT MODEL
+// Pure-function unit tests for the viewport module.
+// No React, no browser, no GameState mutation.
+// ---------------------------------------------------------------------------
+
+import {
+  initViewport,
+  worldToViewport,
+  viewportToWorld,
+  getVisibleTiles,
+  clampViewportOrigin,
+} from "@/engine/viewport";
+import type { ViewportState } from "@/engine/viewport";
+
+describe("Phase B — Viewport: initViewport", () => {
+  // Spec requirement §13: current 8×6 maps initialize with the entire map visible.
+  it("8×6 crypt map initializes with originWx=0, originWy=0, tileW=8, tileH=6", () => {
+    const map = MAP_DEFS.crypt;
+    const vp  = initViewport(map);
+    expect(vp.originWx).toBe(0);
+    expect(vp.originWy).toBe(0);
+    expect(vp.tileW).toBe(map.width);    // 8
+    expect(vp.tileH).toBe(map.height);   // 6
+  });
+
+  it("8×6 trainingYard map initializes with the entire map visible", () => {
+    const map = MAP_DEFS.trainingYard;
+    const vp  = initViewport(map);
+    expect(vp.tileW).toBe(8);
+    expect(vp.tileH).toBe(6);
+    expect(vp.originWx).toBe(0);
+    expect(vp.originWy).toBe(0);
+  });
+});
+
+describe("Phase B — Viewport: worldToViewport", () => {
+  // Spec requirement §13 (World → viewport example):
+  //   origin = (10, 5), world = (13, 8) → viewport = (3, 3)
+  it("origin (10,5): world (13,8) → viewport (3,3)", () => {
+    const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 8, tileH: 6 };
+    const { vx, vy } = worldToViewport(vp, 13, 8);
+    expect(vx).toBe(3);
+    expect(vy).toBe(3);
+  });
+
+  it("identity: origin (0,0) → vx === wx, vy === wy", () => {
+    const vp: ViewportState = { originWx: 0, originWy: 0, tileW: 8, tileH: 6 };
+    expect(worldToViewport(vp, 5, 3)).toEqual({ vx: 5, vy: 3 });
+    expect(worldToViewport(vp, 0, 0)).toEqual({ vx: 0, vy: 0 });
+  });
+
+  it("tile outside visible area produces out-of-bounds vx/vy", () => {
+    const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 8, tileH: 6 };
+    // world (0,0) is behind the viewport origin
+    const { vx, vy } = worldToViewport(vp, 0, 0);
+    expect(vx).toBe(-10); // out of range — valid mathematical result
+    expect(vy).toBe(-5);
+    // world (99,99) is far ahead
+    const far = worldToViewport(vp, 99, 99);
+    expect(far.vx).toBeGreaterThanOrEqual(vp.tileW);
+    expect(far.vy).toBeGreaterThanOrEqual(vp.tileH);
+  });
+});
+
+describe("Phase B — Viewport: viewportToWorld", () => {
+  // Spec requirement §13 (Viewport → world example):
+  //   origin = (10, 5), viewport = (3, 3) → world = (13, 8)
+  it("origin (10,5): viewport (3,3) → world (13,8)", () => {
+    const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 8, tileH: 6 };
+    const { wx, wy } = viewportToWorld(vp, 3, 3);
+    expect(wx).toBe(13);
+    expect(wy).toBe(8);
+  });
+
+  it("identity: origin (0,0) → wx === vx, wy === vy", () => {
+    const vp: ViewportState = { originWx: 0, originWy: 0, tileW: 8, tileH: 6 };
+    expect(viewportToWorld(vp, 5, 3)).toEqual({ wx: 5, wy: 3 });
+    expect(viewportToWorld(vp, 0, 0)).toEqual({ wx: 0, wy: 0 });
+  });
+});
+
+describe("Phase B — Viewport: round-trip invariants", () => {
+  // Spec requirement §13: worldToViewport(viewportToWorld(v)) === v
+  it("viewportToWorld → worldToViewport round-trip", () => {
+    const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 8, tileH: 6 };
+    for (let vx = 0; vx < vp.tileW; vx++) {
+      for (let vy = 0; vy < vp.tileH; vy++) {
+        const world    = viewportToWorld(vp, vx, vy);
+        const backToVp = worldToViewport(vp, world.wx, world.wy);
+        expect(backToVp.vx).toBe(vx);
+        expect(backToVp.vy).toBe(vy);
+      }
+    }
+  });
+
+  // Spec requirement §13: viewportToWorld(worldToViewport(w)) === w
+  it("worldToViewport → viewportToWorld round-trip", () => {
+    const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 8, tileH: 6 };
+    // Iterate world coords that are fully inside the viewport.
+    for (let wx = vp.originWx; wx < vp.originWx + vp.tileW; wx++) {
+      for (let wy = vp.originWy; wy < vp.originWy + vp.tileH; wy++) {
+        const rel      = worldToViewport(vp, wx, wy);
+        const backToW  = viewportToWorld(vp, rel.vx, rel.vy);
+        expect(backToW.wx).toBe(wx);
+        expect(backToW.wy).toBe(wy);
+      }
+    }
+  });
+});
+
+describe("Phase B — Viewport: getVisibleTiles", () => {
+  // Spec requirement §13 (Visible tiles): every visible tile carries correct wx/wy.
+  it("result[vy][vx].wx === vx + originWx and .wy === vy + originWy", () => {
+    const vp: ViewportState = { originWx: 0, originWy: 0, tileW: 8, tileH: 6 };
+    const tq  = mapDefToTileQuery(MAP_DEFS.crypt);
+    const tiles = getVisibleTiles(vp, tq);
+    expect(tiles.length).toBe(6);       // tileH rows
+    expect(tiles[0].length).toBe(8);    // tileW cols
+    for (let vy = 0; vy < vp.tileH; vy++) {
+      for (let vx = 0; vx < vp.tileW; vx++) {
+        const tile = tiles[vy][vx];
+        expect(tile.vx).toBe(vx);
+        expect(tile.vy).toBe(vy);
+        expect(tile.wx).toBe(vx + vp.originWx);
+        expect(tile.wy).toBe(vy + vp.originWy);
+      }
+    }
+  });
+
+  it("visible tiles with non-zero origin carry world coords offset by origin", () => {
+    const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 4, tileH: 3 };
+    // Use crypt tileQuery — returns void for all OOB tiles (fine for coord tests).
+    const tq    = mapDefToTileQuery(MAP_DEFS.crypt);
+    const tiles = getVisibleTiles(vp, tq);
+    // top-left tile: world (10, 5)
+    expect(tiles[0][0].wx).toBe(10);
+    expect(tiles[0][0].wy).toBe(5);
+    // bottom-right tile: world (13, 7)
+    expect(tiles[2][3].wx).toBe(13);
+    expect(tiles[2][3].wy).toBe(7);
+  });
+
+  it("each tile's tileInfo matches tileQuery at the same world coord", () => {
+    const map   = MAP_DEFS.crypt;
+    const tq    = mapDefToTileQuery(map);
+    const vp    = initViewport(map);
+    const tiles = getVisibleTiles(vp, tq);
+    for (let vy = 0; vy < map.height; vy++) {
+      for (let vx = 0; vx < map.width; vx++) {
+        const tile = tiles[vy][vx];
+        const info = tq(tile.wx, tile.wy);
+        expect(tile.tileInfo.passable).toBe(info.passable);
+        expect(tile.tileInfo.type).toBe(info.type);
+      }
+    }
+  });
+});
+
+describe("Phase B — Viewport: token lookup uses world coordinates", () => {
+  // Spec requirement §13 (Token lookup): an entity at world (5,3) is found
+  // via its world coordinate regardless of viewport origin.
+  it("token keyed by world coord is found correctly with non-zero viewport origin", () => {
+    // Simulate the tokensByTile map that IntelligentTabletop builds.
+    const state   = buildEncounter("crypt", 42);
+    // Build a tokensByTile keyed by world coord (same logic as the renderer).
+    const tokensByTile: Record<string, typeof state.combatants[string]> = {};
+    Object.values(state.combatants).forEach((c) => {
+      if (c.alive) tokensByTile[`${c.wx},${c.wy}`] = c;
+    });
+
+    // Simulate viewport origin (0, 0) — token at world (1,3) should appear at vx=1, vy=3.
+    const vp0: ViewportState = { originWx: 0, originWy: 0, tileW: 8, tileH: 6 };
+    const tq  = mapDefToTileQuery(MAP_DEFS.crypt);
+    const tiles0 = getVisibleTiles(vp0, tq);
+
+    // Find the fighter (starts at wx=1, wy=3 in crypt).
+    const fighter = Object.values(state.combatants).find((c) => c.id === "fighter")!;
+    const tile0 = tiles0[fighter.wy][fighter.wx]; // vy === wy and vx === wx when origin is 0
+    expect(tile0.wx).toBe(fighter.wx);
+    expect(tile0.wy).toBe(fighter.wy);
+    expect(tokensByTile[`${tile0.wx},${tile0.wy}`]).toBe(fighter);
+
+    // Simulate viewport origin (−1, −1) — the same entity is at a different vx/vy.
+    const vp1: ViewportState = { originWx: -1, originWy: -1, tileW: 10, tileH: 8 };
+    const tiles1 = getVisibleTiles(vp1, tq);
+    // fighter is at world (1,3); with origin (−1,−1) it appears at vx=2, vy=4
+    const tile1 = tiles1[fighter.wy - vp1.originWy][fighter.wx - vp1.originWx];
+    expect(tile1.wx).toBe(fighter.wx);
+    expect(tile1.wy).toBe(fighter.wy);
+    // Lookup by tile's world coord — always finds the token.
+    expect(tokensByTile[`${tile1.wx},${tile1.wy}`]).toBe(fighter);
+  });
+});
+
+describe("Phase B — Viewport: input resolves to world coordinate", () => {
+  // Spec requirement §13 (Input mapping): clicking a viewport-relative tile
+  // resolves to the correct world coordinate before reaching the rules engine.
+  it("viewportToWorld converts a clicked grid cell to a world coord", () => {
+    const vp: ViewportState = { originWx: 0, originWy: 0, tileW: 8, tileH: 6 };
+    // In Phase B origin is (0,0) so vx === wx, vy === wy.
+    expect(viewportToWorld(vp, 3, 2)).toEqual({ wx: 3, wy: 2 });
+  });
+
+  it("input with non-zero origin maps correctly to world coord", () => {
+    // Simulate Phase C: viewport shifted by (5, 2).
+    const vp: ViewportState = { originWx: 5, originWy: 2, tileW: 8, tileH: 6 };
+    // A click at viewport position (3, 1) should resolve to world (8, 3).
+    expect(viewportToWorld(vp, 3, 1)).toEqual({ wx: 8, wy: 3 });
+  });
+
+  it("world coord from viewportToWorld is accepted by validateMove", () => {
+    const state  = buildEncounter("quickBattle", 1);
+    const pcId   = "fighter";
+    const forced = { ...state, turnOrder: [pcId, ...state.turnOrder.filter((id) => id !== pcId)], turnIndex: 0 };
+    // Viewport with origin (0,0) — viewportToWorld is identity for Phase B.
+    const vp: ViewportState = { originWx: 0, originWy: 0, tileW: 8, tileH: 6 };
+    // Click grid cell (1,3) — resolves to world (1,3) where the fighter starts.
+    // Fighter cannot move to its own tile (it's the starting position), but the
+    // coordinate resolution must not throw and must produce integer world coords.
+    const dest = viewportToWorld(vp, 2, 3);
+    expect(dest.wx).toBe(2);
+    expect(dest.wy).toBe(3);
+    const v = validateMove(forced, pcId, dest);
+    expect(typeof v.valid).toBe("boolean"); // rules engine accepted integer world coords
+  });
+});
+
+describe("Phase B — Viewport: independence from GameState", () => {
+  // Spec requirement §13 (Viewport independence): viewport changes must not
+  // affect GameState, combatant positions, turn order, HP, RNG, or rule outcomes.
+  it("changing viewport origin does not alter combatant positions or HP", () => {
+    const state = buildEncounter("crypt", 42);
+    const before = JSON.stringify(
+      Object.values(state.combatants).map((c) => ({ id: c.id, wx: c.wx, wy: c.wy, hp: c.hp }))
+    );
+    // Simulate changing the viewport to a non-zero origin.
+    const vp: ViewportState = { originWx: 3, originWy: 2, tileW: 5, tileH: 4 };
+    const _tiles = getVisibleTiles(vp, state.tileQuery);
+    // GameState is unchanged.
+    const after = JSON.stringify(
+      Object.values(state.combatants).map((c) => ({ id: c.id, wx: c.wx, wy: c.wy, hp: c.hp }))
+    );
+    expect(after).toBe(before);
+  });
+
+  it("viewport operations do not consume RNG or affect turn state", () => {
+    const rngInst = mulberry32(42);
+    const state   = buildEncounter("crypt", 42);
+    const seedBefore = rngInst.save();
+    // Create many viewport states and enumerate tiles — none of this touches rngInst.
+    for (let i = 0; i < 5; i++) {
+      const vp = initViewport(state.map);
+      getVisibleTiles({ ...vp, originWx: i, originWy: i }, state.tileQuery);
+    }
+    const seedAfter = rngInst.save();
+    expect(seedAfter).toBe(seedBefore); // RNG stream is untouched
+    // Turn order and round must also be unchanged.
+    expect(state.round).toBe(1);
+    expect(state.turnIndex).toBe(0);
+  });
+});
+
+describe("Phase B — findCoverTile uses tileQuery, not MapDef.pillars", () => {
+  // Spec requirement §13 (Cover) and Phase B scope item 10:
+  // findCoverTile must derive cover through tileQuery.providesCover rather than
+  // reading MapDef.pillars directly.
+  it("findCoverTile returns a tile adjacent to a pillar in the crypt encounter", () => {
+    const state  = buildEncounter("crypt", 42);
+    // Fighter (1,3) has moveRemaining 5 — can reach tiles adjacent to pillars at (3,2) and (5,3).
+    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
+    const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
+    // Parse "move to cover" — if findCoverTile works, a valid cover tile is returned.
+    const result = parseIntent("move behind the pillar", forced, pcId);
+    // With pillars present in crypt, a cover tile must be found unless movement is exhausted.
+    expect(result.type).not.toBe("error");
+    if (result.type === "proposal") {
+      const moveStep = result.steps.find((s) => s.kind === "move");
+      if (moveStep && moveStep.kind === "move") {
+        // The destination must be adjacent (Chebyshev 1) to a pillar tile.
+        const { dest } = moveStep;
+        const isAdjacentToPillar = MAP_DEFS.crypt.pillars.some(
+          (p) => Math.max(Math.abs(p.x - dest.wx), Math.abs(p.y - dest.wy)) === 1
+        );
+        expect(isAdjacentToPillar).toBe(true);
+      }
+    }
+  });
+
+  it("findCoverTile returns null/error on a map with no pillars", () => {
+    // trainingYard has no pillars — tileQuery returns providesCover=false everywhere.
+    const state  = buildEncounter("trainingYard", 42);
+    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
+    const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
+    const result = parseIntent("move to cover", forced, pcId);
+    // Must return an error because no cover tile exists.
+    expect(result.type).toBe("error");
+  });
+
+  it("tileQuery provides cover information for pillar tiles without MapDef.pillars", () => {
+    // Verify the tileQuery boundary directly: a cover tile is detectable through
+    // tileQuery without any reference to MapDef.pillars.
+    const map = MAP_DEFS.crypt;
+    const tq  = mapDefToTileQuery(map);
+    for (const p of map.pillars) {
+      // The pillar tile itself provides cover.
+      expect(tq(p.x, p.y).providesCover).toBe(true);
+    }
+    // Non-pillar interior tiles do not provide cover.
+    expect(tq(1, 1).providesCover).toBe(false);
+    expect(tq(2, 3).providesCover).toBe(false);
+  });
+});
+
+describe("Phase B — Viewport: clampViewportOrigin", () => {
+  it("clamps origin to (0,0) when viewport equals world size", () => {
+    // Phase B case: viewport == map. Any non-zero origin is clamped to (0,0).
+    expect(clampViewportOrigin(0, 0, 8, 6, 8, 6)).toEqual({ originWx: 0, originWy: 0 });
+    expect(clampViewportOrigin(2, 1, 8, 6, 8, 6)).toEqual({ originWx: 0, originWy: 0 });
+    expect(clampViewportOrigin(-5, -3, 8, 6, 8, 6)).toEqual({ originWx: 0, originWy: 0 });
+  });
+
+  it("clamps origin within valid range when viewport is smaller than world", () => {
+    // Viewport 4×3 inside a 20×15 world: max origin = (16, 12).
+    expect(clampViewportOrigin(0,  0,  4, 3, 20, 15)).toEqual({ originWx: 0,  originWy: 0  });
+    expect(clampViewportOrigin(16, 12, 4, 3, 20, 15)).toEqual({ originWx: 16, originWy: 12 });
+    expect(clampViewportOrigin(99, 99, 4, 3, 20, 15)).toEqual({ originWx: 16, originWy: 12 });
+    expect(clampViewportOrigin(-1, -1, 4, 3, 20, 15)).toEqual({ originWx: 0,  originWy: 0  });
+  });
+
+  it("never produces a negative clamped origin", () => {
+    const { originWx, originWy } = clampViewportOrigin(-999, -999, 8, 6, 8, 6);
+    expect(originWx).toBeGreaterThanOrEqual(0);
+    expect(originWy).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CONTENT VALIDATION MODULE
 // These tests ensure all production content definitions are internally
 // consistent.  validateAllContent() must return an empty array; if it does

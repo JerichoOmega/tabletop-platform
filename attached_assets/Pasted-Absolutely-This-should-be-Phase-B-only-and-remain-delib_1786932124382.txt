@@ -1,0 +1,521 @@
+Absolutely. This should be Phase B only and remain deliberately conservative. The goal is to introduce the viewport as a presentation abstraction without yet introducing scrolling behavior, chunking, or large-world rendering.
+
+Send Claude this:
+
+Phase B — Viewport Model & World-to-Visible-Tile Mapping
+
+Phase A has been verified and is approved.
+
+Baseline commit: 8cfc623
+
+The Phase 3 specification is authoritative:
+
+docs/WORLD_SCALE_VIEWPORT.md
+
+Phase A verification resulted in GO. Do not revisit or redesign the Phase A architecture unless you discover an actual implementation defect.
+
+⸻
+
+Scope
+
+Implement Phase B only:
+
+Viewport Model and World-to-Visible-Tile Mapping
+
+Do not implement Phase C, D, E, F, G, H, I, or J.
+
+Specifically, do NOT implement:
+
+* viewport scrolling
+* dead-zone following
+* camera movement
+* automatic recentering
+* large-world support
+* 40×40 test maps
+* chunking
+* streaming
+* WorldState
+* persistent world entities
+* exploration mode
+* encounter transitions
+* save/load
+* procedural world generation
+
+Phase B should establish the viewport abstraction while preserving the current user-visible behavior.
+
+⸻
+
+1. Implement ViewportState
+
+Introduce the viewport model specified by WORLD_SCALE_VIEWPORT.md.
+
+The conceptual model is:
+
+interface ViewportState {
+  originWx: number;
+  originWy: number;
+  tileW: number;
+  tileH: number;
+}
+
+The viewport is presentation state.
+
+It must NOT be placed inside authoritative GameState.
+
+It must never be consumed by:
+
+* rules validation
+* action execution
+* combat resolution
+* movement legality
+* ability legality
+* RNG
+* intent validation
+
+The viewport only determines which portion of the authoritative world is currently presented.
+
+⸻
+
+2. Implement viewport initialization
+
+For the current Phase 2 encounters, the entire map must remain visible exactly as it is today.
+
+Initialize the viewport so that:
+
+originWx = 0
+originWy = 0
+tileW >= map.width
+tileH >= map.height
+
+or use the exact initialization approach specified by the Phase 3 document.
+
+The important requirement is:
+
+For every existing encounter, the entire current 8×6 map remains visible and visually unchanged.
+
+There must be no user-visible scrolling yet.
+
+⸻
+
+3. Implement getVisibleTiles()
+
+Add the pure viewport mapping function specified by the architecture.
+
+Conceptually:
+
+function getVisibleTiles(
+  viewport: ViewportState,
+  tileQuery: TileQueryFn,
+  entityIndex: Map<string, WorldEntity>
+): VisibleTile[][]
+
+Use the exact types/shape that best fit the existing codebase while preserving the specification’s architectural boundary.
+
+Each visible tile must retain its authoritative world coordinate:
+
+{
+  wx,
+  wy,
+  tileInfo,
+  ...
+}
+
+The viewport-relative array position must never replace or overwrite the world coordinate.
+
+For a viewport:
+
+originWx = 10
+originWy = 5
+
+the first visible tile must represent:
+
+world (10,5)
+
+the next horizontal tile:
+
+world (11,5)
+
+etc.
+
+⸻
+
+4. Implement world ↔ viewport coordinate transforms
+
+Implement the pure transformations specified by the Phase 3 architecture.
+
+At minimum:
+
+worldToViewport(...)
+viewportToWorld(...)
+
+or equivalent names consistent with the repository.
+
+The transformations must establish:
+
+viewportX = worldX - originWx
+viewportY = worldY - originWy
+
+and:
+
+worldX = viewportX + originWx
+worldY = viewportY + originWy
+
+These functions must operate entirely in logical tile coordinates.
+
+They must NOT know about:
+
+* CSS
+* pixels
+* cellPx
+* React
+* DOM
+* device resolution
+
+⸻
+
+5. Implement worldToPixel() / pixelToWorld() only if required by the Phase B specification
+
+If these functions are part of the Phase B contract, implement them as the final presentation transform.
+
+Keep cellPx strictly in the rendering/presentation layer.
+
+The architectural chain must remain:
+
+World
+  ↓
+Viewport-relative logical tile
+  ↓
+Pixel
+
+Never:
+
+World
+  ↓
+Pixel
+  ↓
+Rules
+
+Pixel coordinates must never enter the rules engine.
+
+⸻
+
+6. Implement clampViewportOrigin()
+
+Implement the pure viewport-boundary helper specified by the Phase 3 document.
+
+For the current finite maps:
+
+* viewport must not expose impossible map regions unnecessarily
+* current maps should remain completely visible
+* no user-visible behavior should change
+
+The implementation must also be capable of handling the future case where the viewport is smaller than the world.
+
+Do not implement infinite-world or chunk behavior yet.
+
+⸻
+
+7. Integrate the viewport into IntelligentTabletop.tsx
+
+This is the main UI integration step.
+
+The renderer should begin thinking in terms of:
+
+Viewport-relative position
++
+Authoritative world coordinate
+
+rather than assuming:
+
+rendered array index === world coordinate
+
+This is critical even though the current viewport origin remains (0,0).
+
+The Phase B implementation must eliminate the implicit assumption that those values are permanently identical.
+
+⸻
+
+8. Fix the known Phase B token-lookup risk
+
+The Phase A verification identified:
+
+tokensByTile[key(x, y)]
+
+as a future viewport-origin bug.
+
+Correct the architecture now so token lookup is based on the world coordinate represented by the visible tile, not the viewport-local array index.
+
+Conceptually:
+
+visible tile
+    ↓
+{ wx, wy }
+    ↓
+tokensByTile[key(wx, wy)]
+
+Do not hard-code an assumption that:
+
+x === wx
+y === wy
+
+even though that happens to remain true for the current viewport.
+
+⸻
+
+9. Fix the known handleTileClick risk
+
+The Phase A verification identified:
+
+handleTileClick(x, y)
+
+as currently treating viewport-local coordinates as world coordinates.
+
+Refactor the interaction path so the renderer resolves the clicked location to an authoritative world coordinate before passing it to the rules engine.
+
+Conceptually:
+
+screen/input
+     ↓
+viewport tile
+     ↓
+world coordinate
+     ↓
+executeMove(...)
+
+The rules engine must continue receiving only world coordinates.
+
+⸻
+
+10. Eliminate the findCoverTile MapDef bypass
+
+The Phase A verification identified this P2 issue:
+
+src/intent/parser.ts → findCoverTile()
+
+currently uses:
+
+state.map.pillars
+
+directly.
+
+Fix this during Phase B.
+
+Use the authoritative TileQueryFn instead.
+
+Determine whether adjacent tiles provide cover through:
+
+tileQuery(wx, wy).providesCover
+
+or the equivalent architecture defined by the specification.
+
+The intent layer must not need to know that the current implementation happens to store pillars inside MapDef.
+
+This is important because Phase F will eventually provide geometry through world/chunk data.
+
+⸻
+
+11. Preserve the existing asset architecture
+
+Do not modify the asset registry architecture.
+
+The viewport must not resolve visual assets itself.
+
+Keep:
+
+world/content ID
+      ↓
+visible tile/entity
+      ↓
+renderer
+      ↓
+asset registry
+
+The rules engine remains completely unaware of assets.
+
+Do not redesign or regenerate any canonical visual assets.
+
+⸻
+
+12. Responsive behavior
+
+Keep the existing responsive cellPx behavior intact.
+
+The viewport model must operate in logical tile units.
+
+Do not introduce separate world-coordinate behavior for:
+
+* desktop
+* tablet
+* mobile
+
+Different screen sizes may eventually expose different tileW/tileH, but that is a presentation concern.
+
+The same world coordinate must remain the same world coordinate on every device.
+
+⸻
+
+13. Testing
+
+Add focused Phase B unit tests for:
+
+Viewport initialization
+
+Current 8×6 maps initialize with the entire map visible.
+
+World → viewport
+
+Example:
+
+origin = (10,5)
+world = (13,8)
+viewport = (3,3)
+
+Viewport → world
+
+Example:
+
+origin = (10,5)
+viewport = (3,3)
+world = (13,8)
+
+Round-trip invariant
+
+worldToViewport(viewportToWorld(v)) === v
+
+for valid viewport coordinates.
+
+And:
+
+viewportToWorld(worldToViewport(w)) === w
+
+for valid world coordinates.
+
+Visible tiles
+
+Verify that every visible tile contains the correct wx/wy.
+
+Token lookup
+
+Verify that an entity remains associated with its world coordinate regardless of viewport origin.
+
+Input mapping
+
+Verify that clicking a viewport-relative tile resolves to the correct world coordinate.
+
+Viewport independence
+
+Verify that changing viewport state does not change:
+
+* GameState
+* combatant positions
+* turn order
+* HP
+* action state
+* RNG
+* rules outcomes
+
+Cover
+
+Verify findCoverTile() now derives cover through the tile-query abstraction rather than direct MapDef.pillars.
+
+⸻
+
+14. E2E regression requirements
+
+Run the complete existing E2E suite.
+
+All existing behavior must remain intact:
+
+* movement
+* attacks
+* abilities
+* targeting
+* turns
+* victory
+* defeat
+* accessibility
+* responsive behavior
+* assisted mode
+* traditional mode
+
+There must be no user-visible change for the current small encounters.
+
+⸻
+
+15. TypeScript and build
+
+Run:
+
+* TypeScript/typecheck
+* all unit tests
+* all E2E tests
+* production build
+
+Do not weaken, delete, or skip existing tests to make the migration pass.
+
+⸻
+
+16. Strict scope boundary
+
+Do not implement:
+
+* automatic viewport following
+* dead zones
+* camera recentering
+* viewport animation
+* 40×40 maps
+* large-world support
+* chunking
+* streaming
+* WorldState
+* persistent world entities
+* exploration
+* encounter transitions
+
+Those belong to later phases.
+
+Phase B is purely establishing the viewport abstraction and coordinate mapping.
+
+⸻
+
+Completion criteria
+
+Phase B is complete only when:
+
+1. ViewportState exists as presentation state.
+2. World coordinates remain authoritative.
+3. Visible tiles carry explicit wx/wy.
+4. World ↔ viewport coordinate transforms are pure and tested.
+5. Pixel coordinates remain outside the rules engine.
+6. Token lookup is based on world coordinates.
+7. Input resolves viewport coordinates to world coordinates before reaching the rules engine.
+8. findCoverTile() no longer depends directly on MapDef.pillars.
+9. Current 8×6 encounters look and behave exactly as before.
+10. All tests pass.
+11. TypeScript passes.
+12. Production build passes.
+
+Do not begin Phase C after completing Phase B. Stop and report.
+
+⸻
+
+Final report
+
+Provide:
+
+* commit hash
+* files changed
+* new viewport abstractions
+* coordinate transformation architecture
+* changes to IntelligentTabletop.tsx
+* changes to intent handling
+* tests added
+* unit test count
+* E2E test count
+* TypeScript result
+* build result
+* confirmation that Phase C/D/E/F/G/H/I/J were not implemented
+* any deviations from WORLD_SCALE_VIEWPORT.md
+* any remaining risks before Phase C
+
+This is an architectural phase, not a visual redesign. Preserve the existing tabletop experience exactly.

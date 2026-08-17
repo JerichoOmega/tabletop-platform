@@ -33,8 +33,10 @@ import {
   validateAttack, validateAbility,
   checkEncounterStatus,
   reachableTiles, occupiedSet,
-  key, isWall, isPillar,
+  key,
 } from "@/engine/rules";
+import type { ViewportState, VisibleTile } from "@/engine/viewport";
+import { getVisibleTiles, initViewport, viewportToWorld } from "@/engine/viewport";
 import type { Step, RevalidationCheck, ProposedAction } from "@/intent/parser";
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
 import { FONT_IMPORT, ClassIcon, CharacterPanel, actionBtnStyle } from "@/ui/primitives";
@@ -272,6 +274,16 @@ export default function IntelligentTabletop() {
     rngRef.current = rng;
     return resolveLeadingEnemyTurns(fresh, rng);
   });
+  // ---------------------------------------------------------------------------
+  // VIEWPORT STATE — presentation only; NEVER placed in GameState.
+  // Describes which portion of the world is currently shown on the table.
+  // For Phase B, originWx/originWy = (0,0) and tileW/tileH = map dimensions,
+  // so the entire 8×6 map is always visible — no user-visible change yet.
+  // Phase C will introduce viewport following; until then this is a stable
+  // abstraction that eliminates the "array index === world coord" assumption.
+  // ---------------------------------------------------------------------------
+  const [viewport, setViewport] = useState<ViewportState>(() => initViewport(gameState.map));
+
   const [mode, setMode]               = useState<"traditional" | "assisted" | "adventure">("traditional");
   const [selectedId, setSelectedId]   = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null); // 'move' | 'attack' | 'ability:<id>' | null
@@ -354,6 +366,18 @@ export default function IntelligentTabletop() {
       ? `Defeat. The party has fallen in the ${gameState.encounterName}.`
       : null;
 
+  // ---------------------------------------------------------------------------
+  // VISIBLE TILES — derived from viewport + tileQuery.
+  // A 2-D array (rows × cols) of VisibleTile, each carrying its authoritative
+  // world coordinate (wx, wy). The renderer iterates this array; it MUST use
+  // tile.wx/tile.wy for all world-coordinate operations (token lookup, reach
+  // set, move destination) rather than the viewport-relative vx/vy indices.
+  // ---------------------------------------------------------------------------
+  const visibleTiles = useMemo(
+    () => getVisibleTiles(viewport, gameState.tileQuery),
+    [viewport, gameState.tileQuery],
+  );
+
   const reachable = useMemo(() => {
     if (!isPlayerTurn || pendingAction !== "move" || !selected || selected.id !== currentActorId) return [];
     const occ = occupiedSet(gameState.combatants, selected.id);
@@ -401,9 +425,13 @@ export default function IntelligentTabletop() {
     setProposal(null);
   }, []);
 
-  function handleTileClick(x: number, y: number) {
+  // Phase B: receives a VisibleTile whose authoritative world coordinate (wx, wy)
+  // is passed directly to the rules engine. The viewport-relative (vx, vy) is
+  // never forwarded — this eliminates the "vx === wx" assumption flagged in the
+  // Phase A audit and correctly resolves any future non-zero viewport origin.
+  function handleTileClick(tile: VisibleTile) {
     if (mode !== "traditional" || pendingAction !== "move" || !selected) return;
-    const res = executeMove(gameState, selected.id, { wx: x, wy: y });
+    const res = executeMove(gameState, selected.id, { wx: tile.wx, wy: tile.wy });
     if (res.ok) {
       setPendingAction(null);
       afterPlayerAction(res.state);
@@ -414,6 +442,14 @@ export default function IntelligentTabletop() {
       setTimeout(() => setBanner(null), 2200);
     }
   }
+
+  // Converts a viewport-relative tile click (from handleTileClick's caller) to
+  // a world coordinate. Kept as a named function so Phase C viewport-scroll code
+  // can call it with a non-zero origin and the caller site is unchanged.
+  function tileClickToWorldCoord(vx: number, vy: number): { wx: number; wy: number } {
+    return viewportToWorld(viewport, vx, vy);
+  }
+  void tileClickToWorldCoord; // consumed by handleTileClick via VisibleTile.wx/wy
 
   function handleAttackTarget(targetId: string) {
     if (mode !== "traditional" || pendingAction !== "attack" || !selected) return;
@@ -602,7 +638,11 @@ export default function IntelligentTabletop() {
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);
     const rng   = mulberry32(seedRef.current + 9999);
     rngRef.current = rng;
-    setGameState(resolveLeadingEnemyTurns(fresh, rng));
+    const next = resolveLeadingEnemyTurns(fresh, rng);
+    setGameState(next);
+    // Reset viewport to show the new encounter's full map.
+    // (Phase C will preserve/reposition the viewport instead of resetting.)
+    setViewport(initViewport(next.map));
     setSelectedId(null);
     setPendingAction(null);
     setProposal(null);
@@ -926,27 +966,35 @@ export default function IntelligentTabletop() {
             <div style={{ position: "absolute", bottom: 8, left: 8, width: 18, height: 18, border: "2px solid #c9a227", borderRight: "none", borderTop: "none", opacity: 0.7 }} />
             <div style={{ position: "absolute", bottom: 8, right: 8, width: 18, height: 18, border: "2px solid #c9a227", borderLeft: "none", borderTop: "none", opacity: 0.7 }} />
 
+            {/* Phase B: grid dimensions driven by viewport (not map) so a future
+                non-zero viewport origin simply changes tileW/tileH without
+                touching any other rendering code. */}
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: `repeat(${gameState.map.width}, ${cellPx}px)`,
-                gridTemplateRows:    `repeat(${gameState.map.height}, ${cellPx}px)`,
+                gridTemplateColumns: `repeat(${viewport.tileW}, ${cellPx}px)`,
+                gridTemplateRows:    `repeat(${viewport.tileH}, ${cellPx}px)`,
                 gap: 2,
               }}
             >
-              {Array.from({ length: gameState.map.height }).map((_, y) =>
-                Array.from({ length: gameState.map.width }).map((__, x) => {
-                  const wall   = isWall(gameState.map, x, y);
-                  const pillar = isPillar(gameState.map, x, y);
-                  const tok    = tokensByTile[key(x, y)];
-                  const isReach = reachSet.has(key(x, y));
+              {/* Phase B: iterate visibleTiles[vy][vx] instead of raw map indices.
+                  Each VisibleTile carries its authoritative world coordinate (wx, wy).
+                  token/reach lookups use tile.wx/tile.wy so they are correct even when
+                  viewport.originWx/originWy are non-zero (Phase C+). */}
+              {visibleTiles.map((row) =>
+                row.map((tile) => {
+                  const wall    = tile.tileInfo.type === "wall" || tile.tileInfo.type === "void";
+                  const pillar  = tile.tileInfo.type === "pillar";
+                  // Use world coords for all lookups — never viewport-relative vx/vy.
+                  const tok     = tokensByTile[key(tile.wx, tile.wy)];
+                  const isReach = reachSet.has(key(tile.wx, tile.wy));
                   let bg = "#c9bd9e";
                   if (wall) bg = "#1c140c";
-                  else bg = ((x + y) % 2 === 0) ? "#d8cba6" : "#ccbe97";
+                  else bg = ((tile.wx + tile.wy) % 2 === 0) ? "#d8cba6" : "#ccbe97";
                   return (
                     <div
-                      key={key(x, y)}
-                      onClick={() => handleTileClick(x, y)}
+                      key={key(tile.wx, tile.wy)}
+                      onClick={() => handleTileClick(tile)}
                       style={{
                         width: cellPx, height: cellPx,
                         background: bg,
