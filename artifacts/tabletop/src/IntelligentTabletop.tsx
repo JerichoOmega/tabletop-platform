@@ -425,6 +425,15 @@ export default function IntelligentTabletop() {
    * is triggered — the mechanism is present but visually dormant until
    * Phase E introduces larger maps.
    *
+   * Concurrency hardening: setViewport uses the functional-update form so
+   * the calculation always operates on the latest committed viewport state
+   * rather than the value captured in the render closure. Under React
+   * concurrent rendering, multiple state transitions can be batched before
+   * a render commits; the functional form eliminates any stale-state window.
+   * updateViewportForActor returns the same reference when the actor is
+   * inside the dead zone, so React's Object.is bail-out still suppresses
+   * unnecessary re-renders.
+   *
    * Architectural invariant: viewport state is computed FROM authoritative
    * GameState; it never flows back into GameState or the rules engine.
    */
@@ -432,10 +441,10 @@ export default function IntelligentTabletop() {
     setGameState(next);
     const actor = next.combatants[next.turnOrder[next.turnIndex]];
     if (actor && actor.alive) {
-      const newVp = updateViewportForActor(
-        viewport, actor.wx, actor.wy, next.map.width, next.map.height,
-      );
-      if (newVp !== viewport) setViewport(newVp);
+      const { wx, wy } = actor;
+      const worldW = next.map.width;
+      const worldH = next.map.height;
+      setViewport(prev => updateViewportForActor(prev, wx, wy, worldW, worldH));
     }
   }
 

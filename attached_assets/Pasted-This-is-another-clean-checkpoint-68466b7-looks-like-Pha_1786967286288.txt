@@ -1,0 +1,144 @@
+This is another clean checkpoint. 68466b7 looks like Phase C landed correctly.
+
+The important result is that the viewport is now a genuine derived presentation system:
+
+Authoritative wx/wy
+        ↓
+updateViewportForActor()
+        ↓
+ViewportState
+        ↓
+VisibleTiles
+        ↓
+Renderer
+
+And not:
+
+Viewport
+   ↓
+GameState
+
+That distinction is becoming increasingly important as we approach large-world support.
+
+The test results are particularly strong
+
+* 155/155 unit tests
+* 148/148 E2E
+* TypeScript clean
+* Production build clean
+* RNG unaffected
+* GameState untouched by viewport operations
+* Boundary/corner behavior covered
+* Round-trip coordinate behavior covered
+
+So far we’ve gone:
+
+Phase	Commit	Result
+Hardening	8d86434	8 architectural issues closed
+Phase A	8cfc623	World-coordinate abstraction
+Phase B	0eac85d	Viewport model
+Phase C	68466b7	Viewport following/dead zone
+
+That’s a very disciplined progression.
+
+One thing I would fix before the next phase
+
+The React closure concern is worth addressing before the system gets more complicated.
+
+Right now:
+
+afterPlayerAction()
+    ↓
+captures viewport from render
+    ↓
+calculates next viewport
+
+With the current synchronous/simple behavior, it’s fine. But once we introduce large maps, more frequent viewport changes, and potentially transitions, there’s no reason to retain that theoretical stale-state window.
+
+I’d make it:
+
+setViewport(prev =>
+  updateViewportForActor(
+    prev,
+    actorWx,
+    actorWy,
+    worldW,
+    worldH
+  )
+)
+
+That makes the viewport update explicitly dependent on the latest viewport state, rather than the render closure.
+
+It’s a tiny change and gives us a cleaner foundation.
+
+I would also clarify the phase naming
+
+Claude says:
+
+Phase D (large-area map, 40×40)
+Phase E (chunk streaming)
+
+But our earlier sequence had Phase D/E/F responsibilities slightly differently.
+
+Don’t rely on the names alone. Have Claude read the current spec and use its actual phase definitions.
+
+The next major architectural leap is large-area support, because that’s where the viewport finally gets a meaningful workout. The current 8×6 map cannot really demonstrate whether the camera architecture scales.
+
+⸻
+
+Next move
+
+I’d do a tiny concurrency hardening fix first, then move into the large-area phase.
+
+Send Claude:
+
+Phase C is complete at 68466b7 with 155/155 unit tests, 148/148 E2E tests, clean TypeScript, and a clean production build.
+
+Before beginning the next Phase 3 implementation phase, make one narrowly scoped hardening change:
+
+React viewport update safety
+
+Inspect afterPlayerAction() in IntelligentTabletop.tsx.
+
+The current implementation captures viewport from the render closure before calling updateViewportForActor().
+
+Replace this with the functional React state-update form:
+
+setViewport(prev =>
+  updateViewportForActor(
+    prev,
+    actorWx,
+    actorWy,
+    worldW,
+    worldH
+  )
+);
+
+Preserve the existing optimization where updateViewportForActor() returns the same object reference when no viewport change is required.
+
+Do not change any viewport behavior.
+
+Do not modify GameState.
+
+Do not begin the next Phase 3 implementation.
+
+Run:
+
+* TypeScript
+* all unit tests
+* all E2E tests
+* production build
+
+Add a focused regression test if one is appropriate, but do not expand the scope beyond this concurrency-safety change.
+
+Report the resulting commit and validation results.
+
+Stop after this hardening fix.
+
+Once that comes back green, then we’re ready for the large-area phase.
+
+And that’s where things get really interesting: we’ll finally be able to test the fundamental promise we’ve been building toward—
+
+The tabletop is a fixed physical playing surface, while the world beneath it can become much larger than the surface itself.
+
+That’s the architectural transition that makes this start feeling like the Intelligent Tabletop you originally envisioned.

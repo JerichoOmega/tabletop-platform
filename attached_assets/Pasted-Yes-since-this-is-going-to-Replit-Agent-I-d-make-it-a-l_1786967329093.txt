@@ -1,0 +1,125 @@
+Yes — since this is going to Replit Agent, I’d make it a little more execution-oriented than the Claude prompt. The goal is to have Replit make the small concurrency hardening change, verify it, and stop.
+
+Phase C Post-Implementation Hardening — Replit
+
+The Intelligent Tabletop project has completed Phase C at commit 68466b7.
+
+Current verification:
+
+* 155/155 unit tests passing
+* 148/148 E2E tests passing
+* TypeScript clean
+* Production build clean
+
+Do not begin the next Phase 3 implementation phase yet.
+
+I want one very small, isolated hardening change before proceeding.
+
+⸻
+
+Task: Make viewport updates concurrency-safe
+
+Inspect src/IntelligentTabletop.tsx, specifically afterPlayerAction().
+
+The current implementation obtains viewport from the React render closure and then uses that value when calculating the next viewport.
+
+This creates a theoretical stale-state window under React concurrent rendering if multiple state transitions occur before a render commits.
+
+Change the viewport update to use the functional React state-update form, so the calculation always receives the latest committed viewport state.
+
+The conceptual structure should be:
+
+setViewport(prev =>
+  updateViewportForActor(
+    prev,
+    actorWx,
+    actorWy,
+    worldW,
+    worldH
+  )
+);
+
+Use the actual variable names and existing architecture in the repository rather than blindly copying this snippet.
+
+⸻
+
+Important requirements
+
+Preserve the existing behavior of updateViewportForActor().
+
+In particular:
+
+* If the actor remains inside the dead zone, it must return the existing viewport object.
+* If the viewport needs to move, it must return a new ViewportState.
+* Do not mutate the previous viewport.
+* Do not mutate GameState.
+* Do not modify actor wx/wy.
+* Do not modify RNG behavior.
+* Do not change dead-zone dimensions.
+* Do not change viewport clamping behavior.
+* Do not change encounter initialization.
+* Do not introduce camera animation or smoothing.
+
+This is strictly a React state-update safety improvement.
+
+⸻
+
+Testing
+
+After making the change, run:
+
+1. TypeScript/typecheck
+2. All Vitest unit tests
+3. All Playwright E2E tests
+4. Production build
+
+Do not remove, weaken, skip, or rewrite existing tests merely to make them pass.
+
+If a focused regression test is appropriate for the functional state-update behavior, add one. Otherwise do not create unnecessary test infrastructure.
+
+⸻
+
+Strict scope boundary
+
+Do NOT begin the next Phase 3 phase.
+
+Do not implement:
+
+* large-area maps
+* 40×40 maps
+* chunking
+* streaming
+* WorldState
+* persistent world entities
+* exploration mode
+* manual camera controls
+* camera animation
+* zoom
+* minimap
+* procedural generation
+* Phase D/E/F/G/H/I/J functionality
+
+Do not perform unrelated cleanup.
+
+Do not redesign existing architecture.
+
+Do not modify canonical visual assets.
+
+⸻
+
+Completion report
+
+When finished, report:
+
+* files changed
+* exact change made
+* whether a regression test was added
+* unit-test result
+* E2E result
+* TypeScript result
+* production-build result
+* resulting commit hash
+
+Stop after this hardening task. Do not automatically proceed to the next phase.
+
+This change should be small, isolated, and behavior-preserving.
