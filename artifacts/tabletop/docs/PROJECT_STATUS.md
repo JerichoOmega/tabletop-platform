@@ -1,14 +1,14 @@
 # Intelligent Tabletop — Project Status
 
-_Last updated: Roadmap restructured around platform strategy — Phase 2 complete, Phase 3 active (Phase F-viewport complete)_
+_Last updated: Phase 3 Milestone M1 complete — exploration mode + world-backed session (streaming world now live in gameplay)_
 
 ## Baseline (latest committed state)
 
 | Metric | Value |
 |---|---|
-| Commit | `3846927` — Phase F viewport streaming integration |
-| Unit tests | 493 passing |
-| E2E tests | 167 passing |
+| Commit | Phase 3 M1 — exploration mode + world-backed session |
+| Unit tests | 513 passing |
+| E2E tests | 176 passing |
 | TypeScript | Clean (0 errors, `--noEmit`) |
 | Build | Vite production build clean |
 | Visual assets | 45 total (44 production assets + 1 foundational environment asset) |

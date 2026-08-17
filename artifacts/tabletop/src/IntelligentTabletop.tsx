@@ -42,7 +42,15 @@ import { getVisibleTiles, initViewport, updateViewportForActor } from "@/engine/
 // MapDef-backed encounters. The streaming infrastructure activates automatically
 // when a world-backed encounter populates worldStateRef.current.
 import type { WorldState } from "@/engine/world";
+import { worldEntityToCombatant } from "@/engine/world";
 import { getChunksForViewport, prefetchViewportChunks, PREFETCH_MARGIN } from "@/engine/viewportStreaming";
+// Phase 3 M1: exploration session — party moves through the streaming world.
+import type { ExplorationSession } from "@/engine/exploration";
+import {
+  createExplorationSession, explorationTileInfo, movePartyStep,
+  detectAdjacentHostiles, adjacentStepTargets, getParty,
+  EXPLORE_WORLD_W, EXPLORE_WORLD_H,
+} from "@/engine/exploration";
 import { CHUNK_W, CHUNK_H } from "@/engine/chunk";
 import type { Step, RevalidationCheck, ProposedAction } from "@/intent/parser";
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
@@ -299,6 +307,19 @@ export default function IntelligentTabletop() {
   // GameState. It is owned exclusively by the presentation layer.
   const worldStateRef  = useRef<WorldState | null>(null);
 
+  // Phase 3 M1: EXPLORATION SESSION.
+  // sessionMode selects which surface the table shows:
+  //   "encounter"   — the existing MapDef-backed combat encounter (default).
+  //   "exploration" — the streaming world; party position is authoritative
+  //                   in the WorldEntityRegistry, chunks stream via the
+  //                   existing viewport prefetch path.
+  // explorationRef is a ref (mutable class instances live inside); the
+  // exploreVersion counter triggers re-renders after authoritative entity
+  // mutations (party movement) — mirroring the chunkVersion pattern.
+  const [sessionMode, setSessionMode] = useState<"encounter" | "exploration">("encounter");
+  const explorationRef = useRef<ExplorationSession | null>(null);
+  const [exploreVersion, setExploreVersion] = useState(0);
+
   const [gameState, setGameState] = useState(() => {
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);
     const rng   = mulberry32(seedRef.current + 9999); // separate stream for combat rolls
@@ -439,10 +460,18 @@ export default function IntelligentTabletop() {
   // tile.wx/tile.wy for all world-coordinate operations (token lookup, reach
   // set, move destination) rather than the viewport-relative vx/vy indices.
   // ---------------------------------------------------------------------------
-  const visibleTiles = useMemo(
-    () => getVisibleTiles(viewport, gameState.tileQuery),
-    [viewport, gameState.tileQuery],
-  );
+  const visibleTiles = useMemo(() => {
+    // Phase 3 M1: exploration renders from the LIVE chunk store (presentation
+    // only — there is no GameState in exploration). Encounter mode keeps the
+    // immutable GameState.tileQuery snapshot, as always.
+    const session = explorationRef.current;
+    if (sessionMode === "exploration" && session) {
+      return getVisibleTiles(viewport, (wx, wy) => explorationTileInfo(session, wx, wy));
+    }
+    return getVisibleTiles(viewport, gameState.tileQuery);
+    // chunkVersion/exploreVersion are re-render triggers for streamed-in
+    // chunks and party movement; explorationRef is a ref (untracked).
+  }, [viewport, gameState.tileQuery, sessionMode, chunkVersion, exploreVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Phase F: Presentation loading state — which visible chunks are LOADING.
   //
@@ -559,6 +588,30 @@ export default function IntelligentTabletop() {
   // never forwarded — this eliminates the "vx === wx" assumption flagged in the
   // Phase A audit and correctly resolves any future non-zero viewport origin.
   function handleTileClick(tile: VisibleTile) {
+    // Phase 3 M1: exploration movement — single adjacent step per click.
+    // Authoritative position lives in the WorldEntityRegistry; the viewport
+    // follows via the existing dead-zone contract with the M1 world bounds.
+    if (sessionMode === "exploration") {
+      const session = explorationRef.current;
+      if (!session) return;
+      const res = movePartyStep(session, tile.wx, tile.wy);
+      if (res.ok) {
+        const party = getParty(session);
+        setExploreVersion(v => v + 1);
+        setViewport(prev => updateViewportForActor(prev, party.wx, party.wy, EXPLORE_WORLD_W, EXPLORE_WORLD_H));
+        triggerAnim(session.partyWorldId, "it-anim-move", 380);
+        const hostiles = detectAdjacentHostiles(session);
+        if (hostiles.length > 0) {
+          // M1 contract only: surface a notice. Starting combat is M5 scope.
+          setBanner("A hostile creature is right beside you! (Encounters begin here in a future update.)");
+          setTimeout(() => setBanner(null), 3200);
+        }
+      } else {
+        setBanner(res.reason ?? "You cannot move there.");
+        setTimeout(() => setBanner(null), 2200);
+      }
+      return;
+    }
     if (mode !== "traditional" || pendingAction !== "move" || !selected) return;
     const res = executeMove(gameState, selected.id, { wx: tile.wx, wy: tile.wy });
     if (res.ok) {
@@ -752,6 +805,54 @@ export default function IntelligentTabletop() {
   function cancelProposal() { setProposal(null); }
   function cancelInfo()     { setInfoResult(null); }
 
+  // Phase 3 M1: enter the exploration session. Constructs the WorldState
+  // (activating the previously dormant worldStateRef prefetch path), centers
+  // the viewport on the party, and switches the table surface.
+  function startExploration() {
+    const session = createExplorationSession();
+    explorationRef.current = session;
+    worldStateRef.current = session.worldState;
+    const party = getParty(session);
+    const baseVp = initViewport(
+      { width: EXPLORE_WORLD_W, height: EXPLORE_WORLD_H } as GameState["map"],
+      VIEWPORT_TILE_W, VIEWPORT_TILE_H,
+    );
+    // Always a fresh viewport object → the prefetch useEffect fires and
+    // begins streaming the chunks around the party.
+    setViewport(updateViewportForActor(baseVp, party.wx, party.wy, EXPLORE_WORLD_W, EXPLORE_WORLD_H));
+    setSessionMode("exploration");
+    setExploreVersion(v => v + 1);
+    setSelectedId(null);
+    setPendingAction(null);
+    setProposal(null);
+    setInfoResult(null);
+    setLastRoll(null);
+    setBanner(null);
+    setMode("traditional");
+  }
+
+  // Phase 3 M1: leave exploration and return to the current encounter.
+  // Releases the WorldState (prefetch path goes dormant again) and restores
+  // the encounter viewport from the authoritative GameState.
+  function exitExploration() {
+    explorationRef.current = null;
+    worldStateRef.current = null;
+    setSessionMode("encounter");
+    const baseVp = initViewport(gameState.map, VIEWPORT_TILE_W, VIEWPORT_TILE_H);
+    const actor = gameState.combatants[gameState.turnOrder[gameState.turnIndex]];
+    setViewport(
+      actor && actor.alive
+        ? updateViewportForActor(baseVp, actor.wx, actor.wy, gameState.map.width, gameState.map.height)
+        : baseVp
+    );
+    // Re-select the acting PC. The turnKey auto-select effect will not fire
+    // here (seed and actor are unchanged), so restore the selection directly —
+    // otherwise the action bar stays hidden until a manual token click.
+    setSelectedId(actor && actor.alive && actor.type === "pc" ? actor.id : null);
+    setPendingAction(null);
+    setBanner(null);
+  }
+
   // FIX 3: arrow wrapper prevents SyntheticEvent from being passed as encounterId.
   function newEncounter(encounterId?: string) {
     if (encounterId) encounterIdRef.current = encounterId;
@@ -779,11 +880,13 @@ export default function IntelligentTabletop() {
     setLastRoll(null);
     setBanner(null);
     setMode("traditional");
-    // Phase F: release any active WorldState. All current encounters are
-    // MapDef-backed so this is always null→null. When world-backed encounters
-    // are introduced, this releases the previous WorldState and cancels any
+    // Phase F: release any active WorldState. MapDef encounters never own one;
+    // if an exploration session was active, this releases it and cancels any
     // in-flight prefetch (the useEffect cleanup runs on next render).
     worldStateRef.current = null;
+    // Phase 3 M1: starting an encounter always exits exploration.
+    explorationRef.current = null;
+    setSessionMode("encounter");
   }
 
   // Builds a rich accessible name for a board token.
@@ -814,12 +917,30 @@ export default function IntelligentTabletop() {
   // ---------------------------------------------------------------------------
   // GRID RENDERING HELPERS
   // ---------------------------------------------------------------------------
-  const reachSet    = useMemo(() => new Set(reachable.map((t) => key(t.wx, t.wy))), [reachable]);
+  const reachSet    = useMemo(() => {
+    // Phase 3 M1: in exploration, highlight the adjacent step targets instead
+    // of combat reachable tiles (there is no action economy in exploration).
+    const session = explorationRef.current;
+    if (sessionMode === "exploration" && session) {
+      return new Set(adjacentStepTargets(session).map((t) => key(t.wx, t.wy)));
+    }
+    return new Set(reachable.map((t) => key(t.wx, t.wy)));
+  }, [reachable, sessionMode, exploreVersion, chunkVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const tokensByTile = useMemo(() => {
     const m: Record<string, typeof gameState.combatants[string]> = {};
+    // Phase 3 M1: in exploration, tokens come from the WorldEntityRegistry
+    // (authoritative world entities), adapted through the same Combatant
+    // shape used by the token renderer. Display-only — no GameState involved.
+    const session = explorationRef.current;
+    if (sessionMode === "exploration" && session) {
+      session.worldState.entities.getAlive().forEach((e) => {
+        m[key(e.wx, e.wy)] = worldEntityToCombatant(e);
+      });
+      return m;
+    }
     Object.values(gameState.combatants).forEach((c) => { if (c.alive) m[key(c.wx, c.wy)] = c; });
     return m;
-  }, [gameState]);
+  }, [gameState, sessionMode, exploreVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
   // RENDER
@@ -842,12 +963,19 @@ export default function IntelligentTabletop() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div>
           <div role="heading" aria-level={1} style={{ fontFamily: "Cinzel, serif", fontSize: 22, letterSpacing: 1, color: "#e8dcc0" }}>
-            {gameState.encounterName}
+            {sessionMode === "exploration" ? "Wilderness Exploration" : gameState.encounterName}
           </div>
           <div aria-live="polite" aria-atomic="true" style={{ fontSize: 12.5, color: "#a89468" }}>
-            Round {gameState.round} · {currentActor ? `${currentActor.name}'s turn` : ""}
+            {sessionMode === "exploration" && explorationRef.current ? (
+              <span data-testid="exploration-location">
+                Exploring · Party at ({getParty(explorationRef.current).wx}, {getParty(explorationRef.current).wy})
+              </span>
+            ) : (
+              <>Round {gameState.round} · {currentActor ? `${currentActor.name}'s turn` : ""}</>
+            )}
           </div>
         </div>
+        {sessionMode === "encounter" && (
         <div style={{ display: "flex", gap: 6, background: "#241a12", border: "1px solid #5a4326", borderRadius: 10, padding: 4 }}>
           {[
             { id: "traditional" as const, label: "Traditional" },
@@ -875,10 +1003,28 @@ export default function IntelligentTabletop() {
             </button>
           ))}
         </div>
+        )}
       </div>
 
       {/* Encounter switcher — test-only encounters are hidden unless ?e2e is in the URL */}
       <div className="it-encounter-switcher">
+        {/* Phase 3 M1: exploration session toggle */}
+        <button
+          aria-pressed={sessionMode === "exploration"}
+          onClick={() => (sessionMode === "exploration" ? exitExploration() : startExploration())}
+          style={{
+            fontFamily: "'EB Garamond', serif",
+            fontSize: 11.5,
+            padding: "5px 12px",
+            borderRadius: 6,
+            border: "1px solid #4c6b3f",
+            cursor: "pointer",
+            background: sessionMode === "exploration" ? "#2c3d20" : "transparent",
+            color: sessionMode === "exploration" ? "#cfe0b8" : "#8fa06e",
+          }}
+        >
+          {sessionMode === "exploration" ? "Return to Encounter" : "Explore World"}
+        </button>
         {Object.values(isE2E ? ENCOUNTER_DEFS : getProductionEncounters()).map((enc) => (
           <button
             key={enc.id}
@@ -908,7 +1054,7 @@ export default function IntelligentTabletop() {
       )}
 
       {/* Victory / Defeat banner — role="alert" announces outcome to screen readers */}
-      {encounterStatus !== "ongoing" && (
+      {sessionMode === "encounter" && encounterStatus !== "ongoing" && (
         <div role="alert" className="it-anim-banner-in" style={{ marginBottom: 10, padding: "12px 16px", background: encounterStatus === "victory" ? "#243b1e" : "#3b1e1e", border: `1px solid ${encounterStatus === "victory" ? "#4c6b3f" : "#8b2e2e"}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontFamily: "Cinzel, serif", fontSize: 15 }}>{encounterBanner}</span>
           {/* FIX 3: arrow wrapper — prevents SyntheticEvent from becoming encounterId */}
@@ -921,6 +1067,22 @@ export default function IntelligentTabletop() {
       <div className="it-main-grid">
         {/* LEFT: character panels */}
         <div className="it-left-panel">
+          {sessionMode === "exploration" ? (
+            /* Phase 3 M1: exploration panel — combat controls are hidden;
+               world position is authoritative in the WorldEntityRegistry. */
+            <div data-testid="exploration-panel">
+              <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>EXPLORATION</div>
+              <div style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 12, fontSize: 13, lineHeight: 1.6 }}>
+                <div style={{ color: "#c9bd9e" }}>
+                  The party travels the open world. Click a highlighted tile beside the party to take a step; the table follows as you move.
+                </div>
+                <div style={{ marginTop: 8, color: "#8a795a", fontSize: 12 }}>
+                  Unmapped land appears dark until it is charted. Encounters with hostile creatures will begin here in a future update.
+                </div>
+              </div>
+            </div>
+          ) : (
+          <>
           {/* PARTY */}
           <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>PARTY</div>
           {Object.values(gameState.combatants)
@@ -1080,6 +1242,8 @@ export default function IntelligentTabletop() {
             .map((c) => (
               <CharacterPanel key={c.id} c={c} isCurrent={c.id === currentActorId} isSelected={c.id === selectedId} onSelect={handleSelectToken} />
             ))}
+          </>
+          )}
         </div>
 
         {/* CENTER: tabletop grid */}
@@ -1289,8 +1453,14 @@ export default function IntelligentTabletop() {
           )}
         </div>
 
-        {/* RIGHT: initiative tracker + session log */}
+        {/* RIGHT: initiative tracker + session log (encounter only) */}
         <div className="it-right-panel">
+          {sessionMode === "exploration" ? (
+            <div style={{ fontSize: 12.5, color: "#8a795a", fontStyle: "italic" }}>
+              No initiative while exploring — combat begins when an encounter starts.
+            </div>
+          ) : (
+          <>
           <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>INITIATIVE</div>
           <div aria-label="Initiative order" style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 8, marginBottom: 14 }}>
             {gameState.turnOrder.map((id, i) => {
@@ -1327,6 +1497,8 @@ export default function IntelligentTabletop() {
               </div>
             ))}
           </div>
+          </>
+          )}
         </div>
       </div>
 

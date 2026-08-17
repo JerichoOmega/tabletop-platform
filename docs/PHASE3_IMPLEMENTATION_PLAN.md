@@ -159,8 +159,8 @@ Render boundary is already correct: 120 visible tiles + 1-chunk prefetch ring; r
 
 ## 13. Implementation Milestones (remaining Phase 3 work)
 
-**M1 — Exploration mode + world-backed session (Phase G core).**
-Objective: a playable world-backed session — construct `WorldState`, seed entities, free-traverse, viewport follows. Files: `IntelligentTabletop.tsx`, `content.ts` (world scenario def), new `sessionMode` module. Tests: mode-machine unit tests + traversal E2E. Not included: eviction, encounters in world mode.
+**M1 — Exploration mode + world-backed session (Phase G core).** ✅ **COMPLETE (2026-08-17)**
+Objective: a playable world-backed session — construct `WorldState`, seed entities, free-traverse, viewport follows. Delivered: new `src/engine/exploration.ts` (session, live tile resolution, step movement, adjacent-hostile detection contract for M5) + component `sessionMode` ("encounter"/"exploration") with an "Explore World" toggle; the previously dormant `worldStateRef` prefetch/loading path is now live. M1 uses a fixed 64×64 exploration region and fixed world seed (generic WorldBounds remains M4). Tests: 20 unit (513 total) + 9 E2E (176 total), all pre-existing tests unmodified. Not included (unchanged scope): eviction (M2), encounters in world mode (M5).
 
 **M2 — Eviction policy + entity survival (Phase G completion).**
 Objective: distance-based eviction; leave-and-return determinism. Files: `chunk.ts` or small `evictionPolicy.ts`, `viewportStreaming.ts` hook-in. Tests: eviction unit suite + the completion-gate E2E. Not included: persistence to disk.
