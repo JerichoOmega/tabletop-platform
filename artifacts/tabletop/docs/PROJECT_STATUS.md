@@ -1,14 +1,14 @@
 # Intelligent Tabletop — Project Status
 
-_Last updated: Documentation synchronized — Phase 2 complete, Phase 3 specification complete, implementation not started_
+_Last updated: Roadmap restructured around platform strategy — Phase 2 complete, Phase 3 active (Phase F-viewport complete)_
 
 ## Baseline (latest committed state)
 
 | Metric | Value |
 |---|---|
-| Commit | `856ea40` — Attach image and table documentation files |
-| Unit tests | 93 passing |
-| E2E tests | 148 passing |
+| Commit | `3846927` — Phase F viewport streaming integration |
+| Unit tests | 493 passing |
+| E2E tests | 167 passing |
 | TypeScript | Clean (0 errors, `--noEmit`) |
 | Build | Vite production build clean |
 | Visual assets | 45 total (44 production assets + 1 foundational environment asset) |
