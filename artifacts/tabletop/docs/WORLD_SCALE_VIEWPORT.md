@@ -71,36 +71,84 @@ This section describes what currently exists. Everything else in this document i
 
 ```typescript
 // src/engine/content.ts — CURRENT (implemented)
+// ⚠️  Read carefully before writing mapDefToTileQuery().
+//     The wall model is implicit — there is NO walls[] array.
 
 interface MapDef {
-  width:   number;           // tile count, x-axis
-  height:  number;           // tile count, y-axis
-  walls:   [number, number][];
-  pillars?: [number, number][];
+  id:       string;          // map identifier ("crypt", "trainingYard")
+  name:     string;          // display name ("the ruined crypt")
+  width:    number;          // tile count, x-axis
+  height:   number;          // tile count, y-axis
+  entrance: { x: number; y: number };    // the ONE border tile that is passable
+  pillars:  { x: number; y: number }[];  // interior cover/blocking tiles (may be empty)
+  visualAssets?: {           // optional; the rules engine never reads this
+    floor?:  string;
+    wall?:   string;
+    pillar?: string;
+  };
 }
 
+// ── Wall rule (implemented in isWall(), src/engine/rules.ts) ──────────────
+// A tile (x, y) is a wall if ANY of:
+//   (a) x < 0 || y < 0 || x >= map.width || y >= map.height  // out of bounds
+//   (b) it is on the border (x===0, x===width-1, y===0, y===height-1)
+//       AND it is not the entrance (x===entrance.x && y===entrance.y)
+//
+// ── Pillar rule (implemented in isPillar()) ───────────────────────────────
+// A tile (x, y) is a pillar if it appears in map.pillars[].
+// Pillars block movement (passable=false) but do NOT block line-of-sight.
+// They grant cover (+2 AC) to targets behind them.
+//
+// ── Current map dimensions ───────────────────────────────────────────────
+// Training Yard:  8 × 6 tiles, entrance (0,3), no pillars
+// Ruined Crypt:   8 × 6 tiles, entrance (0,3), pillars at (3,2) and (5,3)
+// ─────────────────────────────────────────────────────────────────────────
+
 interface Combatant {
-  id:            string;     // stable instance ID ("orc1", "fighter")
-  x:             number;     // tile x — 0-based, integer
-  y:             number;     // tile y — 0-based, integer
+  // ── Three-layer identity model ─────────────────────────────────────────
+  id:       string;   // encounter-local identity — key in GameState.combatants
+                      //   Examples: "fighter", "goblin1", "orc1"
+                      //   Assigned at encounter creation; stable for combat duration.
+                      //   Does NOT persist across separate encounters.
+  defId:    string;   // content/template identity — references COMBATANT_DEFS
+                      //   Examples: "goblin", "fighter", "orc"
+                      //   Used to look up base stats, weapon, abilities, visual asset.
+                      //   Never changes; it is the type, not the instance.
+  worldId?: string;   // persistent world identity — foreign key into WorldState.entityState
+                      //   Examples: "goblin_crypt_3", "pc_fighter_1"
+                      //   Undefined for test fixtures and pre-WorldState encounters.
+                      //   Added in Phase A (optional). Populated from WorldState in Phase G.
+                      //   An entity leaving/re-entering the viewport keeps the same worldId.
+  // ── Position (renamed wx/wy in Phase A) ───────────────────────────────
+  x:             number;  // tile x — 0-based, integer (Phase A: becomes wx)
+  y:             number;  // tile y — 0-based, integer (Phase A: becomes wy)
+  // ── Combat stats ──────────────────────────────────────────────────────
   hp:            number;
   maxHp:         number;
-  alive:         boolean;
+  ac:            number;
+  atkMod:        number;
+  dexMod:        number;
+  moveMax:       number;
   moveRemaining: number;
+  weapon:        Weapon;     // embedded weapon stats (name, range, dmgDie, dmgMod)
+  abilities:     string[];   // ability IDs this combatant knows
+  alive:         boolean;
   actionUsed:    boolean;
-  // ...weapon, abilities, type, cls, icon, defId, etc.
+  // ...name, cls, icon, type: "pc" | "enemy"
 }
 
 interface GameState {
-  seed:          number;
-  encounterId:   string;
-  encounterName: string;
-  map:           MapDef;
-  round:         number;
-  turnOrder:     string[];
-  turnIndex:     number;
-  combatants:    Record<string, Combatant>;
-  log:           string[];
+  started:         boolean;            // always true for an active encounter
+  encounterId:     string;
+  encounterName:   string;
+  seed:            number;
+  map:             MapDef;             // Phase F: augmented/replaced by tileQuery: TileQueryFn
+  round:           number;
+  turnOrder:       string[];           // Combatant.id values in initiative order
+  initiativeRolls: InitiativeEntry[];  // { id: string; total: number } — for display
+  turnIndex:       number;
+  combatants:      Record<string, Combatant>;  // keyed by Combatant.id
+  log:             string[];
 }
 ```
 
@@ -110,21 +158,22 @@ Today's coordinate system is **local map coordinates**:
 
 - Origin at `(0, 0)` — top-left tile of the map.
 - `x` increases rightward, `y` increases downward.
-- Tile identity: `key(x, y) → "${x},${y}"` (integer string).
+- Tile identity: `key(x, y) → "${x},${y}"` (integer string; handles negatives correctly).
 - All maps fit entirely on the visible tabletop surface — no scrolling exists.
-- `MapDef.width` × `MapDef.height` is the complete world extent. Current maps: 8×8 (Training Yard), 10×8 (Ruined Crypt).
+- `MapDef.width` × `MapDef.height` is the complete world extent. Current maps: **8×6** (Training Yard), **8×6** (Ruined Crypt).
 
 ### Current Rules Engine Functions
 
 ```typescript
 // src/engine/rules.ts — CURRENT (implemented)
 
-chebyshev(a, b)                     // max(|dx|, |dy|) — Chebyshev distance
-reachableTiles(map, start, move, occ) // BFS over MapDef bounds
-lineOfSight(map, from, to)           // Bresenham ray, walls block
-isWall(map, x, y)                    // looks up MapDef.walls
-isPillar(map, x, y)                  // looks up MapDef.pillars
-executeMove(state, actorId, dest)    // validates + applies move
+chebyshev(a, b)                        // max(|dx|, |dy|) — Chebyshev distance
+reachableTiles(map, start, move, occ)  // BFS; uses isBlocked() for tile passability
+lineOfSight(map, from, to)             // Bresenham ray; walls block, pillars give cover
+isWall(map, x, y)                      // border+entrance logic (see MapDef wall rule above)
+isPillar(map, x, y)                    // checks map.pillars[]
+isBlocked(map, x, y)                   // isWall || isPillar
+executeMove(state, actorId, dest)      // validates + applies move
 validateAttack(state, actorId, targetId)
 executeAttack(state, actorId, targetId, rng)
 validateAbility(state, actorId, abilityId, targetId)
@@ -141,6 +190,7 @@ All rules functions receive `GameState` or its `map: MapDef` subfield. They have
 | All tiles are pre-defined in the map definition | No streaming or generation |
 | The entire map is always rendered | No culling; will not scale to large maps |
 | `Combatant.x/y` are local to the current encounter map | No persistent world coordinates |
+| `Combatant.worldId` is absent | No link to a persistent WorldState identity |
 | No exploration mode — only tactical encounters | No between-combat traversal |
 
 ---
@@ -268,17 +318,57 @@ Beyond encounter-scoped `GameState`, a future `WorldState` layer is needed:
 ```typescript
 // PLANNED — does not exist yet
 interface WorldState {
-  worldId:     string;
-  seed:        number;
-  exploredTiles: Set<string>;      // "wx,wy" keys
-  entityState:   Record<string, PersistentEntityRecord>;
-  mutatedTiles:  Record<string, TileMutation>;  // doors, traps, etc.
-  activeEncounterId: string | null;
-  activeEncounterState: GameState | null;
+  worldId:        string;
+  seed:           number;
+  exploredTiles:  Set<string>;                           // "wx,wy" keys
+  entityState:    Record<string, PersistentEntityRecord>; // keyed by worldId
+  mutatedTiles:   Record<string, TileMutation>;           // doors, traps, etc.
+  activeEncounterId: string | null;                       // which encounter is running, if any
+  // ⚠️  activeEncounterState: GameState is NOT nested here.
+  //     GameState lives alongside WorldState, not inside it.
+  //     See §4.4 Authority Boundary below.
 }
 ```
 
-`WorldState` is separate from `GameState`. A tactical encounter runs inside `WorldState`; when it ends, the results are applied back to `WorldState` (dead entities removed, looted containers marked, etc.).
+`WorldState` and `GameState` are **parallel structures** that communicate only at encounter begin (`buildEncounter()`) and encounter end (`endEncounter()`). `GameState` is never nested inside `WorldState` at runtime.
+
+### 4.4 Authority Boundary — Encounter Lifecycle (PLANNED)
+
+This is an architectural invariant. It may not be violated.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  BETWEEN ENCOUNTERS (Exploration Mode)                            │
+│  WorldState.entityState is the sole authority for all entity     │
+│  positions and persistent state, including PCs.                  │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │  buildEncounter()
+                               │  One-time read: WorldEntity records → Combatant records.
+                               │  WorldState.activeEncounterId set; entities frozen.
+┌──────────────────────────────▼───────────────────────────────────┐
+│  DURING ENCOUNTER (Tactical Mode)                                 │
+│  GameState.combatants is the sole authority for all              │
+│  combat-participant state (wx/wy, hp, alive, actionUsed, etc.)   │
+│                                                                   │
+│  WorldState.entityState is FROZEN for those entities.            │
+│  It retains the pre-combat snapshot and is not independently     │
+│  updated while the encounter is active.                          │
+│                                                                   │
+│  WorldState remains authoritative for off-screen non-            │
+│  participants (entities not in this encounter).                  │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │  endEncounter()
+                               │  One-time batch write: Combatant records → WorldEntity records.
+                               │  Dead entities removed. Surviving entities' wx/wy/hp committed.
+                               │  WorldState.activeEncounterId cleared.
+┌──────────────────────────────▼───────────────────────────────────┐
+│  POST-ENCOUNTER (Exploration Mode resumes)                        │
+│  WorldState.entityState reflects combat results.                 │
+│  GameState is discarded. WorldMode = "exploration".              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Invariant:** During an active encounter, there is exactly one writer for any combat-participant field: the rules engine via `GameState`. `WorldState` must not independently mutate those entities while the encounter is active. `endEncounter()` performs the controlled synchronization.
 
 ---
 
@@ -321,39 +411,136 @@ Coordinates like `(142, 37)` or `(−8800, 3200)` are valid. JavaScript integers
 | `validateAttack` | **None** — already coordinate-agnostic | Uses `chebyshev` + `lineOfSight` |
 | `validateAbility` | **None** | Same |
 
-The critical insight: **validation logic does not change**. Only the tile-lookup mechanism changes — from `MapDef.walls[…]` to a world-aware tile query. The rules engine should be given a tile-query interface, not a full `WorldState`:
+The critical insight: **validation logic does not change**. Only the tile-lookup mechanism changes — from the `MapDef` border/pillar model to a world-aware tile query. The rules engine receives a tile-query interface, not a full `WorldState` or a live `ChunkStore`:
 
 ```typescript
 // PLANNED — interface the rules engine receives
-interface TileQueryFn {
-  (wx: number, wy: number): TileInfo;
-}
+type TileQueryFn = (wx: number, wy: number) => TileInfo;
 
 interface TileInfo {
-  passable:   boolean;
-  blocksLOS:  boolean;
-  type:       "floor" | "wall" | "pillar" | "void" | "door_open" | "door_closed";
+  passable:      boolean;  // can a combatant enter this tile?
+  blocksLOS:     boolean;  // does this tile stop a Bresenham ray?
+  providesCover: boolean;  // does this tile grant +2 AC to targets behind it?
+  type:          "floor" | "wall" | "pillar" | "void" | "door_open" | "door_closed";
+}
+
+// ── Tile type reference ───────────────────────────────────────────────────
+//
+//  type          passable  blocksLOS  providesCover  notes
+//  ──────────────────────────────────────────────────────────────────────
+//  "floor"       true      false      false          normal traversable tile
+//  "wall"        false     true       false          border/solid obstruction
+//  "pillar"      false     false      true           blocks movement, cover only
+//  "void"        false     true       false          unloaded chunk / true world edge
+//  "door_open"   true      false      false          passable, no cover
+//  "door_closed" false     true       false          treated as wall until opened
+//
+// ── Pillar / wall distinction (critical for lineOfSight()) ───────────────
+//
+//  The current implementation distinguishes:
+//    wall   → blocked = true   (LOS fully blocked; attack invalid)
+//    pillar → cover  = true    (LOS passes through; target gains cover, +2 AC)
+//
+//  lineOfSight() must use tileAt(wx, wy).blocksLOS for wall detection
+//  and tileAt(wx, wy).providesCover for cover detection.
+//  It must NOT conflate the two into a single boolean.
+//
+// ── mapDefToTileQuery() adapter (Phase A) ────────────────────────────────
+//
+//  This is the exact logic required (see §2 wall rule):
+//
+//  function mapDefToTileQuery(map: MapDef): TileQueryFn {
+//    return (wx, wy) => {
+//      if (wx < 0 || wy < 0 || wx >= map.width || wy >= map.height)
+//        return { passable: false, blocksLOS: true, providesCover: false, type: "void" };
+//      const border = wx===0 || wx===map.width-1 || wy===0 || wy===map.height-1;
+//      if (border && !(wx===map.entrance.x && wy===map.entrance.y))
+//        return { passable: false, blocksLOS: true, providesCover: false, type: "wall" };
+//      if (map.pillars.some(p => p.x===wx && p.y===wy))
+//        return { passable: false, blocksLOS: false, providesCover: true, type: "pillar" };
+//      return { passable: true, blocksLOS: false, providesCover: false, type: "floor" };
+//    };
+//  }
+//
+//  ⚠️  Do NOT iterate over a map.walls[] array — it does not exist.
+//      See §2 for the actual MapDef interface.
+```
+
+### 5.5 TileQueryFn Determinism Invariant
+
+**This is a hard architectural rule, not a recommendation.**
+
+A `TileQueryFn` passed to the rules engine must be a **pure, stable snapshot**: given the same `(wx, wy)`, it must return the same `TileInfo` for the entire lifetime of the `GameState` it was created alongside.
+
+```
+PROHIBITED:
+  Rules Engine
+       ↓  calls
+  live mutable ChunkStore
+       ↓  result depends on
+  "Is this chunk currently loaded?"
+
+REQUIRED:
+  WorldState / ChunkStore
+       ↓  produces
+  stable geometry snapshot
+       ↓  wrapped as
+  TileQueryFn   (pure, closed over immutable data)
+       ↓  embedded in
+  GameState.tileQuery
+       ↓  consumed by
+  Rules Engine
+```
+
+**Rationale:** Two critical workflows depend on this:
+
+1. **Proposal validation/revalidation** (`revalidateProposal`, `executeProposalSteps`) must see the same geometry as the execution that follows. If the tile query changes between validation and execution, a legal proposal can become illegal or vice versa — silently corrupting the simulation.
+
+2. **Parallel pipelines** — the renderer's chunk-loading pipeline (AI DM → world generation → chunks → viewport) must not interfere with the rules pipeline (player action → proposal → validation → execution). These pipelines run concurrently. The rules engine must be completely isolated from renderer/cache state.
+
+**Consequence for ChunkStore:** Chunk mutations must produce a **new** `TileQueryFn` rather than mutating the data structure an existing function closes over. The rules engine never observes a mid-mutation tile state.
+
+**Consequence for `cloneState()`:** After Phase F, `GameState.tileQuery: TileQueryFn` is shared by reference in `cloneState()` — safe because the function is immutable for the lifetime of the state. This is identical in semantics to the current `map: MapDef` sharing.
+
+### 5.6 GameState.tileQuery (Phase F)
+
+In Phase F, `GameState.map: MapDef` is augmented/replaced by `GameState.tileQuery: TileQueryFn`.
+
+**Why `tileQuery` lives in `GameState` rather than being passed explicitly to rules functions:**
+
+- `revalidateProposal()` and `executeProposalSteps()` must use the same geometry snapshot — embedding it in `GameState` ensures they do.
+- `runEnemyAI()` and `resolveLeadingEnemyTurns()` receive only `(state, actorId, rng)` — they get the tile query from `state.tileQuery` without signature changes.
+- `cloneState()` shares `tileQuery` by reference, which is safe because the snapshot is immutable.
+- Viewport movement, chunk loading, and React re-renders cannot change `state.tileQuery` — it is committed at the state boundary, not at the call site.
+
+```typescript
+// Phase F: GameState addition
+interface GameState {
+  // ...existing fields...
+  tileQuery: TileQueryFn;  // replaces direct use of map-based isWall/isPillar
+  // map: MapDef is retained alongside for encounter metadata (name, dimensions)
+  // but tile passability is always queried through tileQuery.
 }
 ```
 
-### 5.5 Movement at World Scale
+### 5.7 Movement at World Scale
 
-`reachableTiles` performs BFS. At world scale, it must query world tiles. BFS is bounded by `moveRemaining` (currently 3–5 tiles), so it never explores more than ~25 tiles regardless of world size. Performance remains O(moveRemaining²) — no concern.
+`reachableTiles` performs BFS. At world scale, it queries `tileAt(wx, wy).passable`. BFS is bounded by `moveRemaining` (currently 3–5 tiles), so it never explores more than ~25 tiles regardless of world size. Performance remains O(moveRemaining²) — no concern.
 
 Range calculations (`validateAttack`, `validateAbility`) use `chebyshev` — O(1), unchanged.
 
-Line-of-sight uses Bresenham's algorithm — O(max range) ≈ O(8) for current weapons. Unchanged.
+Line-of-sight uses Bresenham's algorithm — O(max range) ≈ O(8) for current weapons. Unchanged, except tile checks use `tileAt(wx, wy).blocksLOS` and `tileAt(wx, wy).providesCover`.
 
-### 5.6 Map Boundaries
+### 5.8 Map Boundaries
 
-Current maps have hard boundaries (`x < 0 || x >= width || y < 0 || y >= height → wall`). At world scale:
+Current maps have hard boundaries implemented via `isWall()`. At world scale, through `TileQueryFn`:
 
 - Tiles beyond a region boundary may be:
-  - **Unloaded** (chunk not resident): treated as impassable for movement, blocked LOS (conservative fallback).
-  - **Void** (genuine world edge): impassable, visually distinct.
-  - **Loaded** in an adjacent chunk: seamlessly passable.
+  - **Unloaded** (chunk not resident): returns `{ passable: false, blocksLOS: true, providesCover: false, type: "void" }` — safe conservative default.
+  - **Void** (genuine world edge): same safe default, visually distinct from unloaded.
+  - **Loaded** in an adjacent chunk: seamlessly passable if terrain allows.
 
-The rules engine must not crash or produce incorrect results when querying an unloaded tile. The tile query function should return a safe default (`{ passable: false, blocksLOS: true, type: "void" }`) for unloaded coordinates.
+The rules engine must not crash or produce incorrect results when querying an unloaded tile. The safe default ensures impassability without requiring the rules engine to know anything about chunk residency.
 
 ---
 
@@ -864,7 +1051,77 @@ EXPLORATION RESUMES
 (continue)
 ```
 
-### 14.2 Encounter Near Viewport Edge
+### 14.2 Encounter Population — WorldState → GameState (PLANNED)
+
+When an encounter triggers, the following mapping must be performed to create `GameState.combatants`:
+
+```
+WorldState.entityState  →  buildEncounter()  →  GameState.combatants
+
+For each participating entity:
+
+  WorldEntity {                     Combatant {
+    worldId: "goblin_crypt_3",   →    worldId: "goblin_crypt_3",  // foreign key preserved
+    defId:   "goblin",           →    defId:   "goblin",          // template unchanged
+    wx: 142, wy: 37,             →    wx: 142, wy: 37,            // world position copied
+    hp: 8, alive: true,          →    hp: 8, alive: true,         // persistent state copied
+    state: { ... }               →    id: "goblin1",              // encounter-local key assigned
+  }                                   // ...combat-local fields initialized (actionUsed, moveRemaining)
+                                 }
+```
+
+**Which entities participate:**
+- **PCs:** All living player characters. Their `worldId` matches their persistent record.
+- **Hostile entities:** All living `WorldEntity` records whose world position falls within the encounter bounding box (see §14.3) at trigger time.
+- **Neutral entities:** Included if within bounding box and flagged as interactable; excluded from initiative.
+
+**Encounter-local identity (`Combatant.id`):**
+- Assigned at `buildEncounter()` time.
+- For test fixtures without `worldId`, the `instanceId` from `EncounterDef` is used directly (current behavior preserved).
+- For world-backed entities, `id` may equal `worldId` (simplest choice) or be a derived short key. **Decision:** use `worldId` as `id` for world-backed entities, `instanceId` from `EncounterDef` for fixture entities.
+
+**Fields copied from `WorldEntity` → `Combatant`:**
+- `worldId`, `defId`, `wx`, `wy`, `hp`, `alive`
+
+**Fields initialized as combat-local state:**
+- `actionUsed = false`, `moveRemaining = combatantDef.moveMax`, `id` (encounter key)
+
+### 14.3 endEncounter() — GameState → WorldState Commit (PLANNED)
+
+At encounter completion (victory, defeat, or retreat), a single controlled commit writes combat results back to `WorldState`:
+
+```typescript
+// PLANNED — called once at encounter end
+function endEncounter(gameState: GameState, worldState: WorldState): WorldState {
+  const next = { ...worldState, activeEncounterId: null };
+
+  for (const combatant of Object.values(gameState.combatants)) {
+    if (!combatant.worldId) continue;  // test fixture — no persistent record
+
+    if (!combatant.alive) {
+      // Dead entities are removed from WorldState
+      delete next.entityState[combatant.worldId];
+    } else {
+      // Surviving entities: commit world position and HP
+      next.entityState[combatant.worldId] = {
+        ...next.entityState[combatant.worldId],
+        wx:    combatant.wx,
+        wy:    combatant.wy,
+        hp:    combatant.hp,
+        alive: combatant.alive,
+      };
+    }
+  }
+
+  // Record any environmental mutations that occurred during combat
+  // (opened doors, looted chests, triggered traps — future work)
+  return next;
+}
+```
+
+**Invariant:** This function is the ONLY path by which combat results enter `WorldState`. It is called exactly once per encounter, after `checkEncounterStatus()` returns `"victory"` or `"defeat"`, before `WorldMode` returns to `"exploration"`.
+
+### 14.4 Encounter Near Viewport Edge
 
 If an encounter trigger fires when the party is near the tabletop edge:
 
@@ -872,7 +1129,7 @@ If an encounter trigger fires when the party is near the tabletop edge:
 2. If the encounter bounding box is larger than the viewport, the viewport is positioned to show as many combatants as possible (maximize visible combatants, prefer PC side).
 3. Terrain between the PCs and the nearest enemy must always be visible at encounter start.
 
-### 14.3 Surrounding Terrain Inclusion
+### 14.5 Surrounding Terrain Inclusion
 
 The tactical area includes:
 
@@ -885,7 +1142,7 @@ Tactical viewport origin centers on bounding box with padding included.
 
 If the padded area exceeds the viewport, center on the PCs (they have agency; enemies are secondary).
 
-### 14.4 Post-Combat Viewport
+### 14.6 Post-Combat Viewport
 
 After combat resolves, the viewport transitions back to exploration follow mode. No jump or snap — the viewport is already correctly positioned from combat (which followed the active actor). It simply resumes following the party centroid.
 
@@ -1330,9 +1587,13 @@ All phases are PLANNED. None are implemented. Phases should be implemented in or
 
 - Rename `Combatant.x/y` to `Combatant.wx/wy` in `content.ts`.
 - Update all rules engine references from `(x, y)` to `(wx, wy)`.
-- Replace `MapDef`-based tile lookups with a `TileQueryFn` interface.
-- Adapter: `mapDefToTileQuery(mapDef: MapDef): TileQueryFn` — preserves all existing behavior.
-- **No user-visible change.** All 93 unit tests and 148 E2E tests must continue to pass.
+- Add `Combatant.worldId?: string` as an optional field (see §2). No existing test fixture is required to supply it — the field is undefined for all Phase 2 encounters.
+- Replace `MapDef`-based tile lookups with a `TileQueryFn` interface that returns `TileInfo` with `passable`, `blocksLOS`, `providesCover`, and `type` (see §5.4).
+- Adapter: `mapDefToTileQuery(mapDef: MapDef): TileQueryFn` — wraps the existing `isWall`/`isPillar` logic; see §5.4 for the exact implementation. Preserves all existing behavior including pillar cover semantics.
+- Update `lineOfSight()` to use `TileInfo.blocksLOS` and `TileInfo.providesCover` — no semantic change, only the lookup mechanism changes.
+- `GameState` gains `tileQuery: TileQueryFn` computed from `GameState.map` at encounter creation. The `map` field is retained for metadata. Rules engine functions read `state.tileQuery` instead of calling `isWall`/`isPillar` directly.
+- **No user-visible change.** All 97 unit tests and 133 E2E tests must continue to pass.
+- **Determinism invariant:** `TileQueryFn` must be a pure snapshot (see §5.5). The adapter closes over `MapDef` which is already an immutable value, so this is automatically satisfied in Phase A.
 
 ### Phase B — Viewport Model and World-to-Visible-Tile Mapping
 
@@ -1421,9 +1682,76 @@ The following decisions are **final** for Phase 3 design. They may not be overri
 | 13 | **Chunk coordinates are derived, never stored on entities.** An entity's world position is its only address. |
 | 14 | **All Phase 2 tests must pass through Phase A and Phase B with no modification.** These phases are transparent rewrites. |
 | 15 | **`cellPx` and screen layout remain in the renderer.** The viewport model operates in logical tile units. Screen pixels are computed at the last possible moment. |
+| 16 | **`TileInfo` includes `providesCover: boolean`.** `blocksLOS` and `providesCover` are distinct flags. Walls block LOS; pillars provide cover only. `lineOfSight()` must never conflate these. |
+| 17 | **`TileQueryFn` must be a pure, immutable snapshot.** It must never close over a mutable live `ChunkStore`. Rules outcomes cannot depend on chunk residency, viewport position, or React render timing. |
+| 18 | **`GameState.tileQuery: TileQueryFn` is the rules engine's sole geometry source after Phase F.** Embedding it in `GameState` ensures proposal validation and execution see identical geometry. |
+| 19 | **`Combatant` carries three distinct identity fields: `id` (encounter-local), `defId` (content template), `worldId?` (persistent world).** These are never interchangeable. Test fixtures may omit `worldId`. |
+| 20 | **During an active encounter, `GameState` is the sole writer for combat-participant state. `WorldState` is frozen for those entities.** `endEncounter()` is the only path that commits results back to `WorldState`. |
+
+---
+
+## 27. Phase 3 Architectural Invariants
+
+These are **hard rules**. An implementation that violates any of them has a design defect, not just a bug. Each must be preserved through all future phases.
+
+### Determinism
+
+> Rules outcomes cannot depend on chunk residency, viewport position, React render timing, or rendering pipeline state.
+
+A legal action at position (wx, wy) is legal regardless of whether that tile is visible, loaded, near the viewport edge, or currently being rendered. The simulation produces the same result whether the renderer is showing tile (10, 10) or tile (10, 1000).
+
+**Enforcement:** `TileQueryFn` is always a stable snapshot. The rules engine never calls into `ChunkStore`, `ViewportState`, or any React state.
+
+### Identity
+
+> `worldId` persists across encounters, viewport movement, chunk eviction, and reload.
+
+An entity that enters combat with `worldId: "goblin_crypt_3"` leaves combat — dead or alive — with the same `worldId`. Chunk eviction and reload do not change it. A save/load cycle does not change it.
+
+**Enforcement:** `worldId` is assigned when the `WorldEntity` is first created and never changed. It is not derived from position. Chunk coordinates are derived from `worldId` (via world position), not the reverse.
+
+### Authority
+
+> Only the active `GameState` rules engine mutates combat-participant state during an encounter.
+
+No other system — renderer, viewport, `ChunkStore`, `WorldState` background processes, or AI DM — may write to a `Combatant` field while the encounter is active.
+
+**Enforcement:** `WorldState.entityState` is frozen for combat participants during an encounter. `endEncounter()` is the only write path back to `WorldState`. See §4.4.
+
+### Geometry
+
+> The rules engine evaluates against a stable geometry snapshot.
+
+`state.tileQuery` is immutable for the lifetime of a `GameState`. It does not update when new chunks load. It does not change between `revalidateProposal()` and `executeProposalSteps()`. A `cloneState()` result sees identical geometry to its source.
+
+**Enforcement:** See Decision 17. `TileQueryFn` closes over immutable data. Chunk mutations produce a new `GameState` with a new `tileQuery`, not a mutation of an existing one.
+
+### Rendering
+
+> The renderer cannot mutate authoritative world or combat state.
+
+The renderer reads from `GameState` (via React state). It does not call rules engine functions. It does not write back to `GameState`. It does not call into `ChunkStore` in ways that could affect tile query results already committed to active `GameState`.
+
+**Enforcement:** `ViewportState` is presentation state only; it is never written to `GameState`. The renderer receives a tile array and entity list computed from `state.tileQuery` — it does not perform tile queries itself.
+
+### Viewport
+
+> Viewport changes cannot change legal actions.
+
+Moving the viewport does not advance the game, change entity positions, alter tile passability as seen by the rules engine, or enable/disable any player action.
+
+**Enforcement:** `ViewportState` is completely separate from `GameState`. Rules functions receive `GameState` — `ViewportState` is not a parameter to any rules function.
+
+### Chunking
+
+> Chunk boundaries cannot change world coordinates or entity identity.
+
+An entity at world position (142, 37) is at (142, 37) regardless of how the world is divided into chunks, how chunk sizes change, or whether that position falls near a chunk boundary. Chunk coordinates are a storage implementation detail invisible to the rules engine.
+
+**Enforcement:** Entities store `(wx, wy)` world position — not chunk-relative position. The rules engine receives world coordinates. `TileQueryFn` translates internally to chunk-relative coordinates if needed, shielding the rules engine from storage layout.
 
 ---
 
 _End of specification._
-_Status: SPECIFICATION ONLY — no implementation has occurred._
-_Author: Phase 3 design task, commit to follow._
+_Status: SPECIFICATION ONLY — no implementation has occurred. Preflight resolutions complete; Phase A may begin._
+_Author: Phase 3 design task + preflight resolution pass._
