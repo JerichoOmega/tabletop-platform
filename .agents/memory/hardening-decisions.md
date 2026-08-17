@@ -62,3 +62,34 @@ intentionally shared (static terrain — never mutated during gameplay).
 
 ## GitHub remote is named "github", not "origin"
 Push commands must use `git push github main`, not `git push origin main`.
+
+---
+
+## Phase 3 Preflight Resolutions (locked in WORLD_SCALE_VIEWPORT.md)
+
+### TileInfo.providesCover is a hard requirement
+`TileInfo` has three boolean flags: `passable`, `blocksLOS`, `providesCover`. These are distinct. Walls have `blocksLOS=true, providesCover=false`. Pillars have `blocksLOS=false, providesCover=true`. `lineOfSight()` must never conflate them. The `mapDefToTileQuery()` adapter must implement this correctly using the border/entrance/pillar logic — there is NO `MapDef.walls[]` array.
+
+**Why:** Cover mechanics (+2 AC for targets behind pillars) silently break if the pillar/wall distinction is collapsed into a single boolean.
+
+### MapDef wall model — there is NO walls[] array
+`MapDef` has `entrance: {x,y}` and `pillars: {x,y}[]`. Walls are implicit: every border tile is a wall EXCEPT the entrance. Both current maps are 8×6 (not 8×8 or 10×8). `mapDefToTileQuery()` must implement the border+entrance+pillar logic; see §5.4 of WORLD_SCALE_VIEWPORT.md for the exact pseudocode.
+
+**Why:** The spec §2 previously described a `walls[]` array that never existed. Anyone implementing the adapter from the old spec alone would build a broken tile query.
+
+### TileQueryFn determinism is a hard architectural invariant
+A `TileQueryFn` passed to the rules engine must be a pure, stable snapshot. It must never close over a mutable live `ChunkStore`. Rules outcomes cannot depend on chunk residency, viewport position, or React render timing.
+
+**Why:** Proposal validation and execution must see identical geometry. The renderer's chunk-loading pipeline and the rules pipeline run concurrently; they must be fully isolated.
+
+### Three-layer Combatant identity
+- `id` = encounter-local key in `GameState.combatants`. Assigned at encounter creation, not persistent.
+- `defId` = content/template identity. References `COMBATANT_DEFS`. Never changes.
+- `worldId?` = persistent world identity. Foreign key into `WorldState.entityState`. Optional — test fixtures and pre-WorldState encounters leave it undefined.
+
+**Why:** Conflating these leads to bugs where entity template lookups use instance keys or persistent records get overwritten by encounter-local updates.
+
+### Encounter authority boundary
+During an active encounter, `GameState` is the sole writer for combat-participant state. `WorldState.entityState` is frozen for those entities. `endEncounter()` is the only path that commits results back to `WorldState`. `WorldState` must not independently mutate combat-participant positions/HP while the encounter is active.
+
+**Why:** The old spec implied `WorldState.activeEncounterState: GameState | null` (nesting), which creates a dual-write synchronization hazard. Parallel structures with a single commit boundary avoids this.

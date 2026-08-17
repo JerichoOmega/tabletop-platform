@@ -2,4 +2,4 @@
 - [Bug fixes applied](bug-fixes.md) — turnKey useEffect, layout (controls above ENEMIES), newEncounter arrow wrapper, flexWrap
 - [Test setup](test-setup.md) — vitest 4.x, vitest.config.ts with @/ alias, 97 unit tests, node environment; 133 E2E tests (Playwright)
 - [Accessibility implementation](accessibility-impl.md) — ARIA roles, keyboard nav, focus ring, sr-only, reduced-motion; board token aria-label collision trap
-- [Hardening decisions](hardening-decisions.md) — Rng interface, RNG snapshot/restore, ally check, content validation module, testOnly spawn exemption
+- [Hardening decisions](hardening-decisions.md) — Rng interface, RNG snapshot/restore, ally check, content validation, Phase 3 preflight resolutions (TileQueryFn invariant, MapDef wall model, 3-layer identity, encounter authority boundary)

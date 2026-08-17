@@ -1,0 +1,274 @@
+That preflight is exactly the outcome we wanted. Claude found real architectural gaps before they became implementation problems, and importantly, none of them require changing the overall Phase 3 vision.
+
+I agree with the GO WITH CHANGES verdict.
+
+I would make these decisions now
+
+Decision	My recommendation
+1. providesCover	Add it in Phase A
+2. Correct MapDef spec	Fix the spec immediately
+3. worldId	Add worldId?: string in Phase A
+4. WorldModel	Define before Phase F; synchronous rules-facing snapshot
+5. TileQueryFn location	Put a pure snapshot/reference in GameState
+6. Encounter population	Define explicitly before Phase F/H
+7. Mutable TileQueryFn	Absolutely prohibit it
+
+The last one is particularly important.
+
+The rule I want established
+
+The rules engine must never depend on whatever happens to be loaded in the renderer/cache at that moment.
+
+We want:
+
+World / ChunkStore
+       ↓
+authoritative snapshot
+       ↓
+TileQueryFn
+       ↓
+GameState
+       ↓
+Rules Engine
+
+Not:
+
+Rules Engine
+      ↓
+live ChunkStore
+      ↓
+"Is this chunk loaded right now?"
+
+That would be a nasty determinism bug waiting to happen.
+
+⸻
+
+I’d send Claude this next
+
+Implement the Phase 3 preflight resolutions before Phase A begins.
+
+The Phase 3 preflight returned GO WITH CHANGES. Do not begin the Phase A coordinate migration yet.
+
+First update the Phase 3 specification and architecture documentation to formally resolve the following decisions.
+
+1. Add providesCover to TileInfo
+
+Add:
+
+providesCover: boolean
+
+to the planned TileInfo contract.
+
+Document the distinction:
+
+* wall: passable=false, blocksLOS=true, providesCover according to current rules
+* pillar: passable=false, blocksLOS=false, providesCover=true
+* floor: passable=true, blocksLOS=false, providesCover=false
+
+Preserve the current pillar LOS/cover semantics exactly.
+
+Do not implement Phase A yet.
+
+2. Correct the Phase 3 specification’s description of the current MapDef
+
+Inspect the actual current implementation and correct §2 of WORLD_SCALE_VIEWPORT.md.
+
+The specification must accurately describe:
+
+* the real MapDef fields
+* the current wall representation
+* the entrance behavior
+* the actual dimensions of the current maps
+* the current pillar representation
+
+Do not invent fields that don’t exist.
+
+The specification must be usable by an engineer implementing mapDefToTileQuery() without needing to reverse-engineer the repository first.
+
+3. Add Combatant.worldId?: string
+
+Add an optional worldId field to the combatant model during Phase A.
+
+Existing fixtures and Phase 2 encounters must remain valid without one.
+
+Document:
+
+* id = encounter-local combatant identity
+* worldId = persistent world identity
+* defId = content/template identity
+
+Make the distinction explicit.
+
+Do not require existing test fixtures to manufacture fake world IDs.
+
+4. Define the WorldModel boundary
+
+Add a formal TypeScript architecture specification for the future WorldModel.
+
+The rules-facing tile query must be synchronous.
+
+Establish that asynchronous chunk loading/generation occurs outside the rules engine.
+
+The rules engine must only receive a stable snapshot/view of authoritative world geometry for the operation being evaluated.
+
+Explicitly prohibit a TileQueryFn that closes over a mutable live ChunkStore.
+
+The following must be an architectural invariant:
+
+A rules evaluation must produce the same result regardless of viewport position, React render timing, chunk cache state, or unrelated asynchronous loading activity.
+
+5. Resolve GameState.tileQuery
+
+Adopt the preferred architecture:
+
+GameState.tileQuery: TileQueryFn
+
+or an equivalent immutable rules-facing geometry snapshot.
+
+Document why this exists:
+
+* proposal revalidation must see the same geometry as execution
+* cloning GameState must preserve deterministic geometry
+* viewport movement must never alter the rules snapshot
+* chunk loading must never mutate the query used by an active simulation
+
+If the implementation reveals that storing a function directly creates serialization or cloning problems, define an equivalent immutable WorldGeometrySnapshot abstraction instead.
+
+Do not choose an architecture merely because it is convenient to implement. Preserve deterministic simulation first.
+
+6. Define encounter population
+
+Document the exact transition:
+
+WorldState
+    ↓
+encounter trigger
+    ↓
+encounter population selection
+    ↓
+GameState.combatants
+
+Define which persistent WorldEntity records become combatants.
+
+Establish:
+
+* PCs participating in the encounter
+* hostile entities
+* neutral entities if applicable
+* persistent world IDs
+* encounter-local IDs
+* copied persistent state
+* combat-local state
+
+Also document the reverse transition:
+
+GameState
+    ↓
+endEncounter()
+    ↓
+WorldState
+
+The active encounter must have one authoritative writer during combat.
+
+WorldState must not independently mutate combat-participant positions/HP while the encounter is active.
+
+At encounter completion, commit the resulting persistent changes back to WorldState as a defined transaction.
+
+7. Resolve the activeEncounterState ambiguity
+
+The current specification must not simultaneously imply:
+
+* WorldState continuously mirrors active GameState
+
+and
+
+* WorldState is frozen while an encounter is active.
+
+Choose the latter:
+
+During an active encounter, GameState is authoritative for participating entities.
+
+WorldState retains the persistent world snapshot but does not independently mutate those entities.
+
+endEncounter() performs the controlled synchronization/commit.
+
+Document this as an invariant.
+
+8. Add Phase 3 invariants
+
+Add explicit invariants for:
+
+Determinism
+
+Rules outcomes cannot depend on chunk residency, viewport state, React timing, or rendering.
+
+Identity
+
+worldId persists across encounters, viewport movement, chunk eviction, and reload.
+
+Authority
+
+Only the active GameState rules engine mutates combat state during an encounter.
+
+Geometry
+
+The rules engine evaluates against a stable geometry snapshot.
+
+Rendering
+
+The renderer cannot mutate authoritative world or combat state.
+
+Viewport
+
+Viewport changes cannot change legal actions.
+
+Chunking
+
+Chunk boundaries cannot change world coordinates or entity identity.
+
+9. Update implementation phases if necessary
+
+If these decisions require modifying Phase A–J ordering, update the implementation plan.
+
+Do not implement any phase yet.
+
+Final deliverable
+
+Commit the documentation/specification changes only.
+
+Report:
+
+* exact files changed
+* each architectural decision resolved
+* final WorldState/GameState ownership model
+* final TileQuery/WorldModel boundary
+* final entity identity model
+* whether the specification is now ready for Phase A implementation
+
+The desired final verdict is either GO or GO WITH CHANGES. Do not begin coding Phase A unless you can demonstrate that all Phase A-blocking decisions are resolved.
+
+⸻
+
+One thing I especially want preserved
+
+Claude’s finding about TileQueryFn and mutable ChunkStore should become a hard architectural rule, not merely a recommendation.
+
+Because later we’re going to have potentially:
+
+AI DM → world generation → chunks → viewport → renderer
+
+while simultaneously:
+
+player/AI action → proposal → validation → simulation
+
+Those two pipelines must not interfere with each other.
+
+The simulation needs to be able to say:
+
+“Given this authoritative world geometry and this game state, this action is legal.”
+
+and get the same answer whether the renderer is currently showing tile (10,10) or (10,1000).
+
+That’s foundational to making this feel like a real tabletop simulation rather than a UI that happens to contain game logic.
+
+So: documentation first, then Phase A. This is the right moment to lock it down.
