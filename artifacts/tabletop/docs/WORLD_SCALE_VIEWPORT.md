@@ -817,16 +817,67 @@ Chunks are a **loading and caching abstraction** for large worlds. They are NOT 
 ### 11.2 Chunk Dimensions (PLANNED)
 
 ```
-CHUNK_SIZE_TILES = 16    // 16×16 tile chunks — TBD, subject to profiling
+CHUNK_W = 16    // tiles per chunk, x-axis  ← architectural constant
+CHUNK_H = 16    // tiles per chunk, y-axis  ← architectural constant
+               // Square chunks (CHUNK_W === CHUNK_H) for the initial implementation.
+               // Change requires updating all chunk-key math below.
 
-ChunkCoord = { cx: Math.floor(wx / CHUNK_SIZE_TILES),
-               cy: Math.floor(wy / CHUNK_SIZE_TILES) }
+ChunkCoord = { cx: Math.floor(wx / CHUNK_W),
+               cy: Math.floor(wy / CHUNK_H) }
 ```
 
-Rationale for 16×16:
-- Small enough that chunk loading is granular.
-- Large enough that the viewport (12×10 tiles) typically spans only 1–4 chunks.
+**Why 16×16:**
+- Small enough that chunk loading is granular; large enough that a 12×10 viewport spans only 1–4 chunks.
 - Power of 2 simplifies alignment math.
+- A 40×40 grandHall (Phase E / already implemented) fits in a 3×3 grid of 16×16 chunks, making it a natural first test fixture.
+
+**Chunk local coordinate:**
+
+```typescript
+// Correct conversion: world → (chunkCoord, localCoord)
+function wxToChunk(wx: number): { cx: number; lx: number } {
+  const cx = Math.floor(wx / CHUNK_W);   // Math.floor, NOT bitwise >>
+  const lx = wx - cx * CHUNK_W;          // always in [0, CHUNK_W)
+  return { cx, lx };
+}
+
+// Inverse: (chunkCoord, localCoord) → world
+function chunkToWx(cx: number, lx: number): number {
+  return cx * CHUNK_W + lx;
+}
+```
+
+**⚠️ Critical: do NOT use JavaScript `%` for local coordinate calculation.**
+
+JavaScript's `%` is the remainder operator, not the mathematical modulo:
+
+```
+-1 % 16  ===  -1    ← WRONG: gives a negative result
+```
+
+The formula `wx - Math.floor(wx / CHUNK_W) * CHUNK_W` is always correct and gives `lx ∈ [0, CHUNK_W)`.
+
+**Worked examples (including negative world coordinates):**
+
+| wx | cx = Math.floor(wx/16) | lx = wx − cx×16 | Correct? |
+|---|---|---|---|
+| 0  | 0 | 0  | ✓ |
+| 15 | 0 | 15 | ✓ |
+| 16 | 1 | 0  | ✓ |
+| 35 | 2 | 3  | ✓ |
+| -1 | -1 | 15 | ✓ (tile -1 = local 15 of chunk -1) |
+| -16 | -1 | 0 | ✓ |
+| -17 | -2 | 15 | ✓ |
+
+**Chunk key (deterministic string):**
+
+```typescript
+function chunkKey(cx: number, cy: number): string {
+  return cx + "," + cy;   // e.g. "0,0", "-1,2", "-2,-1"
+  // Negative coordinates serialize correctly: distinct from all positive keys.
+  // Same format as the existing worldKey(wx, wy) in rules.ts.
+}
+```
 
 ### 11.3 Chunk Lifecycle
 
@@ -835,13 +886,37 @@ State machine per chunk:
 
 UNLOADED ──generate/load──→ LOADING ──→ RESIDENT ──evict──→ UNLOADED
                                            │
+                                           ├──pin──→  PINNED  (encounter-required; cannot evict)
+                                           │          │
+                                           │          └──unpin──→ RESIDENT
+                                           │
                                            └──dirty──→ DIRTY (needs persistence)
+                                                       │
+                                                       └──pin──→ PINNED+DIRTY (still cannot evict)
 ```
 
 - **UNLOADED:** No data in memory. World coordinates in this chunk return safe defaults (impassable, void).
 - **LOADING:** Async generation or fetch in progress. Treat as UNLOADED for rules.
-- **RESIDENT:** Tile and entity data available. Renders normally.
-- **DIRTY:** World mutations (opened doors, killed entities) not yet persisted. Must not be evicted without saving.
+- **RESIDENT:** Tile and entity data available. Renders normally. May be evicted when outside cache ring.
+- **DIRTY:** World mutations (opened doors, killed entities) not yet persisted. Must write before evicting.
+- **PINNED:** Chunk contains at least one active encounter participant (PC or enemy). **Must not be evicted for any reason while the encounter is active.** The pin is applied when the encounter starts (`buildEncounter()`) and removed when it ends (`endEncounter()`). A PINNED+DIRTY chunk still cannot be evicted — it must wait for both unpin and flush.
+
+**The pin invariant:**
+
+> For every active encounter, the set of chunks containing at least one `GameState.combatants` world position must be PINNED for the duration of that encounter.
+
+This is enforced by `buildEncounter()` computing the pin set from combat participant positions and by `endEncounter()` removing all pins. No runtime eviction check is needed — pins are asserted at encounter boundaries, not re-evaluated per eviction candidate.
+
+```typescript
+// PLANNED — called by WorldState at encounter start
+function computeEncounterPinSet(combatants: Record<string, Combatant>): Set<string> {
+  const pins = new Set<string>();
+  for (const c of Object.values(combatants)) {
+    pins.add(chunkKey(Math.floor(c.wx / CHUNK_W), Math.floor(c.wy / CHUNK_H)));
+  }
+  return pins;
+}
+```
 
 ### 11.4 Chunk Set Management
 
@@ -886,6 +961,87 @@ When the viewport crosses a chunk boundary:
 - Chunks are **not** separate game states or encounter instances.
 - Chunks do **not** own entity identity — entities are world-level objects that happen to occupy a chunk.
 - Chunks are **not** rendered DOM elements — the renderer maps viewport-relative tile positions to chunk data, but chunks have no 1:1 DOM correspondence.
+
+### 11.8 ResidentGeometrySnapshot — The Async/Sync Barrier
+
+This is the **architectural boundary** between the asynchronous ChunkStore (which loads chunks in the background) and the synchronous rules engine (which must see stable, consistent geometry).
+
+**The problem:** The rules engine must be deterministic and synchronous. The ChunkStore is asynchronous and mutable. Passing a live `ChunkStore` reference to the rules engine would mean tile results could change mid-calculation if a chunk loads or unloads concurrently.
+
+**The solution:** Before any encounter begins (in `buildEncounter()`), a `ResidentGeometrySnapshot` is created from the current PINNED chunk set. This snapshot is the immutable barrier:
+
+```typescript
+// PLANNED — all fields are readonly; no mutable references back into ChunkStore
+interface ResidentGeometrySnapshot {
+  readonly tiles:   ReadonlyMap<string, TileInfo>;   // keyed by worldKey(wx, wy)
+  readonly worldId: string;
+  readonly seed:    number;
+  // No dirty: boolean here. Mutability lives in ChunkStore, not in the snapshot.
+  // No live ChunkStore reference. The snapshot is a frozen copy.
+}
+```
+
+**Important: `ChunkDynamicState` (live, mutable) vs `ResidentGeometrySnapshot` (frozen, immutable) are distinct types.** The live ChunkStore owns: residency state, dirty flag, in-flight mutations, and the eviction set. The snapshot owns only: an immutable copy of the tile geometry captured at encounter-start.
+
+```
+ChunkStore (async, mutable)
+    │
+    │  At buildEncounter(): iterate PINNED chunks
+    │  copy TileInfo for each tile into a flat ReadonlyMap
+    ▼
+ResidentGeometrySnapshot (immutable, synchronous)
+    │
+    │  Wrapped into a closure: snapshotToTileQuery(snapshot): TileQueryFn
+    │  Missing tile (wx,wy) not in snapshot → deterministic "void" result
+    ▼
+TileQueryFn  (pure, closed over snapshot)
+    │
+    │  Embedded in GameState.tileQuery
+    ▼
+Rules engine  (synchronous, deterministic)
+```
+
+**Rule for missing tiles in the snapshot:**
+
+If `(wx, wy)` is queried but is not in the snapshot (i.e., that chunk was not PINNED at encounter start), the query returns:
+
+```typescript
+{ passable: false, blocksLOS: true, providesCover: false, type: "void" }
+```
+
+This is the **safe conservative default** — impassable, opaque. It must never throw or return undefined.
+
+A query returning void for a tile that an encounter participant occupies is an **invariant violation** (i.e., a programming error). The encounter should never have started if a participant's chunk was not PINNED and snapshotted. Violated in tests → crash with a clear error message. Violated in production → log error, treat as void, do not crash.
+
+**The snapshot is not updated mid-encounter.** If a new chunk loads after encounter start (e.g., prefetch brings in adjacent terrain), the snapshot does not change. The rules engine sees the same geometry throughout the encounter.
+
+### 11.9 ChunkStore Ownership
+
+`ChunkStore` is owned exclusively by `WorldState`. This is a hard architectural boundary.
+
+```
+WorldState
+    └── ChunkStore (owns: resident chunks, dirty set, eviction candidates)
+            └── ResidentGeometrySnapshot (produced at buildEncounter(); frozen)
+                    └── TileQueryFn (embedded in GameState.tileQuery)
+                            └── Rules engine (reads only; never reaches ChunkStore)
+```
+
+`GameState` **never receives a live `ChunkStore` reference.** It receives only a `TileQueryFn` (a closure over a snapshot). The React component never reaches `ChunkStore` either — it receives tile arrays and entity lists from viewport logic. Only `WorldState` methods drive ChunkStore state changes.
+
+### 11.10 Chunk-Boundary Invariants
+
+An exhaustive list of invariants that must hold at chunk boundaries. No exception.
+
+| Invariant | Requirement |
+|---|---|
+| **World coordinate continuity** | Tile `(15, 5)` in chunk `(0, 0)` and tile `(16, 5)` in chunk `(1, 0)` are simply adjacent world tiles. No special-casing at boundaries. |
+| **LOS across chunk boundary** | `lineOfSight()` uses `tileQuery(wx, wy)` which reads from the snapshot transparently. Chunk boundaries are invisible to LOS calculation. |
+| **Movement across chunk boundary** | `reachableTiles()` BFS crosses chunk boundaries seamlessly. A combatant can move from `(15, 5)` to `(16, 5)` if both are passable, regardless of chunk boundary. The rules engine does not know chunk boundaries exist. |
+| **Entity at boundary** | A combatant whose `wx = 16` (first tile of chunk 1) is assigned to chunk 1 (not chunk 0). The `Math.floor` formula is the canonical assignment. |
+| **Pin set coverage** | If a combatant starts at `(15, 5)` and has `moveMax = 3`, the maximum tiles they can reach include `(18, 5)` — in chunk 1. **Both** chunk 0 and chunk 1 must be pinned. Pin-set computation must account for maximum reachable extent, not just the starting position. |
+| **Snapshot coverage** | Any world tile that a rules engine function might query must be in the snapshot. The pin set must be generous enough (e.g., add a 1-chunk margin beyond all participant positions) to avoid snapshot misses. |
+| **Generation RNG isolation** | Chunk generation RNG is seeded from `(worldSeed, cx, cy, generationVersion)`. It never shares state with initiative RNG, combat RNG, or enemy AI RNG. See §17.7. |
 
 ---
 
@@ -1277,13 +1433,42 @@ Rebuilding this index after each state change: O(entity count) ≤ O(100) for an
 - Chunk loading is async; the React component is notified only when a chunk becomes RESIDENT and its tiles are now in the viewport.
 - Use `useMemo` for: visible tile array, entity-by-position index, viewport bounds. Invalidate only when `viewportState` or `gameState` changes.
 
-### 17.7 Deterministic Generation
+### 17.7 Deterministic Generation and RNG Isolation
 
 Chunk generation is **synchronous and deterministic** given `(worldSeed, cx, cy)`. This means:
 
 - No async delays for terrain that was previously generated (it can be regenerated in-frame).
 - Mutations (doors, dead entities) are applied on top of the generated base.
-- Generation cost: O(CHUNK_SIZE²) = O(256) operations per chunk — negligible.
+- Generation cost: O(CHUNK_W × CHUNK_H) = O(256) operations per chunk — negligible.
+
+**Generation RNG is completely isolated from gameplay RNG.** This is a hard architectural rule:
+
+```
+Generation RNG seed: hash(worldSeed, cx, cy, generationVersion)
+   ↕  NO shared state
+Combat RNG:           per-encounter seed (from GameState.seed)
+   ↕  NO shared state
+Initiative RNG:       derived from GameState.seed at encounter start
+   ↕  NO shared state
+Enemy AI RNG:         derived from GameState.seed, turn-specific
+```
+
+- Generation RNG is created fresh for each chunk, seeded entirely from `(worldSeed, cx, cy, generationVersion)`. It never reads from or writes to any combat or initiative RNG stream.
+- `generationVersion` is a static constant for a given world schema. Bumping it re-generates all terrain (used for world format upgrades). The default is `0`.
+- If generation and combat shared a single RNG stream, loading a chunk mid-combat would corrupt the combat sequence — attacks, damage rolls, and AI decisions would produce different results depending on which chunks had loaded. This is the principal reason for isolation.
+- The `Rng` interface used for combat (`{ next(): number }`) must not be passed to the chunk generator. The generator uses its own independent seeded instance.
+
+```typescript
+// PLANNED — generation always gets its own RNG; never receives the encounter Rng
+function generateChunk(
+  cx: number, cy: number,
+  worldSeed: number,
+  generationVersion: number = 0
+): ChunkGeometryData {
+  const rng = seededRng(hashInts(worldSeed, cx, cy, generationVersion));
+  // ... generate terrain ...
+}
+```
 
 ---
 
@@ -1618,20 +1803,48 @@ All phases are PLANNED. None are implemented. Phases should be implemented in or
 - Connect to move execution: after `setGameState(newState)`, compute new `ViewportState`.
 - **First user-visible Phase 3 change:** Moving a PC causes the viewport to follow when near edges.
 
-### Phase E — Large-Area Support
+### Phase E — Large-Area Support ✅ COMPLETE
 
-- Introduce large test encounter: 40×40 map.
-- Viewport starts centered on party.
-- Dead zone active.
-- All existing combat mechanics work at large scale.
-- **Test:** move the party across the 40×40 map; viewport follows; all rules remain valid.
+**Status:** IMPLEMENTED — commit `73e7f3d`. 217 unit tests, 154 E2E tests pass. TSC clean. Production build clean.
+
+- 40×40 `grandHall` encounter added to `content.ts` (restricted from the live encounter picker — test-only).
+- `ViewportState` initialized centered on party; `VIEWPORT_TILE_W=12`, `VIEWPORT_TILE_H=10` fixed constants in `IntelligentTabletop.tsx`.
+- Dead zone `DEAD_ZONE_MARGIN=3` active; viewport recenters when actor crosses dead-zone boundary.
+- All existing combat mechanics verified at 40×40 scale.
+- Both dead-zone axes confirmed non-degenerate (no ÷0 possible for 12×10 viewport in a 40×40 map).
+- Functional `setViewport(prev => ...)` pattern eliminates stale-closure race under React concurrent rendering.
+
+**What Phase E did NOT introduce:**
+- No `ChunkStore`, no streaming, no unbounded world. The `grandHall` map is a regular bounded `MapDef`.
+- No `worldId` population (field exists on `Combatant` but is `undefined` for all current fixtures).
+- No persistent world state; `WorldState` does not exist yet.
 
 ### Phase F — Chunk/Region Streaming
 
-- Implement `ChunkStore`: load, unload, cache, generation.
+**Architecture decisions locked by pre-implementation preflight (see §26 and §11.8–§11.10 for full detail):**
+
+- `CHUNK_W = CHUNK_H = 16` tiles. Square chunks, power of 2.
+- Negative-coordinate chunk math: always `Math.floor(wx / CHUNK_W)`, never `%`.
+- `ResidentGeometrySnapshot`: formal immutable barrier between async `ChunkStore` and synchronous rules engine. `TileQueryFn` closes over the snapshot, never over a live store reference.
+- `PINNED` chunk residency state: encounter-required chunks cannot be evicted while encounter is active.
+- Entity ownership: `WorldState` / `WorldEntityRegistry` owns `worldId`, `wx`, `wy`. Chunks own geometry only.
+- Missing-chunk query result: deterministic `"void"` from `snapshotToTileQuery`. Missing required geometry is an invariant violation, not a normal case.
+- `ChunkStore` is owned exclusively by `WorldState`. `GameState` never receives a live store reference.
+- Generation RNG: completely separate deterministic stream seeded from `(worldSeed, cx, cy, generationVersion)`. Never shares state with combat or initiative RNG.
+
+**Implementation:**
+
+- Implement `ChunkStore`: load, unload, cache, PINNED/DIRTY state, generation.
 - Implement chunk prefetch on approach.
-- Replace bounded `MapDef` with `WorldModel` using `ChunkStore`.
-- **First corridor test:** 100-tile corridor, fully traversable.
+- Implement `ResidentGeometrySnapshot` and `snapshotToTileQuery()`.
+- Replace bounded `MapDef` with `WorldModel` using `ChunkStore` for tile queries.
+- **First corridor test:** 100-tile corridor, fully traversable with viewport following.
+
+**Migration notes for existing code:**
+
+- `buildIntentContext()` in `src/intent/parser.ts` currently reads `state.map.pillars` directly for pillar-position data. This path is currently voided/unused but must be replaced with `state.tileQuery` queries before LLM integration in Phase F or Phase H. Do not let it go live with the direct `map.pillars` access.
+- All `isWall()`, `isPillar()`, `isBlocked()` functions in `rules.ts` currently remain for use by `contentValidation.ts` only. These are MapDef-based and must not be used by any new code in Phase F or later. Phase F's new rules-engine functions receive `TileQueryFn` exclusively.
+- `mapDefToTileQuery()` remains the canonical adapter for the `MapDef`-backed encounters. It is not replaced in Phase F — it remains valid for bounded encounters. Phase F adds `snapshotToTileQuery()` for chunk-backed encounters.
 
 ### Phase G — Persistent World/Entity State
 
@@ -1687,6 +1900,17 @@ The following decisions are **final** for Phase 3 design. They may not be overri
 | 18 | **`GameState.tileQuery: TileQueryFn` is the rules engine's sole geometry source after Phase F.** Embedding it in `GameState` ensures proposal validation and execution see identical geometry. |
 | 19 | **`Combatant` carries three distinct identity fields: `id` (encounter-local), `defId` (content template), `worldId?` (persistent world).** These are never interchangeable. Test fixtures may omit `worldId`. |
 | 20 | **During an active encounter, `GameState` is the sole writer for combat-participant state. `WorldState` is frozen for those entities.** `endEncounter()` is the only path that commits results back to `WorldState`. |
+
+_Decisions 21–28 were locked at Phase F pre-implementation preflight (after Phase E completion)._
+
+| 21 | **`CHUNK_W = CHUNK_H = 16`.** Square 16×16 tile chunks. This is the architectural constant for Phase F and all future phases. Changing it requires updating all chunk-key math and re-generating all worlds. |
+| 22 | **Chunk coordinate math uses `Math.floor`, never `%`.** `cx = Math.floor(wx / CHUNK_W)` is correct for negative world coordinates. `wx % CHUNK_W` returns negative results for negative `wx` and must never be used for chunk or local coordinate calculation. |
+| 23 | **`ResidentGeometrySnapshot` is the formal immutable barrier between async `ChunkStore` and synchronous rules engine.** `TileQueryFn` closes over a snapshot (a frozen copy of tile data captured at encounter start), never over a live store reference. The live `ChunkStore` owns mutable residency, dirty, and mutation state. The snapshot contains only immutable copies — no mutable references back into `ChunkStore`. |
+| 24 | **`PINNED` is a formal chunk residency state.** Chunks containing any active encounter participant must be PINNED and cannot be evicted for any reason while the encounter is active. The pin set is computed by `buildEncounter()` from participant world positions (with a 1-chunk margin) and removed by `endEncounter()`. |
+| 25 | **Entity ownership: `WorldState`/`WorldEntityRegistry` owns `worldId`, `wx`, `wy` between encounters. Chunks own geometry only (tile types, terrain).** Chunks do not own entity identity or position. An entity's world position is its canonical address; chunk assignment is derived from it, never the reverse. |
+| 26 | **Querying a tile not in the `ResidentGeometrySnapshot` returns a deterministic `"void"` result.** Missing geometry is not a runtime error — it returns `{ passable: false, blocksLOS: true, providesCover: false, type: "void" }`. However, a query returning void for a tile that an encounter participant _occupies_ is an invariant violation (programming error) — the encounter should never have started with an unsnapshotted participant chunk. |
+| 27 | **`ChunkStore` is owned exclusively by `WorldState`. `GameState` never receives a live `ChunkStore` reference.** The only geometry path from `ChunkStore` into `GameState` is `snapshotToTileQuery(snapshot): TileQueryFn`, produced once at `buildEncounter()`. The React component and rules engine never reach `ChunkStore` directly. |
+| 28 | **Generation RNG is a completely separate deterministic stream, seeded from `(worldSeed, cx, cy, generationVersion)`.** It never shares state with combat RNG, initiative RNG, or enemy AI RNG. Mixing streams would cause chunk loading to corrupt combat outcomes — determinism of combat must be independent of which chunks are loaded or in what order. |
 
 ---
 
@@ -1753,5 +1977,6 @@ An entity at world position (142, 37) is at (142, 37) regardless of how the worl
 ---
 
 _End of specification._
-_Status: SPECIFICATION ONLY — no implementation has occurred. Preflight resolutions complete; Phase A may begin._
-_Author: Phase 3 design task + preflight resolution pass._
+_Status: Phases A–E COMPLETE. Phase F implementation decisions locked (Decisions 21–28). Phase F may begin._
+_Phase E completion: commit `73e7f3d` — 217 unit tests, 154 E2E tests pass, TSC clean, production build clean._
+_Author: Phase 3 design task + preflight resolution pass + Phase F pre-implementation preflight resolution._
