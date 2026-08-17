@@ -1,46 +1,82 @@
 # Intelligent Tabletop — Canonical Roadmap
 
-**Canonical as of:** 2026-08-17  
+**Canonical as of:** 2026-08-17 (revised to incorporate external product/architecture analysis)
 **Repository:** `JerichoOmega/tabletop-platform` @ `main`
 
 > This document is the authoritative roadmap for all future agents, coding agents,
 > AI systems, and developers working on this project. Read it before proposing or
 > implementing any major architecture changes.
+>
+> Status vocabulary used throughout: **COMPLETED** · **CURRENT** · **NEXT** ·
+> **LATER** · **DEFERRED**. Nothing marked NEXT/LATER is implemented; the repository
+> is the source of truth for implementation status.
 
 ---
 
-## Product Vision
+## Platform Thesis
 
-Intelligent Tabletop is a curated platform of original, tabletop-native digital games
-designed to make it exceptionally easy for a group to find, learn, start, and finish a
-great tabletop session together.
+> "Intelligent Tabletop is a curated online tabletop platform for friends who want to
+> start quickly, play with confidence, and finish a great game on time."
 
-**Core product promise:**
+Intelligent Tabletop is **not** a general-purpose VTT, a Tabletop Simulator clone, or
+an open creator platform at launch. It is a curated set of original, tabletop-native
+digital games sharing platform infrastructure.
 
-> "The fastest way for a group to find, learn, and finish a great tabletop game
-> together — without a host doing setup, rules administration, or scheduling
-> archaeology."
+The platform provides:
 
-The platform is **not** intended to become:
+- fast session discovery
+- party/lobby flow
+- clear game expectations
+- deterministic rules
+- guided onboarding
+- automated bookkeeping
+- persistent session/campaign state where appropriate
+- AI assistance where it adds value
+- reliable session closure
+- multiple distinct tabletop games sharing platform infrastructure
 
-- a generic virtual tabletop
-- a Tabletop Simulator-style physics sandbox
-- a licensed board-game catalog
-- a full traditional VTT
-- an autonomous AI game world
-- an open creator ecosystem at launch
+The platform does **not** impose one universal session length. Every game has a
+**game-specific Session Contract** (below).
 
-The platform optimizes for:
+> **"Finishable does not mean short."**
 
-- fast session startup
-- clear rules enforcement
-- consistent interaction patterns
-- predictable session length
-- multiplayer/social flow
-- high-quality first-party games
-- discovery based on player intent
-- AI used to remove preparation, bookkeeping, and friction — not to replace
-  authoritative rules
+---
+
+## Session Contract System (platform-level concept)
+
+Every game declares a first-class **Session Contract** defining, at minimum:
+
+- target duration
+- expected duration range
+- player count and ideal player count
+- setup/onboarding time
+- expected downtime profile
+- core gameplay loop
+- closure condition
+- pause/resume behavior
+- reconnect behavior
+- campaign/standalone status
+- AI role
+- complexity/learning profile
+- accessibility expectations
+- elimination policy where applicable
+
+**Duration must eventually be telemetry-backed**, not merely declared by content
+authors. Track: party-ready → results-screen duration, active play duration,
+setup/onboarding duration, waiting/downtime per player, player-count-specific
+duration, new-player vs experienced-group duration, abandon rate, completion rate,
+rematch rate, and reconnect/pause behavior. Trustworthy session duration is a
+platform-level quality metric.
+
+### Canonical initial duration targets
+
+| Game | Target | Notes |
+|---|---|---|
+| RPG tabletop mode | ~60 min | ~50–70 min in practice |
+| 3v1 Human DM | ~60–90 min | later mode |
+| Ages of Empire | ~120 min | ~100–135 min validated range — not an artificially exact two-hour promise |
+| Quick games | ~15–30 min | future category |
+| Future games | game-specific | determined by their core loop |
 
 ---
 
@@ -49,13 +85,8 @@ The platform optimizes for:
 ### "The Table Is Fixed. The World Is Not."
 
 The visible tabletop has a fixed presentation size. The world it represents may be
-arbitrarily larger.
-
-The tabletop is a **fixed-size viewport** into a potentially much larger persistent
-world. A dungeon, corridor, battlefield, city, cavern, forest, or other environment
-may be substantially larger than the visible tabletop. The system represents only the
-relevant portion of that world on the tabletop and moves the viewport through the
-larger world as the player explores.
+arbitrarily larger. The tabletop is a **fixed-size viewport** into a potentially much
+larger persistent world.
 
 Key principles:
 
@@ -67,226 +98,272 @@ Key principles:
 - Moving the viewport must not change an object's actual world position.
 - Large environments must not be artificially compressed merely to fit the tabletop.
 - Small environments may fit entirely within the tabletop.
-- Long environments (corridors, roads) may stream/recycle world geometry as the party
-  progresses.
+- Long environments may stream/recycle world geometry as the party progresses.
+
+**New architectural requirement (canonical):** world representation must support
+*bounded* exploration and *structured environmental affordances* without becoming an
+unrestricted simulation. Exploration is expressive but bounded — locations contain a
+limited number of salient opportunities, described with structured world tags (e.g.
+fragile, flammable, unstable, concealed, locked, guarded, holy, flooded, mechanical,
+social), not an infinite room simulator and not merely a menu.
 
 This is a **shared spatial presentation capability** — not a requirement that every
 future game use a streamed world. Card games, abstract games, and territory games may
 use specialized presentation models.
 
-The intended player experience is:
+---
 
-> "The table stays the same size, but the world comes to the table."
+## Authoritative Runtime Model (canonical — must not regress)
+
+The architecture already proven in the RPG prototype remains canonical:
+
+```
+PLAYER INTENT
+     ↓
+INTENT INTERPRETER
+     ↓
+PROPOSED ACTION
+     ↓
+RULES VALIDATION
+     ↓
+GAME STATE MUTATION
+     ↓
+RESOLUTION
+     ↓
+UI UPDATE
+     ↓
+SESSION LOG
+```
+
+> **"AI proposes. The rules engine decides. The world state persists. The table
+> renders the result."**
+
+- The AI/natural-language layer must **never** directly mutate authoritative game
+  state.
+- Traditional direct controls and AI-assisted/adventure controls must ultimately use
+  the **same** underlying rules and execution functions. The system already
+  demonstrates this separation and must not regress it.
+- The AI must **never** invent a mechanical capability simply because the player's
+  wording sounds plausible. AI interprets intent; rules/content systems determine
+  whether the action is supported; the rules engine validates legality; game state
+  executes the result; AI narrates the validated result. Unsupported actions receive
+  constructive alternatives based on actual game state.
+
+Future AI architecture must formalize: proposal schemas, validation, stale-state
+revalidation, structured tool calls, permissions, audit logging, prompt/version
+tracking, AI cost controls, failure handling, and deterministic fallback behavior.
+
+**AI should be:** intent parser, narrator, rules explainer, continuity assistant,
+recap generator, encounter/complication recommender, campaign chronicle assistant,
+and — later — DM copilot.
+
+**AI should NOT be:** authoritative rules engine, hidden state mutator, unrestricted
+game master, balance authority, or source of mechanical truth.
+
+### AI product positioning
+
+"AI-powered" is **not** the primary consumer-facing identity. The product is marketed
+primarily as a great tabletop game/platform with intelligent assistance — adaptive,
+intelligent, responsive, coherent, rules-aware — not "the AI makes anything
+possible." Because AI gameplay risks include inconsistency, hallucination, latency,
+privacy, state/memory failures, and player distrust, the roadmap prioritizes
+**reliability and state coherence over generative novelty**. Core games must remain
+playable without depending on generative AI availability.
 
 ---
 
-## Product Strategy Guardrails
+## Platform Architecture: Shared Primitives + Game-Specific Rules
 
-These rules are permanent and apply to all phases.
+Do **not** create one giant universal game/rules engine. The structure is:
 
-### 1. Platform before ecosystem, but product before platform
+**SHARED PLATFORM PRIMITIVES + GAME-SPECIFIC RULES/CONTENT**
 
-Build only enough shared infrastructure to support proven first-party games.
-Generalize from repeated evidence, not speculation.
-
-### 2. Fast sessions are a product contract
-
-Every game eventually needs structured metadata for:
-
-- supported player counts
-- setup time
-- median session duration
-- high-percentile duration
-- new-player duration
-- fast/short variant duration
-- save/checkpoint behavior
-- DM requirement
-- complexity
-- cooperative/competitive structure
-
-Never advertise session lengths that telemetry cannot support.
-
-### 3. Board-game discipline
-
-Intelligent Tabletop should prefer:
-
-- small action vocabularies
-- few conditions
-- few resources
-- deterministic interactions
-- visible consequences
-- short encounters
-- objective-driven play
-- high tactical density with low bookkeeping
-
-Do not add traditional tabletop complexity simply because traditional RPGs have it.
-
-### 4. Authority boundary
-
-```
-AI proposes.
-Rules engine decides.
-World state persists.
-Viewport renders.
-Tabletop displays.
-```
-
-AI must never be the authoritative source of mechanical truth. No AI model may
-directly mutate authoritative game state.
-
-### 5. Originality by design
-
-Future games must use independently authored terminology, rules text, content,
-visuals, settings, characters, and marketing. Avoid dependence on proprietary game
-terminology or copied expression. Legal review remains appropriate before commercial
-release.
-
-### 6. No universal-engine trap
-
-Shared platform infrastructure provides capabilities and contracts. Individual games
-own their own rules, victory conditions, hidden information, content, AI policies, and
-game-specific UI. Do not force radically different genres into one universal rules
-grammar.
-
----
-
-## Authoritative Runtime Model
-
-### Player-facing action flow
-
-```
-PLAYER INPUT / AI PROPOSAL
-         ↓
-  STRUCTURED INTENT
-         ↓
- GAME-SPECIFIC VALIDATION
-         ↓
- AUTHORITATIVE RULES ENGINE
-         ↓
- DETERMINISTIC RESOLUTION
-         ↓
-   EVENT LOG / STATE CHANGE
-         ↓
-    CLIENT RENDERING
-```
-
-### AI / DM proposal flow
-
-```
-    AI / HUMAN DM
-         ↓
-  STRUCTURED PROPOSAL
-         ↓
- PERMISSION + SCHEMA VALIDATION
-         ↓
-    RULES ENGINE
-         ↓
-   COMMITTED EVENT
-         ↓
-  PERSISTENT STATE
-         ↓
-  NARRATION / UI
-```
-
-**No AI model may directly mutate authoritative game state.**
-
----
-
-## Platform / Game Boundary
-
-### Platform-owned capabilities
+### Platform-owned (shared)
 
 - identity
-- friends
-- parties
-- invitations
-- tables
-- sessions
-- lobbies
-- reconnect/save foundations
-- synchronization
-- event/replay infrastructure
-- shared tabletop presentation
-- input/accessibility
-- asset/content registry
+- party/lobby
+- session lifecycle
+- session contracts
+- reconnect
+- save/resume
+- event logs
+- replay
 - discovery metadata
-- search/filtering
+- accessibility
+- moderation
+- AI orchestration
 - telemetry
-- AI orchestration gateway
-- moderation foundations
-- versioning/compatibility
+- content validation
+- later: commerce/creator systems
 
-### Game-owned capabilities
+### Game-owned (specific)
 
 - rules
-- phases
 - legal actions
-- victory conditions
-- combat/strategy formulas
-- units/cards/characters
-- maps/boards/world logic
-- game-specific UI
+- victory/loss conditions
+- combat
+- diplomacy
+- board topology
 - progression
-- economy
-- scenario scripting
-- AI behavior policy
-- narrative
-- game-specific content validation
+- AI behavior
+- campaign semantics
+- content
+
+The common engine exposes reusable deterministic primitives without forcing every
+game into the same mechanical model.
+
+### Event log / deterministic state (foundational — do not postpone)
+
+The authoritative event log is a foundational platform capability, not multiplayer
+polish. It should eventually support: replay, reconnect, debugging, auditing,
+campaign history, AI context, moderation, analytics, and "what changed because of our
+decision?" recaps. The current deterministic foundation and existing validation
+architecture remain intact.
+
+Every committed event must record: source (player, AI, DM, system), actor identity,
+structured intent/action, rules version at resolution, random seed and result where
+applicable, state changes, sequence number and timestamp, and visibility scope.
 
 ---
 
-## Cross-Platform Contracts
+## Game Product Directions
 
-### Game Mode contract
+### RPG: streamlined tabletop adventure (~60 minutes per mission)
 
-Every game mode must declare:
+The RPG is a **streamlined tabletop adventure, not a compressed D&D campaign.**
 
-- ID and version
-- display metadata
-- player count range
-- session duration (median, high-percentile, new-player, fast-variant)
-- complexity rating
-- game type (cooperative / competitive / mixed)
-- required platform capabilities
-- rules and content package references
-- AI capabilities and permission scope
-- save/reconnect behavior
-- accessibility conformance
-- compatibility constraints
+Each mission supports: briefing, quick loadout, meaningful exploration, social
+interaction, environmental interaction, natural-language player intent, one
+meaningful approach decision, one major optional objective or a small number of
+discoveries, one micro-encounter OR one major tactical encounter (occasionally a
+micro-encounter plus a major encounter), meaningful consequences, campaign
+persistence, automated resolution/bookkeeping, and a clear ending.
 
-### Event contract
+The extra hour must **not** become: open-ended roleplay, extensive inventory
+management, crafting/vendor loops, huge spell lists, dense character sheets, long
+equipment optimization, unlimited side quests, arbitrary world expansion, or a
+traditional 2–4 hour D&D session.
 
-Every committed event must record:
+> **"Players can change what happens, but cannot endlessly expand what the game is."**
 
-- source (player, AI, DM, system)
-- actor identity
-- structured intent/action
-- rules version at resolution
-- random seed and result where applicable
-- state changes
-- sequence number and timestamp
-- visibility scope (public, hidden-from-player, DM-only)
+#### Mission architecture: MISSION CONTRACT + ESCALATION GRAPH
 
-### Versioning contract
+Rigid scene counts are **not** the primary pacing mechanism. Instead:
 
-Rules, content, assets, and saves must be version-aware. A saved session must be
-resolvable against the rules version at time of save.
+- **Mission Contract:** primary objective, stakes, target duration, known
+  success/failure/retreat outcomes, optional objective(s), closure conditions.
+- **Escalation Graph:** finite authored state graph, multiple approaches, meaningful
+  state transitions, escalation → commitment → climax → aftermath, controlled
+  convergence.
 
-### AI permission contract
+Use **braided branching**, not exponential branching. Player choices alter routes,
+encounter composition, available allies, resources, information, faction
+relationships, threat state, tactical conditions, and ending configuration — but
+branches eventually reconnect to controlled campaign anchors.
 
-AI permissions must be scoped by context and hidden-information boundaries. An AI
-assistant must not receive information it is not authorized to hold.
+Every mission has a closure state: **success, success at cost, partial success,
+failure, retreat.** Failure is a valid campaign outcome, not a request to replay the
+same mission.
 
-### Accessibility contract
+#### Combat pacing (the most likely pacing bottleneck)
 
-Accessibility is a platform requirement, not a per-game afterthought. Every game mode
-must meet the platform's accessibility baseline before release.
+- ~3-player tactical parties
+- ~3–5 rounds for a major encounter
+- ~15–20 minutes for the main climax
+- limited action vocabulary: movement + major action + constrained reaction
+- few but distinctive enemies, with clear enemy intent
+- objective-based encounters: rescue, escape, defend, capture, disrupt, survive,
+  retrieve, hold, destroy — "kill every enemy" is **not** the default objective
+- automated math/status tracking, fast resolution, minimal downtime
+- one major encounter OR one short micro-encounter plus one major encounter — never
+  two long conventional combats per mission
+
+#### Character progression (intentionally light)
+
+Prefer: ~six major progression milestones, lightweight talent choices, limited
+equipment slots, mission-relevant loadouts, a small number of relics/special tools,
+faction/campaign rewards, rapid post-mission upgrades. Avoid: giant skill trees, huge
+spell lists, inventory spreadsheets, deep crafting economies, lengthy vendor phases,
+optimization-heavy builds. Returning players prepare a character quickly.
+
+#### Campaign design
+
+Campaigns are collections of **finishable missions**: ~4–5 missions for the first
+vertical slice, ~6–8 for a compact full campaign, ~8–10 for a larger flagship
+campaign. Persistent state uses a constrained vocabulary: faction standing, regional
+threat, resources, allies/assets, scars/losses, story keys, route availability,
+information discovered. **Consequences must be visible when they matter** — no
+invisible backend bookkeeping. Campaigns are braided, not infinitely branching.
+
+### Ages of Empire (~120 minutes; NOT subject to the RPG's 60-minute limit)
+
+A Risk-inspired territory strategy game with Civilization-style development
+influences: four historical Ages, finite rounds, VP victory, **no player
+elimination**, compact map, fast turns, limited development, meaningful diplomacy,
+deterministic final round, strong anti-cleanup mechanics.
+
+- **Players:** 2–4 at launch; balance primarily for 3–4. Do **not** prioritize 5–6
+  players until telemetry proves the core game can support it.
+- **Structure:** ~8 total rounds — ~2 Ancient, ~2 Medieval, ~2 Industrial, ~2 Modern.
+  Each Age changes the strategic question and value of the board rather than adding
+  an entirely new subsystem: Ancient = geographic/economic position; Medieval =
+  borders, alliances, routes, regional power; Industrial = infrastructure,
+  development, mobility, leverage; Modern = convert power into VP, endgame
+  objectives, destabilization/endgame pressure.
+- **Development:** compact tableau, ~6–10 meaningful development choices per player
+  per game. Avoid long prerequisite chains, tiny percentage bonuses, separate
+  economic simulations, and multi-round research queues.
+- **Anti-downtime system (explicit requirement):** investigate/implement simultaneous
+  planning, limited strategic orders, reveal/resolution phases, concise conflict
+  windows, limited reaction windows, automated scoring, automated
+  upkeep/reinforcement, deterministic or low-variance combat, strong board
+  readability, final-round trigger, fixed round cap. A 120-minute game must not
+  become a four-hour game.
+- **Victory:** VP-based; the game must NOT rely on elimination to end. Scoring
+  includes more than raw territory: objectives, infrastructure, regional control,
+  age achievements, strategic milestones. Prevent runaway leaders and cleanup without
+  arbitrary rubber-banding.
+- **Diplomacy:** socially expressive but mechanically bounded. Free negotiation;
+  optionally structured actions (temporary truce, trade pact, non-aggression,
+  shared objective, conditional support, limited alliance) with explicit duration and
+  consequences. Not a contract-management subsystem.
+
+### 3v1 Human DM mode (later; ~60–90 minutes)
+
+Not "unrestricted D&D mode." The human DM is a **DIRECTOR operating within the
+game's contract**, added only after the standard RPG mission architecture is proven.
+
+The DM may: choose prepared scene packages, alter revelation order, roleplay NPCs,
+select validated complications, alter enemy tactics within rules, select bounded
+objectives, spend a finite director budget, add a short optional scene, and ask AI
+for dialogue/continuity/pacing assistance.
+
+The DM may NOT: bypass the rules engine, invent unsupported mechanics, create
+multi-session subplots during a mission, infinitely expand the map, add unlimited
+encounters, silently retcon state, or ignore closure conditions.
+
+**Director Budget:** bounded quantities of major complications, minor complications,
+optional scenes/micro-encounters, threat adjustments, terrain twists.
+
+**DM dashboard:** mission state, objectives, active clocks, director budget,
+encounter budget, player state, pacing forecast, unresolved mandatory beats, AI
+pacing recommendations.
+
+### Quick games (future category; ~15–30 minutes)
+
+Serve onboarding, casual groups, rematches, discovery, "one more game", and
+low-commitment social play. Same platform Session Contract system. No game is forced
+into RPG or Ages of Empire durations.
 
 ---
 
 ## Roadmap Phases
 
-### Phase 1 — Foundation ✅ Complete
+Dependency chain: Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 →
+Phase 9/10 → Phase 11 → open ecosystem (later). Completed phases are preserved
+exactly; nothing below re-plans shipped work.
+
+### Phase 1 — Foundation ✅ COMPLETED
 
 | Milestone | Status |
 |---|---|
@@ -301,7 +378,7 @@ must meet the platform's accessibility baseline before release.
 
 ---
 
-### Phase 2 — Core Tabletop UX ✅ Complete
+### Phase 2 — Core Tabletop UX ✅ COMPLETED
 
 | Item | Status |
 |---|---|
@@ -316,12 +393,20 @@ See `artifacts/tabletop/docs/PROJECT_STATUS.md` for implementation detail.
 
 ---
 
-### Phase 3 — World Representation 🔧 In Progress
+### Phase 3 — World Representation / Exploration Foundation 🔧 CURRENT
 
-This is the current implementation phase. The Fixed Tabletop / Large World principle
-must be fully implemented before work depending on it begins.
+**Objective:** complete the Fixed Tabletop / Large World foundation — a playable,
+deterministic, world-backed session model with streaming, entity persistence, bounded
+exploration, and exploration → encounter → combat transitions.
 
-Full technical specification: **`artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md`**
+**Why it exists:** every future game mode and the RPG mission system depend on a
+proven world/session substrate; the deterministic completion gate protects entity
+identity across streaming.
+
+**Dependencies:** Phases 1–2 (complete).
+
+Full technical specification: `artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md`.
+Remaining-work plan: `docs/PHASE3_IMPLEMENTATION_PLAN.md` (milestones M1–M6).
 
 | Item | Status |
 |---|---|
@@ -333,327 +418,330 @@ Full technical specification: **`artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md
 | Async streaming lifecycle (ensureResident, pin/unpin, deduplication) | ✅ Done — Phase F-async |
 | WorldState & WorldEntityRegistry (entity persistence, encounter boundary) | ✅ Done — Phase F-world |
 | Viewport streaming integration (prefetch, chunkVersion, loadingChunkSet) | ✅ Done — Phase F-viewport |
-| Persistent WorldState (entity survival across chunk eviction) | ⬜ Phase G |
-| Exploration → encounter → combat transitions | ⬜ Phase H |
-| World-edge handling and coordinate bounds | ⬜ Phase I |
-| Performance hardening and streaming tuning | ⬜ Phase J |
+| Exploration mode + world-backed session | ✅ Done — M1 (2026-08-17) |
+| Chunk eviction policy + entity survival | ⬜ M2 |
+| Parser migration away from `map.pillars` | ⬜ M3 |
+| World bounds / edge handling | ⬜ M4 |
+| Exploration → encounter → combat transitions | ⬜ M5 |
+| Performance validation + regression sweep | ⬜ M6 |
 
-**Phase 3 completion gate:**
+**Major deliverables (remaining):** M2–M6 above, per `PHASE3_IMPLEMENTATION_PLAN.md`.
 
-A deterministic test must be able to move the viewport through a larger world, return
-to an earlier location, and demonstrate that entities retain identity and authoritative
-state.
+**Acceptance criteria:** the deterministic completion-gate E2E passes (traverse out,
+force eviction, return; entities retain identity and authoritative state); the full
+exploration → encounter → combat → exploration loop works; all pre-existing tests
+pass unmodified; parser has zero direct MapDef geometry reads; no entity position is
+ever derived from tabletop/UI coordinates.
 
-No future system may fake large-world behavior by coupling entity positions to
-tabletop or UI coordinates.
-
----
-
-### Phase 4 — Platform Runtime Foundation 📋 Planned
-
-**Purpose:** Build the minimum shared platform layer needed for multiple first-party
-game modes.
-
-| Item | Scope |
-|---|---|
-| Game-mode manifest / schema | Versioned contract for every game mode |
-| Game-mode registry / loading | Platform loads and isolates game packages |
-| Session / table abstraction | Structured lifecycle: lobby → active → ended |
-| Lobby / private-room foundation | Invite-only and open tables |
-| Player / party / session identity | Persistent identity across sessions |
-| Save / reconnect contract | Mid-session disconnect recovery |
-| Versioned game package contract | Rules + content independently versioned |
-| Shared event / replay contract | Deterministic replay across versions |
-| Shared input / accessibility contract | Baseline every game must meet |
-| Asset registry integration | Shared asset resolution |
-| Discovery metadata contract | Structured metadata for filtering/search |
-| Telemetry | Session duration, completion, abandonment, onboarding |
-| Permissioned AI gateway | AI access scoped per game, per context |
-
-**Explicitly deferred:**
-
-- public creator marketplace
-- arbitrary user scripting
-- universal visual rules editor
-- universal rules language
-- open asset uploads
-- autonomous AI DM
-- large social network features
-
-**Phase 4 gate:** A second substantially different internal game must be able to use
-the platform contracts without leaking the first game's rules into platform
-infrastructure.
+**Non-goals:** session contracts, lobby/multiplayer, mission framework, unrestricted
+world simulation. World representation must support bounded exploration and
+structured environmental affordances **without becoming an unrestricted simulation**.
 
 ---
 
-### Phase 5A — Ages of Empire 📋 Planned
+### Phase 4 — Platform Runtime / Session Contract Foundation 📋 NEXT
 
-**Purpose:** Prove a completely different strategy ruleset can share the platform.
+**Objective:** build the minimum shared platform layer for multiple first-party game
+modes, with Session Contracts as a first-class schema.
 
-**Product target:**
+**Why it exists:** the RPG mission system and Ages of Empire both need session
+lifecycle, closure states, event logs, and telemetry; building them per-game would
+create the universal-engine trap in reverse.
 
-> "A compact civilization-and-conquest tabletop strategy game where each Age changes
-> the strategic priority and the game ends before cleanup becomes tedious."
+**Dependencies:** Phase 3 complete.
 
-| Constraint | Target |
-|---|---|
-| Players | 2–4 at launch |
-| Session length | ~30–45 minutes |
-| Player elimination | No elimination at launch |
-| End condition | Finite Victory Point endgame |
-| Ages | Four fixed Ages |
-| Turn structure | Reinforce → Develop → Attack → Fortify |
-| Combat variance | Bounded; clear odds/results previews |
-| Development system | Small and learnable |
-| Maps | Multiple templates |
-| Scoring paths | Multiple paths to victory |
-| AI opponents | Bounded and testable |
+**Major deliverables:**
 
-**Phase 5A gate:** Playtests must evaluate session length, downtime, snowballing,
-elimination misery, late-game cleanup, and strategic meaningfulness. Simplify before
-adding content if these criteria fail.
+- session lifecycle (lobby → active → ended)
+- Session Contract schema (see Session Contract System above)
+- game metadata schema (discovery-ready)
+- deterministic session state
+- event log / replay foundations (event contract above)
+- save/resume
+- reconnect architecture
+- player/group/session abstractions
+- telemetry hooks (duration, completion, abandonment, downtime)
+- closure-state framework (success / success at cost / partial / failure / retreat)
+
+**Acceptance criteria:** a second, substantially different internal game can use the
+platform contracts without leaking the first game's rules into platform
+infrastructure; a session can be saved, resumed, and replayed deterministically.
+
+**Non-goals:** full social marketplace, public creator tools, universal rules
+language, open asset uploads, autonomous AI DM, large social features.
 
 ---
 
-### Phase 5B — Streamlined Tactical RPG 📋 Planned
+### Phase 5 — RPG Mission System 📋 NEXT (after Phase 4)
 
-**Purpose:** Make the tactical RPG a first-class product and the foundation for human
-DM play.
+**Objective:** build the streamlined ~60-minute RPG mission framework.
 
-**Product target:**
+**Why it exists:** the mission framework is the RPG's product core and the substrate
+the vertical slice, campaigns, and (much later) the 3v1 DM mode all build on.
 
-> "Finish one meaningful fantasy tactical mission tonight."
+**Dependencies:** Phase 3 (world/exploration), Phase 4 (session contracts, closure
+states, telemetry).
 
-This is a **board-game-scale tactical RPG**, not a compressed simulation of a full
-traditional tabletop RPG.
+**Major deliverables:**
 
-**Core mechanics:**
+- Mission Contract (objective, stakes, target duration, outcomes, optional
+  objectives, closure conditions)
+- Escalation Graph (finite authored state graph, braided branching, controlled
+  convergence)
+- bounded exploration (salient opportunities + structured environmental tags)
+- action grammar (natural-language intent over supported capabilities only)
+- structured environmental tags (fragile, flammable, unstable, concealed, locked,
+  guarded, holy, flooded, mechanical, social, …)
+- encounter packages (objective-based: rescue, escape, defend, capture, disrupt,
+  survive, retrieve, hold, destroy)
+- closure states wired to the Phase 4 framework
+- campaign state (constrained vocabulary; visible consequences)
+- consequence system
+- lightweight progression (~6 milestones, light talents, limited slots)
+- pacing telemetry
 
-- d20 resolution
-- Attributes: Might / Agility / Mind / Spirit
-- Defenses: Defense / Fortitude / Will
-- Four classes: Vanguard, Ranger, Arcanist, Warden
-- Turn structure: Stride + Action + limited Tactical option + Reaction
-- Small condition vocabulary
-- Small resource vocabulary
-- Short objective-driven encounters
-- Visible enemy intent
-- Deterministic terrain interactions
-- Persistent heroes and world without excessive bookkeeping
+**Acceptance criteria:** a mission runs briefing → exploration → approach decision →
+encounter(s) → closure within the ~50–70 minute envelope in playtests; every mission
+reaches one of the five closure states; the AI authority model holds (no AI-invented
+mechanics); combat climax resolves in ~3–5 rounds / ~15–20 minutes.
 
-**Classes:**
+**Non-goals:** open-ended roleplay, inventory/crafting/vendor systems, huge spell
+lists, exponential branching, human DM tooling, 2–4 hour session design.
 
-| Class | Keywords |
-|---|---|
-| Vanguard | Guard / Claim |
-| Ranger | Mark / Trail |
-| Arcanist | Attunement / Field |
-| Warden | Bond / Ward |
+---
 
-**Required tactical systems:**
+### Phase 6 — RPG Vertical Slice 📋 NEXT (after Phase 5)
 
-- line of sight
-- compact cover
-- engagement
-- forced movement
-- limited elevation
-- difficult/hazardous terrain
-- small deterministic environmental reaction matrix
-- objective clocks
-- enemy intent
-- morale/retreat
-- downed/recovery
-- bounded reactions
+**Objective:** a very small, complete, playable RPG proving the ~60-minute session
+contract.
 
-**Explicitly deferred:**
+**Why it exists:** the session contract is a product promise; only a finished slice
+with telemetry can validate it.
 
-- universal flanking
-- broad bonus-action economy
-- ammunition tracking
-- equipment durability
-- large damage-type matrices
-- condition stacking
-- complex crafting
-- full stealth simulation
-- facing
-- full elemental physics
-- large spell lists
-- arbitrary AI-created mechanics
+**Dependencies:** Phase 5.
 
-**Phase 5B gate:** A new player must be able to complete a tactical encounter without
+**Major deliverables:**
+
+- 4–5 mission mini-campaign
+- 3 player classes
+- 2 core enemy families
+- one region
+- one major encounter pattern + one micro-encounter pattern
+- AI-assisted intent/narration
+- complete mission closure
+- campaign persistence
+
+**Acceptance criteria:** playtest telemetry validates the ~50–70 minute envelope;
+completion/abandon/rematch rates measured; a new player finishes a mission without
 repeatedly consulting a rulebook.
 
----
-
-### Phase 6 — Session Discovery / Game Browser 📋 Planned
-
-**Purpose:** Make discovery a core platform feature, not cosmetic UI.
-
-Discovery must support filtering by:
-
-- player count
-- time available
-- complexity
-- competitive/cooperative
-- campaign/non-campaign
-- DM required
-- AI support
-- accessibility
-- new-player friendliness
-- session intensity
-- save/resume
-
-Eventually support natural queries such as:
-
-> "We have 3 players and 25 minutes."
-
-The platform must return modes whose measured behavior actually fits — not what was
-advertised.
-
-**Phase 6 gate:** A group can go from "we want to play something" to a viable game
-choice in seconds.
+**Non-goals:** human DM, open UGC, additional regions/classes beyond the slice.
 
 ---
 
-### Phase 7 — Human DM + AI Assistance 📋 Planned
+### Phase 7 — Ages of Empire 📋 LATER
 
-**Purpose:** Introduce the 3v1 play mode where the human DM is director and AI is
-assistant.
+**Objective:** build the ~120-minute strategy game, proving the platform supports a
+fundamentally different Session Contract.
 
-**Primary configuration:** 3 players + 1 human DM.
+**Why it exists:** validates the shared-primitives / game-specific-rules split with a
+second genre; establishes that session length is game-specific.
 
-**The human DM controls:**
+**Dependencies:** Phase 4 (platform runtime); benefits from Phase 6 telemetry
+learnings.
 
-- pacing
-- story beats
-- NPC intent
-- complications
-- branching
-- enemy behavior level
-- reveal timing
+**Major deliverables:**
 
-**AI assists with:**
+- four Ages, ~eight rounds (see Ages of Empire product direction above)
+- 2–4 players (balanced for 3–4)
+- VP victory, no elimination
+- compact map, development tableau (~6–10 meaningful choices/player/game)
+- bounded diplomacy
+- simultaneous planning where appropriate + the full anti-downtime system
+- automated resolution, scoring, upkeep
+- final-round closure (deterministic final round, fixed round cap)
+- telemetry validating the ~100–135 minute range
 
-- encounter suggestions
-- rules explanations
-- NPC dialogue
-- continuity tracking
-- enemy behavior recommendations
-- encounter scaling proposals
-- validated clue/content suggestions
-- recaps
-- world-state summaries
+**Acceptance criteria:** playtests confirm session length, downtime, snowballing,
+elimination misery (none), late-game cleanup, and strategic meaningfulness; a
+completed game ends by VP/round-cap without relying on elimination.
 
-**AI must not:**
-
-- secretly alter difficulty
-- invent illegal mechanics
-- directly mutate state
-- contradict committed world facts
-- reward persuasive prompting over valid play
-- reveal unauthorized hidden information
-
-**Phase 7 gate:** The DM must feel like a director, not a bookkeeper.
+**Non-goals:** 5–6 players at launch, Civilization-scale tech tree, separate economic
+simulation, contract-management diplomacy, player elimination.
 
 ---
 
-### Phase 8 — Social Platform Layer 📋 Planned
+### Phase 8 — Platform Discovery / Social Layer 📋 LATER
 
-| Feature | Scope |
-|---|---|
-| Persistent parties | Groups that persist across sessions |
-| Friend presence | See who is available to play |
-| Fast invites | Low-friction table invitations |
-| Private tables | Invite-only rooms |
-| Reconnect | Mid-session disconnect recovery |
-| Spectating | Watch an active session |
-| Rematch | Restart a session with the same group |
-| Campaign groups | Persistent group identity across campaigns |
-| Session history | Record of completed sessions |
-| Recaps | AI-assisted session recaps |
-| Moderation / reporting | Safety and community health |
-| Voice / text | As justified by demonstrated need |
+**Objective:** make discovery a first-class platform system —
+> "Find the right game for this group right now."
 
-**Rule:** Every social feature must reduce friction around actually playing.
+**Why it exists:** the platform promise is fast, confident session starts; discovery
+converts metadata + telemetry into a fit decision (e.g. "4 players · 55–70 min ·
+medium strategy · competitive · low rules overhead").
 
----
+**Dependencies:** Phase 4 metadata/telemetry; at least two shipped games (Phases 6–7).
 
-### Phase 9 — First-Party + Curated Content 📋 Planned
+**Major deliverables:**
 
-Content expansion priority:
+- game catalog, search, filters: player count, ideal player count, duration,
+  complexity, mood, competitive/cooperative/team, learning burden, downtime,
+  randomness, elimination policy, communication requirements, campaign commitment,
+  accessibility, AI role, replayability, content/tone
+- group-fit and party-aware recommendations
+- telemetry-backed duration discovery
+- session history, rematch flow
+- basic social/lobby improvements
 
-1. first-party modes
-2. first-party scenarios and campaigns
-3. variants and expansions
-4. carefully selected partners
-5. broader publishing later
+**Acceptance criteria:** a group goes from "we want to play something" to a viable,
+telemetry-honest game choice in seconds; advertised durations match measured ones.
 
-Every published mode must satisfy:
-
-- platform contracts
-- accessibility baseline
-- session metadata
-- validation gates
-- quality standards
+**Non-goals:** infinite-content platform (Fortnite-style discovery is inspiration,
+not a content strategy), large social network features, spectating/voice unless
+justified by demonstrated need.
 
 ---
 
-### Phase 10 — Controlled Creator Ecosystem 📋 Long-Term
+### Phase 9 — 3v1 Human DM 📋 LATER
 
-Staged rollout — do not skip stages:
+**Objective:** the director-model human DM mode (~60–90 minutes), only after RPG
+foundations are stable.
 
-1. internal authoring
-2. curated partners
-3. template-based creator tools
-4. sandboxed extensions
-5. publishing review
-6. marketplace
-7. broader SDK only when justified
+**Why it exists:** human-directed play is a differentiator, but only within the
+contract system — otherwise it regresses into unbounded D&D sessions.
 
-No stage may be skipped. Every stage must include:
+**Dependencies:** Phases 5–6 proven (mission architecture + slice telemetry).
 
-- versioned packages
-- permissioned scripting
-- asset validation
-- ratings
-- IP reporting
-- moderation
-- private testing before public
-- certification
-- creator analytics
-- transparent discovery ranking
+**Major deliverables:**
 
-**Do not build an open UGC platform until Intelligent Tabletop can govern it.**
+- Director Dashboard (see 3v1 product direction above)
+- Director Budget (bounded complications, scenes, threat adjustments, terrain twists)
+- DM-specific Session Contract
+- AI DM copilot (dialogue/continuity/pacing assistance)
+- bounded complications + validated improvisation (all DM actions flow through rules
+  validation)
+- pacing controls + hard closure safeguards
+
+**Acceptance criteria:** the DM feels like a director, not a bookkeeper; sessions
+close within the 60–90 minute contract; no path exists for the DM or AI to bypass the
+rules engine or silently retcon state.
+
+**Non-goals:** unrestricted D&D mode, multi-session subplots inside a mission,
+unlimited encounters/map expansion, autonomous AI DM.
+
+---
+
+### Phase 10 — Quick Games 📋 LATER
+
+**Objective:** introduce ~15–30 minute games on the same platform infrastructure and
+Session Contract model.
+
+**Why it exists:** onboarding, casual groups, rematches, discovery, "one more game."
+
+**Dependencies:** Phase 4; Phase 8 improves their discoverability.
+
+**Acceptance criteria:** at least one quick game ships with a telemetry-validated
+15–30 minute contract, using only shared platform primitives plus its own rules.
+
+**Non-goals:** forcing quick-game patterns onto the RPG or Ages of Empire.
+
+---
+
+### Phase 11 — Curated Creator Program 📋 LATER
+
+**Objective:** curated external partners with constrained tooling — Stage 2–3 of the
+creator ecosystem.
+
+**Dependencies:** multiple shipped first-party games, validation and moderation
+foundations.
+
+**Major deliverables:** partner tooling, content schemas, validation, pacing tests,
+private playtesting, certification, moderation, controlled publishing. Creator tools
+are constrained to approved objectives, actions, components, session contracts,
+duration limits, and content schemas.
+
+**Non-goals / explicitly rejected at this stage:** unrestricted scripting, arbitrary
+asset uploads, open UGC, AI-generated mechanics without validation.
+
+---
+
+### Open Creator Ecosystem ⏸ DEFERRED (Stages 4–5)
+
+Marketplace/revenue sharing (Stage 4) and advanced creator scripting (Stage 5) only
+after platform demand and governance are proven — deterministic multiplayer,
+moderation, security, performance, IP, and discovery systems must all support it
+first. Staging: **Stage 1** first-party games only → **Stage 2** curated external
+partners → **Stage 3** constrained creator tools → **Stage 4** marketplace →
+**Stage 5** advanced scripting. No stage may be skipped.
 
 ---
 
 ## Strategic Destination
 
 ```
-Phase 3 World Representation          ← current priority
-       ↓
-Platform Runtime (Phase 4)
-       ↓
-Ages of Empire (Phase 5A)
-       ↓
-Streamlined Tactical RPG (Phase 5B)
-       ↓
-Session Discovery (Phase 6)
-       ↓
-Human DM + AI Assistance (Phase 7)
-       ↓
-Social / Content Platform (Phase 8–9)
-       ↓
-Controlled Creator Ecosystem (Phase 10)
+Phase 3  World Representation / Exploration Foundation   ← CURRENT (M1 done; M2–M6 remain)
+        ↓
+Phase 4  Platform Runtime / Session Contract Foundation
+        ↓
+Phase 5  RPG Mission System
+        ↓
+Phase 6  RPG Vertical Slice (~60-minute contract proven)
+        ↓
+Phase 7  Ages of Empire (~120-minute contract proven)
+        ↓
+Phase 8  Platform Discovery / Social Layer
+        ↓
+Phase 9  3v1 Human DM        Phase 10  Quick Games
+        ↓
+Phase 11 Curated Creator Program
+        ↓
+Later    Open Creator Ecosystem (governance-gated)
 ```
 
-**Explicitly prohibited short-cuts:**
+---
 
-- Jumping directly to a creator marketplace
-- Shipping an autonomous AI DM before the authority boundary is enforced
-- Broad procedural generation without entity persistence
-- Generalized speculative platform abstractions not driven by a proven game
-- Open UGC before platform governance is in place
+## Do Not Compromise (architectural/product constraints)
+
+1. AI never becomes authoritative game-state mutation.
+2. Game-specific rules remain game-specific.
+3. Session length is game-specific.
+4. Every game has a defined closure contract.
+5. Failure is a valid game outcome.
+6. Campaigns use bounded braided branching, not exponential branching.
+7. Exploration is expressive but bounded.
+8. Creator systems remain constrained until governance exists.
+9. Multiplayer/platform infrastructure must not compromise deterministic game logic.
+10. Telemetry must validate duration claims.
+11. Replay/event history should remain possible because of authoritative state
+    transitions.
+12. Core games must remain playable without depending on generative AI availability.
+13. No feature should be added solely because AI makes it technically possible.
+14. The platform should optimize for satisfying completed sessions, not artificially
+    maximizing session length.
+15. Additional session time should buy more meaningful decisions, not more
+    bookkeeping.
+
+---
+
+## What Not to Build (deferred / out of scope)
+
+- general-purpose VTT
+- Tabletop Simulator clone
+- open UGC at launch
+- universal visual rules editor
+- unrestricted scripting
+- autonomous unrestricted AI DM
+- infinite procedural campaigns
+- huge RPG rulebooks
+- Civilization-scale tech tree
+- player elimination in Ages of Empire
+- giant inventories/crafting systems
+- long vendor phases
+- 5–6 player Ages of Empire at launch
+- standard RPG sessions designed to become 2–4 hour D&D sessions
+- AI-generated mechanics without deterministic validation
+- full marketplace before creator governance
+- feature creep that makes every game use the same duration
 
 ---
 
@@ -690,8 +778,8 @@ A phase is **not** complete merely because code exists. Every major phase must a
 ### Playtesting gates (games)
 
 - new-player onboarding time
-- session duration vs advertised
-- abandonment rate
+- session duration vs advertised (telemetry-backed)
+- abandonment / completion / rematch rates
 - rules confusion points
 - dominant strategies
 - unnecessary bookkeeping
@@ -733,20 +821,20 @@ All agents working on this repository must follow these rules:
 
 1. **Read `docs/ROADMAP.md` before proposing or implementing major architecture.**
 2. **Preserve completed architectural decisions.** Do not re-litigate the engine
-   authority boundary, the fixed-tabletop/large-world principle, or the platform/game
-   boundary.
+   authority boundary, the fixed-tabletop/large-world principle, the platform/game
+   boundary, or the Session Contract system.
 3. **Respect the platform/game boundary.** Platform infrastructure must not absorb
    game-specific rules. Game packages must not depend on another game's internals.
 4. **Never implement future phases early.** Phase gates exist for a reason. Do not
    partially introduce a later phase's architecture during an earlier phase.
 5. **Generalize only from repeated evidence.** Do not build shared abstractions for
    a need seen in only one game.
-6. **Treat session length as a product requirement.** Never ship a game mode without
-   structured session duration metadata backed by measured playtests.
+6. **Treat the Session Contract as a product requirement.** Never ship a game mode
+   without structured session duration metadata, eventually backed by telemetry.
 7. **Maintain board-game discipline.** Prefer small vocabularies, deterministic
    interactions, and visible consequences.
-8. **Keep AI subordinate to authoritative rules and state.** The rules engine decides.
-   AI proposes.
+8. **Keep AI subordinate to authoritative rules and state.** AI proposes. The rules
+   engine decides. The world state persists. The table renders the result.
 9. **Keep game packages independently versionable.** A rules change in one game must
    never silently break another.
 10. **Synchronize `artifacts/tabletop/docs/PROJECT_STATUS.md` when milestones change.**
@@ -755,3 +843,22 @@ All agents working on this repository must follow these rules:
 12. **Stop and reassess when evidence contradicts the roadmap.** The roadmap is
     directional, not a work order. Presence in a future phase does not authorize
     automatic implementation.
+
+---
+
+## Reconciliation Notes (this revision)
+
+- Completed work (Phases 1, 2, and Phase 3 sub-phases A–F-viewport plus milestone M1)
+  is preserved exactly as implemented and tested; nothing was re-planned.
+- `docs/PHASE3_IMPLEMENTATION_PLAN.md` remains the authoritative remaining-work plan
+  for Phase 3; its M1–M6 milestones map directly onto this roadmap's Phase 3 items.
+- **Ordering change:** the previous roadmap sequenced Ages of Empire (old Phase 5A)
+  before the RPG (old Phase 5B). The canonical order is now RPG Mission System →
+  RPG Vertical Slice → Ages of Empire.
+- **Duration change:** Ages of Empire's earlier ~30–45 minute target is superseded by
+  the canonical ~120 minutes (~100–135 validated). Session length is game-specific.
+- The RPG mechanical direction previously sketched (d20 resolution, four attributes,
+  class keywords, tactical systems list) is design input for Phase 5, subordinate to
+  the Mission Contract + Escalation Graph architecture and the ~60-minute contract;
+  its "explicitly deferred" mechanics list remains in force via What Not to Build and
+  the progression constraints above.
