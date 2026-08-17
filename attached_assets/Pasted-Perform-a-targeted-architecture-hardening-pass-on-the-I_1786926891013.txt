@@ -1,0 +1,177 @@
+Perform a targeted architecture-hardening pass on the Intelligent Tabletop repository.
+
+Do not redesign the application, rewrite the engine, change the visual identity, regenerate canonical assets, or begin Phase 3/world-scale implementation yet.
+
+The current architecture is fundamentally sound. I want you to address only the concrete issues below, while preserving all existing behavior and passing the full CI suite.
+
+1. Fix attack target validation
+
+Inspect src/engine/rules.ts and the existing attack validation/tests.
+
+validateAttack() currently verifies actor state, turn ownership, action availability, range, and other attack constraints, but does not explicitly reject attacking an ally.
+
+Determine whether friendly fire is intentionally supported by the current design.
+
+* If friendly fire is not an intended mechanic, add authoritative target-type validation.
+* Use the existing validation-code architecture rather than introducing ad-hoc errors.
+* Add/update unit tests proving an attack against an allied combatant is rejected.
+* Ensure the UI, traditional mode, assisted mode, and intent system all ultimately respect the same engine rule.
+* Do not solve this only at the UI level.
+
+2. Harden proposal revalidation/execution
+
+Audit src/intent/parser.ts and the proposal execution path.
+
+The intended contract is:
+
+parse → propose → revalidate against current state → atomically execute
+
+Verify that multi-step proposals correctly account for:
+
+* action consumption
+* movement remaining
+* actor turn ownership
+* target state changes
+* deaths
+* subsequent steps depending on earlier steps
+
+In particular, determine whether a proposal containing multiple action-consuming operations can currently pass revalidation even though a later operation would fail during execution.
+
+Fix this without weakening the existing atomicity guarantee.
+
+3. Preserve deterministic RNG during failed atomic proposals
+
+Investigate whether executeProposalSteps() can consume RNG during a proposal and then return the original game state after a later step fails, leaving the RNG stream advanced.
+
+If this is possible, fix it so a failed atomic proposal produces no observable simulation-side effect, including RNG progression.
+
+Prefer a clean deterministic design over hacks. Do not introduce nondeterministic randomness.
+
+Add regression tests demonstrating:
+
+1. a successful proposal advances RNG normally;
+2. a failed proposal leaves both game state and RNG state unchanged;
+3. the next successful action produces the same deterministic result it would have produced had the failed proposal never happened.
+
+4. Add runtime content validation
+
+The content layer is intentionally data-driven. Add a validation layer for development/CI that catches invalid content references before they become runtime bugs.
+
+At minimum validate:
+
+* weapon IDs
+* ability IDs
+* combatant definition IDs
+* map IDs
+* encounter references
+* duplicate instance IDs
+* invalid spawn coordinates
+* overlapping/blocked starting positions where applicable
+* invalid HP/stat/range/movement values
+* visual asset references where appropriate
+
+Keep this separate from gameplay rules. Content validation should validate definitions; it should not become another gameplay engine.
+
+Add tests for both valid and intentionally invalid content.
+
+5. Improve test TypeScript safety
+
+Inspect the existing engine tests.
+
+There is currently test code using @ts-nocheck, while the tabletop tsconfig excludes test files.
+
+Do not undertake a huge testing rewrite. Instead determine the smallest clean change that gives the test suite meaningful TypeScript checking without breaking the existing Vitest/CI setup.
+
+Remove @ts-nocheck where practical and type the affected helpers.
+
+Keep the existing test behavior intact.
+
+6. Review state cloning boundaries
+
+Inspect cloneState() and determine which parts of GameState are intentionally immutable/static versus mutable runtime state.
+
+Do not blindly deep-clone everything.
+
+Document or formalize the intended ownership boundary so future Phase 3 systems such as terrain, props, elevation, world objects, and viewport/world state don’t accidentally mutate shared static content.
+
+Only make code changes where they are justified.
+
+7. Harden development-server configuration
+
+Review vite.config.ts, particularly allowedHosts: true.
+
+Determine the safest configuration compatible with the current Replit workflow and Playwright setup.
+
+Avoid breaking Replit development or E2E execution.
+
+If an environment-controlled host allowlist is appropriate, implement it cleanly.
+
+8. Documentation consistency
+
+Review the project-status documentation for contradictions around automated testing, particularly the distinction between the existing automated test suite and any future/full engine-testing milestone.
+
+Correct documentation only where it is objectively stale or contradictory.
+
+Do not claim additional functionality exists unless the repository actually contains it.
+
+⸻
+
+Important architectural constraints
+
+Preserve these principles:
+
+Content
+→ defines game data
+
+Rules Engine
+→ authoritative validation and state transitions
+
+Intent Layer
+→ translates natural language into proposals and revalidates them through the rules engine
+
+React/UI
+→ presentation and interaction only
+
+Asset Registry
+→ logical asset IDs → visual assets
+
+Do not move gameplay rules into React.
+
+Do not let AI/intent bypass authoritative validation.
+
+Do not replace deterministic simulation with LLM decisions.
+
+Do not redesign the canonical asset library.
+
+Do not regenerate or modify approved production assets unless a concrete broken reference requires it.
+
+Do not start Phase 3/world-scale implementation as part of this task.
+
+⸻
+
+Validation requirements
+
+Before declaring the task complete:
+
+1. Run TypeScript/typecheck.
+2. Run all unit tests.
+3. Run the full Playwright E2E suite.
+4. Run the production build.
+5. Verify no existing gameplay behavior regressed.
+6. Verify deterministic RNG behavior with regression tests.
+7. Verify attack validation through both direct engine calls and the intent path.
+8. Review the final diff for unnecessary refactors.
+
+Do not stop after identifying issues. Implement the justified fixes.
+
+At the end, provide:
+
+* files changed
+* exact problems found
+* fixes implemented
+* tests added/modified
+* full validation results
+* any issue you deliberately did not change and why
+* whether the repository is now ready to proceed into Phase 3
+
+Keep the changes focused. This is a hardening pass, not a rewrite.
