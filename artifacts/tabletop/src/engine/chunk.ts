@@ -343,14 +343,29 @@ export function generateChunk(
  * Residency state for a chunk in the ChunkStore.
  *
  * UNLOADED — no data in memory; tile queries for this chunk return void.
- * LOADING  — async generation/fetch in progress (future increment).
- *            Treat as UNLOADED for rules purposes until RESIDENT.
- * RESIDENT — geometry available in memory; can be evicted by the cache policy.
+ * LOADING  — async generation/fetch is in progress. The chunk will become
+ *            RESIDENT on success or return to UNLOADED on failure.
+ *            Treat as void for rules purposes (no geometry available yet).
+ * RESIDENT — geometry is available; can be evicted by the cache policy.
  * PINNED   — contains an active encounter participant; MUST NOT be evicted
  *            while the encounter is active. Applied by buildEncounter(),
  *            removed by endEncounter() (spec §11.3, Decision 24).
  */
 export type ChunkResidency = "UNLOADED" | "LOADING" | "RESIDENT" | "PINNED";
+
+/**
+ * Type for chunk geometry generators.
+ *
+ * Matches generateChunk(). The ChunkStore constructor accepts an alternative
+ * implementation so tests can inject mock generators (e.g. ones that throw)
+ * without touching production code paths.
+ */
+export type ChunkGeneratorFn = (
+  cx: number,
+  cy: number,
+  worldSeed: number,
+  generationVersion?: number,
+) => ChunkGeometryData;
 
 /** Internal store entry — only exists for RESIDENT or PINNED chunks. */
 interface ChunkEntry {
@@ -360,67 +375,227 @@ interface ChunkEntry {
 }
 
 /**
- * In-memory chunk residency store.
+ * In-memory chunk residency store with asynchronous loading support.
  *
- * Owns the live mutable lifecycle state (residency, dirty flag, eviction
- * eligibility) for all loaded chunks.
+ * Owns the live mutable lifecycle state for all chunks: residency, in-flight
+ * loads, dirty flags, and eviction eligibility.
  *
- * ARCHITECTURAL INVARIANT (Decision 27):
+ * ─── State machine ────────────────────────────────────────────────────────
+ *
+ *   UNLOADED ──ensureResident()──▶ LOADING ──success──▶ RESIDENT
+ *                                                │
+ *                                             failure
+ *                                                │
+ *                                             UNLOADED   (retry is safe)
+ *
+ *   RESIDENT ──pin()──▶ PINNED ──unpin()──▶ RESIDENT ──evict()──▶ UNLOADED
+ *
+ *   load()   is a synchronous shortcut: UNLOADED → RESIDENT (no LOADING phase)
+ *
+ * ─── Concurrency model ────────────────────────────────────────────────────
+ *
+ *   JavaScript is single-threaded; only one synchronous segment runs at a
+ *   time. Async operations introduce interleaving ONLY at `await` boundaries.
+ *
+ *   Concurrent ensureResident() calls for the SAME chunk share one in-flight
+ *   Promise — only one generateChunk() call is made regardless of how many
+ *   callers await it.
+ *
+ *   Concurrent ensureResident() calls for DIFFERENT chunks are independent
+ *   and may interleave freely.
+ *
+ * ─── Architectural invariant (Decision 27) ────────────────────────────────
+ *
  *   ChunkStore is owned exclusively by WorldState (future Phase G).
  *   GameState NEVER receives a live ChunkStore reference.
  *   The only path from ChunkStore into GameState is:
  *
  *     store.createSnapshot() → snapshotToTileQuery() → GameState.tileQuery
  *
- *   The snapshot is a set of frozen geometry references — stable even if the
- *   live store subsequently loads, evicts, or re-generates chunks.
- *
- * Phase F foundation: synchronous only.
- *   load() generates terrain synchronously and immediately marks the chunk
- *   RESIDENT. The LOADING state is reserved for the future async increment.
+ *   The snapshot holds frozen geometry references that are stable regardless
+ *   of subsequent live-store mutations.
  */
 export class ChunkStore {
+  /** RESIDENT and PINNED chunks with their geometry. */
   private readonly entries = new Map<string, ChunkEntry>();
 
   /**
+   * In-flight async loads.
+   * A key is present iff the chunk is currently LOADING.
+   * The Promise resolves when the chunk becomes RESIDENT, or rejects on failure.
+   */
+  private readonly inflight = new Map<string, Promise<void>>();
+
+  /** The geometry generation function. Injected for testability. */
+  private readonly generate: ChunkGeneratorFn;
+
+  constructor(generateFn: ChunkGeneratorFn = generateChunk) {
+    this.generate = generateFn;
+  }
+
+  // ── Inspection ────────────────────────────────────────────────────────────
+
+  /**
    * Returns the current residency of a chunk.
-   * Returns "UNLOADED" for chunks that have never been loaded or were evicted.
+   * Priority: LOADING (inflight) > RESIDENT/PINNED (entries) > UNLOADED.
    */
   residency(cx: number, cy: number): ChunkResidency {
-    return this.entries.get(chunkKey(cx, cy))?.residency ?? "UNLOADED";
+    const k = chunkKey(cx, cy);
+    if (this.inflight.has(k)) return "LOADING";
+    return this.entries.get(k)?.residency ?? "UNLOADED";
   }
+
+  /**
+   * Returns the geometry for a RESIDENT or PINNED chunk, or undefined.
+   * Does not trigger loading. Returns undefined for UNLOADED and LOADING chunks.
+   */
+  getGeometry(cx: number, cy: number): ChunkGeometryData | undefined {
+    return this.entries.get(chunkKey(cx, cy))?.geometry;
+  }
+
+  // ── Synchronous loading (backward-compatible shortcut) ─────────────────
 
   /**
    * Synchronously generates and loads a chunk, marking it RESIDENT.
    *
-   * No-op if the chunk is already RESIDENT or PINNED — the existing geometry
-   * is preserved. Call evict() first if a fresh generation is needed.
+   * No-op if the chunk is already RESIDENT, PINNED, or LOADING.
+   * Call evict() first if a fresh synchronous generation is required.
    *
-   * Phase F foundation: synchronous. Future async increment will introduce
-   * LOADING state and async generation/fetch.
+   * Prefer ensureResident() for new call sites — this method exists for
+   * backward compatibility with tests and for encounter-side pre-loading
+   * where the caller already knows the chunk is not in flight.
    */
   load(cx: number, cy: number, worldSeed: number, generationVersion = 0): void {
     const k = chunkKey(cx, cy);
-    if (this.entries.has(k)) return;  // already RESIDENT or PINNED — preserve it
-    const geometry = generateChunk(cx, cy, worldSeed, generationVersion);
+    if (this.entries.has(k)) return;   // already RESIDENT or PINNED — preserve
+    if (this.inflight.has(k)) return;  // already LOADING — do not duplicate
+    const geometry = this.generate(cx, cy, worldSeed, generationVersion);
     this.entries.set(k, { geometry, residency: "RESIDENT", dirty: false });
   }
+
+  // ── Asynchronous loading ──────────────────────────────────────────────────
+
+  /**
+   * Asynchronously ensures a chunk is RESIDENT.
+   *
+   * State transitions:
+   *   UNLOADED → LOADING → RESIDENT   (normal path)
+   *   UNLOADED → LOADING → UNLOADED   (generation failure — retry is safe)
+   *   RESIDENT → (no-op, returns resolved Promise)
+   *   PINNED   → (no-op, returns resolved Promise)
+   *   LOADING  → deduplicated: returns the SAME in-flight Promise
+   *
+   * DEDUPLICATION (Promise identity):
+   *   This method is a plain function (NOT async). An `async` method always
+   *   wraps its return value in a fresh Promise, which would break identity:
+   *     p1 = ensureResident(…); p2 = ensureResident(…); p1 !== p2  ← wrong
+   *   As a plain function, `return existing` and `return promise` return the
+   *   exact Promise object stored in `this.inflight`, so:
+   *     p1 = ensureResident(…); p2 = ensureResident(…); p1 === p2  ← correct
+   *   Both callers share one in-flight Promise; only one generation runs.
+   *
+   * LOADING-STATE VISIBILITY:
+   *   The async IIFE starts with `await Promise.resolve()` to yield control
+   *   back to the caller. This ensures:
+   *     1. `this.inflight.set(k, promise)` executes before `generate()` runs.
+   *     2. `residency()` returns "LOADING" for the entire generation window.
+   *     3. `inflight.delete(k)` in finally correctly targets the entry we set.
+   *   Without this yield, the entire IIFE body would run synchronously
+   *   (generateChunk is synchronous) inside the Promise constructor, so
+   *   `inflight.delete(k)` would fire before `inflight.set(k, promise)`.
+   *
+   * FAILURE / RETRY:
+   *   If generation throws, the Promise rejects and the chunk returns to
+   *   UNLOADED. A subsequent ensureResident() call starts a fresh attempt.
+   *   Partial geometry is NEVER exposed to consumers.
+   *
+   * @throws (via rejected Promise) If geometry generation fails. Does NOT
+   *   leave the chunk in LOADING state on failure.
+   */
+  ensureResident(
+    cx: number,
+    cy: number,
+    worldSeed: number,
+    generationVersion = 0,
+  ): Promise<void> {
+    const k = chunkKey(cx, cy);
+
+    // Already RESIDENT or PINNED — return a settled Promise immediately.
+    if (this.entries.has(k)) return Promise.resolve();
+
+    // Already LOADING — deduplicate: return the identical in-flight Promise.
+    // Both callers will await the same Promise; only one generation runs.
+    const existing = this.inflight.get(k);
+    if (existing) return existing;
+
+    // UNLOADED → LOADING.
+    //
+    // `await Promise.resolve()` at the top of the IIFE yields control back
+    // to ensureResident() before generate() runs. This guarantees the inflight
+    // map is populated (LOADING state visible) for the full generation window.
+    const promise = (async () => {
+      // Yield: let ensureResident() register this promise in inflight first.
+      await Promise.resolve();
+      try {
+        const geometry = this.generate(cx, cy, worldSeed, generationVersion);
+        this.entries.set(k, { geometry, residency: "RESIDENT", dirty: false });
+      } finally {
+        // On success: removes LOADING entry (chunk is now RESIDENT).
+        // On failure: chunk returns to UNLOADED — no entries, no inflight.
+        this.inflight.delete(k);
+      }
+    })();
+
+    this.inflight.set(k, promise);
+    return promise;
+  }
+
+  /**
+   * Asynchronously ensures a chunk is RESIDENT, then immediately pins it.
+   *
+   * This is the correct API for encounter setup. It eliminates the pin/load
+   * race that would exist if the caller called ensureResident() + pin() in
+   * two separate statements with other async code allowed to interleave.
+   *
+   * Race proof:
+   *   After `await ensureResident()` resolves, control returns to this
+   *   method's continuation. JavaScript's single-threaded model guarantees
+   *   that `this.pin(cx, cy)` executes before any other async code can run
+   *   — specifically before any eviction could remove the chunk.
+   *
+   * @throws If the underlying load fails (generation error).
+   */
+  async ensureResidentAndPin(
+    cx: number,
+    cy: number,
+    worldSeed: number,
+    generationVersion = 0,
+  ): Promise<void> {
+    await this.ensureResident(cx, cy, worldSeed, generationVersion);
+    // Synchronous in the same microtask continuation — no eviction can occur
+    // between the await resolution and this pin() call.
+    this.pin(cx, cy);
+  }
+
+  // ── Pinning ──────────────────────────────────────────────────────────────
 
   /**
    * Pins a RESIDENT chunk, protecting it from eviction.
    *
    * PINNED chunks contain active encounter participants and MUST NOT be
-   * evicted for any reason while the encounter is active (Decision 24).
+   * evicted while the encounter is active (Decision 24).
    *
-   * Throws if the chunk is not currently loaded (RESIDENT or PINNED).
-   * Callers (buildEncounter) must load chunks before pinning.
+   * Throws if the chunk is not RESIDENT or PINNED.
+   * Callers must load (or await ensureResident()) before pinning.
    */
   pin(cx: number, cy: number): void {
     const k = chunkKey(cx, cy);
     const entry = this.entries.get(k);
     if (!entry) {
+      const state = this.inflight.has(k) ? "LOADING" : "UNLOADED";
       throw new Error(
-        `ChunkStore.pin(${cx}, ${cy}): chunk is not loaded. Call load() first.`,
+        `ChunkStore.pin(${cx}, ${cy}): chunk is ${state}. ` +
+        `Call load() or await ensureResident() before pinning.`,
       );
     }
     entry.residency = "PINNED";
@@ -439,47 +614,48 @@ export class ChunkStore {
     }
   }
 
+  // ── Eviction ─────────────────────────────────────────────────────────────
+
   /**
    * Evicts a RESIDENT chunk, freeing its memory.
    *
-   * Returns true  — chunk was evicted (or was already UNLOADED).
-   * Returns false — chunk is PINNED and MUST NOT be evicted.
+   * Returns true  — chunk was evicted (was RESIDENT), or was already UNLOADED.
+   * Returns false — chunk is PINNED or LOADING; cannot be evicted.
    *
-   * Callers must handle false gracefully; do not retry until after unpin().
-   * DIRTY chunks should be persisted before eviction (future Phase G).
+   * LOADING chunks are protected: cancellation is not implemented. Let the
+   * load complete (RESIDENT), then evict normally.
+   *
+   * Callers must handle false gracefully:
+   *   • PINNED: retry after unpin().
+   *   • LOADING: retry after the in-flight Promise settles.
    */
   evict(cx: number, cy: number): boolean {
     const k = chunkKey(cx, cy);
+    if (this.inflight.has(k)) return false; // LOADING — cannot evict
     const entry = this.entries.get(k);
-    if (!entry) return true;                   // already UNLOADED — success
-    if (entry.residency === "PINNED") return false; // protected — cannot evict
+    if (!entry) return true;                // already UNLOADED — success
+    if (entry.residency === "PINNED") return false; // PINNED — cannot evict
     this.entries.delete(k);
     return true;
   }
 
-  /**
-   * Returns the geometry for a RESIDENT or PINNED chunk, or undefined.
-   * Does not trigger loading. Returns undefined for UNLOADED chunks.
-   */
-  getGeometry(cx: number, cy: number): ChunkGeometryData | undefined {
-    return this.entries.get(chunkKey(cx, cy))?.geometry;
-  }
+  // ── Snapshot ──────────────────────────────────────────────────────────────
 
   /**
    * Creates an immutable ResidentGeometrySnapshot from a set of loaded chunks.
    *
-   * The snapshot stores direct references to the chunk geometry objects.
-   * Since ChunkGeometryData is frozen at creation, the snapshot is stable:
-   *   • store.load() for new chunks does not affect existing geometry refs.
-   *   • store.evict() removes the ChunkEntry from the store, but the snapshot
-   *     still holds the geometry reference — JS GC keeps it alive.
-   *   • store.unpin() / store.pin() change only residency; geometry is unchanged.
+   * All requested chunks must be RESIDENT or PINNED — not LOADING or UNLOADED.
+   * Await ensureResident() or ensureResidentAndPin() before calling this.
    *
-   * Throws if any requested chunk is not currently RESIDENT or PINNED.
+   * STABILITY GUARANTEE (unchanged from foundation):
+   *   The snapshot holds direct references to frozen ChunkGeometryData objects.
+   *   Subsequent store mutations — load(), evict(), pin(), unpin(), new async
+   *   loads — cannot change any TileQueryFn derived from this snapshot.
    *
    * @param worldId  World identifier (stored as snapshot metadata).
    * @param seed     World seed (stored as snapshot metadata).
-   * @param coords   Chunks to include. ALL must be loaded.
+   * @param coords   Chunks to include. ALL must be RESIDENT or PINNED.
+   * @throws If any chunk is UNLOADED or LOADING.
    */
   createSnapshot(
     worldId: string,
@@ -489,6 +665,12 @@ export class ChunkStore {
     const chunks = new Map<string, ChunkGeometryData>();
     for (const { cx, cy } of coords) {
       const k = chunkKey(cx, cy);
+      if (this.inflight.has(k)) {
+        throw new Error(
+          `ChunkStore.createSnapshot: chunk (${cx}, ${cy}) is still LOADING. ` +
+          `Await ensureResident() or ensureResidentAndPin() before creating a snapshot.`,
+        );
+      }
       const entry = this.entries.get(k);
       if (!entry) {
         throw new Error(

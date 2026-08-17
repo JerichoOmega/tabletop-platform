@@ -1,26 +1,29 @@
 // ---------------------------------------------------------------------------
-// Chunk system unit tests — Phase F foundation.
+// Chunk system unit tests — Phase F foundation + async streaming.
 //
 // Covers:
-//   1. Chunk dimension constants
-//   2. wxToChunk / chunkToWx  — coordinate math with positive, zero,
-//      boundary, and negative world coordinates; round trips
-//   3. wyToChunk / chunkToWy  — same for y-axis
-//   4. worldToChunkCoord      — combined decomposition
-//   5. chunkKey               — uniqueness and negative-coord correctness
-//   6. localKey               — format and uniqueness
-//   7. generateChunk          — determinism, order independence,
-//      coordinate isolation, version isolation
-//   8. generateChunk RNG isolation — chunk generation does not alter
-//      any external gameplay RNG stream
-//   9. ChunkGeometryData      — tile lookup (floor default, pillar, absent chunk)
-//  10. snapshotToTileQuery    — floor, pillar, void (absent chunk),
-//      immutability under live-store mutations
-//  11. ChunkStore residency lifecycle — UNLOADED → RESIDENT → PINNED;
-//      evict prevents pinned eviction; unpin restores evictability
-//  12. ChunkStore.createSnapshot — content, error on unloaded chunk
-//  13. mapDefToTileQuery Set optimization regression — floor, wall, pillar,
-//      entrance, void match the expected TileInfo contract exactly
+//   1.  Chunk dimension constants
+//   2.  wxToChunk / chunkToWx  — coordinate math with positive, zero,
+//       boundary, and negative world coordinates; round trips
+//   3.  wyToChunk / chunkToWy  — same for y-axis
+//   4.  worldToChunkCoord      — combined decomposition
+//   5.  chunkKey               — uniqueness and negative-coord correctness
+//   6.  localKey               — format and uniqueness
+//   7.  generateChunk          — determinism, order independence,
+//       coordinate isolation, version isolation
+//   8.  generateChunk RNG isolation — chunk generation does not alter
+//       any external gameplay RNG stream
+//   9.  ChunkGeometryData      — tile lookup (floor default, pillar, absent chunk)
+//  10.  snapshotToTileQuery    — floor, pillar, void (absent chunk),
+//       immutability under live-store mutations
+//  11.  ChunkStore residency lifecycle — UNLOADED → RESIDENT → PINNED;
+//       evict prevents pinned eviction; unpin restores evictability
+//  12.  ChunkStore.createSnapshot — content, error on unloaded chunk
+//  13.  mapDefToTileQuery Set optimization regression — floor, wall, pillar,
+//       entrance, void match the expected TileInfo contract exactly
+//  14.  ChunkStore — async streaming (Phase F increment 2)
+//       LOADING state, deduplication, failure, retry, pin/load atomicity,
+//       eviction safety, snapshot stability, RNG isolation, determinism
 //
 // Run: pnpm --filter @workspace/tabletop test
 // ---------------------------------------------------------------------------
@@ -41,7 +44,7 @@ import {
   snapshotToTileQuery,
   ChunkStore,
 } from "@/engine/chunk";
-import type { ChunkGeometryData, ResidentGeometrySnapshot } from "@/engine/chunk";
+import type { ChunkGeometryData, ResidentGeometrySnapshot, ChunkGeneratorFn } from "@/engine/chunk";
 
 import { mulberry32, mapDefToTileQuery, MAP_DEFS } from "@/engine/content";
 
@@ -977,5 +980,525 @@ describe("mapDefToTileQuery (Set optimization regression)", () => {
       tileQuery(2, 2),
     ];
     expect(results1).toEqual(results2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 14. ChunkStore — async streaming (Phase F increment 2)
+// ---------------------------------------------------------------------------
+
+// Helper: build a fake ChunkGeneratorFn whose call count can be inspected.
+function makeCounting(
+  base: typeof generateChunk = generateChunk,
+): { fn: ChunkGeneratorFn; calls: number[] } {
+  const record: number[] = [];
+  return {
+    fn: (cx, cy, worldSeed, version?) => {
+      record.push(cx * 1000 + cy); // cheap fingerprint for which chunk was generated
+      return base(cx, cy, worldSeed, version);
+    },
+    calls: record,
+  };
+}
+
+// Helper: create a generator that always throws.
+function failingGenerator(): ChunkGeneratorFn {
+  return () => { throw new Error("Simulated generation failure"); };
+}
+
+// Helper: create a generator that fails N times then succeeds.
+function failNTimes(n: number): ChunkGeneratorFn {
+  let remaining = n;
+  return (cx, cy, worldSeed, version?) => {
+    if (remaining-- > 0) throw new Error("Simulated failure");
+    return generateChunk(cx, cy, worldSeed, version);
+  };
+}
+
+describe("ChunkStore — async streaming (ensureResident)", () => {
+  const worldSeed = 55555;
+
+  // ── LOADING state lifecycle ──────────────────────────────────────────────
+
+  it("residency is LOADING after ensureResident() returns but before await", async () => {
+    const store = new ChunkStore();
+    const promise = store.ensureResident(0, 0, worldSeed);
+    // Before the microtask queue drains, the chunk must be LOADING.
+    expect(store.residency(0, 0)).toBe("LOADING");
+    await promise;
+    // After settling, it is RESIDENT.
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+  });
+
+  it("UNLOADED → LOADING → RESIDENT full lifecycle via ensureResident()", async () => {
+    const store = new ChunkStore();
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+
+    const p = store.ensureResident(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("LOADING");
+
+    await p;
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+    expect(store.getGeometry(0, 0)).toBeDefined();
+  });
+
+  it("geometry is deterministic: ensureResident produces same tiles as generateChunk directly", async () => {
+    const store = new ChunkStore();
+    await store.ensureResident(3, 7, worldSeed);
+    const asyncGeo = store.getGeometry(3, 7)!;
+    const directGeo = generateChunk(3, 7, worldSeed, 0);
+
+    expect(asyncGeo.cx).toBe(directGeo.cx);
+    expect(asyncGeo.cy).toBe(directGeo.cy);
+    expect(asyncGeo.tiles.size).toBe(directGeo.tiles.size);
+    for (const [k, v] of directGeo.tiles) {
+      expect(asyncGeo.tiles.get(k)).toEqual(v);
+    }
+  });
+
+  it("ensureResident is a no-op when chunk is already RESIDENT", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+    await store.ensureResident(0, 0, worldSeed); // first load
+    const lenAfterFirst = calls.length;
+    await store.ensureResident(0, 0, worldSeed); // should be no-op
+    expect(calls.length).toBe(lenAfterFirst);    // no additional generation
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+  });
+
+  it("ensureResident is a no-op when chunk is PINNED", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+    await store.ensureResident(0, 0, worldSeed);
+    store.pin(0, 0);
+    const lenAfterPin = calls.length;
+    await store.ensureResident(0, 0, worldSeed); // no-op
+    expect(calls.length).toBe(lenAfterPin);
+    expect(store.residency(0, 0)).toBe("PINNED");
+  });
+
+  // ── Concurrent-load deduplication ────────────────────────────────────────
+
+  it("concurrent ensureResident() for the same chunk shares one generation", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+
+    // Launch both calls before either has settled.
+    const p1 = store.ensureResident(0, 0, worldSeed);
+    const p2 = store.ensureResident(0, 0, worldSeed); // must deduplicate
+
+    // They must be the same Promise object.
+    expect(p1).toBe(p2);
+
+    await Promise.all([p1, p2]);
+
+    // Only one generation call was made.
+    expect(calls.filter(c => c === 0 * 1000 + 0).length).toBe(1);
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+  });
+
+  it("concurrent ensureResident() for DIFFERENT chunks are independent", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+
+    const p1 = store.ensureResident(0, 0, worldSeed);
+    const p2 = store.ensureResident(1, 0, worldSeed);
+    const p3 = store.ensureResident(0, 1, worldSeed);
+
+    // All three are distinct Promises.
+    expect(p1).not.toBe(p2);
+    expect(p1).not.toBe(p3);
+    expect(p2).not.toBe(p3);
+
+    await Promise.all([p1, p2, p3]);
+
+    // Each chunk generated independently — three calls.
+    expect(calls.length).toBe(3);
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+    expect(store.residency(1, 0)).toBe("RESIDENT");
+    expect(store.residency(0, 1)).toBe("RESIDENT");
+  });
+
+  it("three concurrent calls to ensureResident for same chunk still only one generation", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+
+    const p1 = store.ensureResident(5, 5, worldSeed);
+    const p2 = store.ensureResident(5, 5, worldSeed);
+    const p3 = store.ensureResident(5, 5, worldSeed);
+
+    expect(p1).toBe(p2);
+    expect(p2).toBe(p3);
+
+    await Promise.all([p1, p2, p3]);
+    expect(calls.length).toBe(1);
+  });
+
+  // ── Failure handling ──────────────────────────────────────────────────────
+
+  it("LOADING → UNLOADED on generation failure", async () => {
+    const store = new ChunkStore(failingGenerator());
+
+    const promise = store.ensureResident(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("LOADING");
+
+    await expect(promise).rejects.toThrow("Simulated generation failure");
+
+    // After failure: chunk is UNLOADED (no entry, no inflight).
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+    expect(store.getGeometry(0, 0)).toBeUndefined();
+  });
+
+  it("failed load does not expose partial geometry", async () => {
+    const store = new ChunkStore(failingGenerator());
+    await expect(store.ensureResident(0, 0, worldSeed)).rejects.toThrow();
+    expect(store.getGeometry(0, 0)).toBeUndefined();
+  });
+
+  it("retry after failure: a subsequent ensureResident() succeeds", async () => {
+    // Fail twice, then succeed.
+    const store = new ChunkStore(failNTimes(2));
+
+    await expect(store.ensureResident(0, 0, worldSeed)).rejects.toThrow();
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+
+    await expect(store.ensureResident(0, 0, worldSeed)).rejects.toThrow();
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+
+    // Third attempt: failNTimes counter is exhausted → succeeds.
+    await store.ensureResident(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+    expect(store.getGeometry(0, 0)).toBeDefined();
+  });
+
+  it("concurrent callers both see the failure when load fails", async () => {
+    const store = new ChunkStore(failingGenerator());
+
+    const p1 = store.ensureResident(0, 0, worldSeed);
+    const p2 = store.ensureResident(0, 0, worldSeed); // same promise
+
+    const results = await Promise.allSettled([p1, p2]);
+    expect(results[0].status).toBe("rejected");
+    expect(results[1].status).toBe("rejected");
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+  });
+
+  // ── Eviction safety ───────────────────────────────────────────────────────
+
+  it("evict() returns false for a LOADING chunk (cannot evict)", async () => {
+    const store = new ChunkStore();
+    const promise = store.ensureResident(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("LOADING");
+
+    const result = store.evict(0, 0);
+    expect(result).toBe(false);
+    expect(store.residency(0, 0)).toBe("LOADING"); // still loading
+
+    await promise;
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+  });
+
+  it("chunk that was blocked from eviction (LOADING) can be evicted after RESIDENT", async () => {
+    const store = new ChunkStore();
+    const promise = store.ensureResident(0, 0, worldSeed);
+    store.evict(0, 0); // blocked — returns false, no effect
+    await promise;
+
+    // Now RESIDENT — eviction succeeds.
+    expect(store.evict(0, 0)).toBe(true);
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+  });
+
+  // ── ensureResidentAndPin (atomic load + pin) ──────────────────────────────
+
+  it("ensureResidentAndPin: chunk is PINNED after awaiting", async () => {
+    const store = new ChunkStore();
+    await store.ensureResidentAndPin(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("PINNED");
+    expect(store.getGeometry(0, 0)).toBeDefined();
+  });
+
+  it("ensureResidentAndPin: PINNED chunk cannot be evicted", async () => {
+    const store = new ChunkStore();
+    await store.ensureResidentAndPin(2, 3, worldSeed);
+    expect(store.evict(2, 3)).toBe(false);
+    expect(store.residency(2, 3)).toBe("PINNED");
+  });
+
+  it("ensureResidentAndPin on already-RESIDENT chunk: upgrades to PINNED", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+    await store.ensureResident(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+    const lenBefore = calls.length;
+
+    // ensureResidentAndPin on an already-resident chunk: no re-generation.
+    await store.ensureResidentAndPin(0, 0, worldSeed);
+    expect(calls.length).toBe(lenBefore); // no additional generation
+    expect(store.residency(0, 0)).toBe("PINNED");
+  });
+
+  it("ensureResidentAndPin on already-PINNED chunk: stays PINNED, no re-generation", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+    await store.ensureResidentAndPin(0, 0, worldSeed);
+    const lenAfterFirst = calls.length;
+    await store.ensureResidentAndPin(0, 0, worldSeed);
+    expect(calls.length).toBe(lenAfterFirst);
+    expect(store.residency(0, 0)).toBe("PINNED");
+  });
+
+  it("ensureResidentAndPin: pin/load race cannot produce an evictable state", async () => {
+    // Verify that between ensureResident resolving and pin() being called,
+    // no eviction window exists (JS single-threaded guarantee).
+    // We prove this structurally: ensureResidentAndPin() calls pin()
+    // synchronously in the same continuation after await. No other code can
+    // interleave because JS has no preemption.
+    const store = new ChunkStore();
+    const p = store.ensureResidentAndPin(0, 0, worldSeed);
+
+    // While loading: cannot evict (LOADING).
+    expect(store.evict(0, 0)).toBe(false);
+
+    await p;
+    // After settling: PINNED — still cannot evict.
+    expect(store.evict(0, 0)).toBe(false);
+    expect(store.residency(0, 0)).toBe("PINNED");
+  });
+
+  it("ensureResidentAndPin: throws if generation fails, chunk stays UNLOADED", async () => {
+    const store = new ChunkStore(failingGenerator());
+    await expect(store.ensureResidentAndPin(0, 0, worldSeed)).rejects.toThrow();
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+  });
+
+  // ── createSnapshot safety ─────────────────────────────────────────────────
+
+  it("createSnapshot throws for a LOADING chunk", async () => {
+    const store = new ChunkStore();
+    const promise = store.ensureResident(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("LOADING");
+
+    expect(() =>
+      store.createSnapshot("w1", worldSeed, [{ cx: 0, cy: 0 }]),
+    ).toThrow(/LOADING/);
+
+    await promise; // let it settle
+  });
+
+  it("createSnapshot succeeds after LOADING → RESIDENT transition", async () => {
+    const store = new ChunkStore();
+    await store.ensureResident(0, 0, worldSeed);
+    // No throw now.
+    const snap = store.createSnapshot("w1", worldSeed, [{ cx: 0, cy: 0 }]);
+    expect(snap.chunks.has("0,0")).toBe(true);
+  });
+
+  it("createSnapshot via ensureResidentAndPin: safe to call immediately after", async () => {
+    const store = new ChunkStore();
+    await store.ensureResidentAndPin(0, 0, worldSeed);
+    const snap = store.createSnapshot("w1", worldSeed, [{ cx: 0, cy: 0 }]);
+    const tileQuery = snapshotToTileQuery(snap);
+    // All tile queries on the snapshotted chunk return non-void results.
+    expect(tileQuery(0, 0).type).not.toBe("void");
+  });
+
+  // ── Snapshot stability after async events ────────────────────────────────
+
+  it("snapshot TileQuery is stable after a subsequent async load of another chunk", async () => {
+    const store = new ChunkStore();
+    await store.ensureResident(0, 0, worldSeed);
+    const snap = store.createSnapshot("w1", worldSeed, [{ cx: 0, cy: 0 }]);
+    const tileQuery = snapshotToTileQuery(snap);
+    const tileBefore = tileQuery(0, 0);
+
+    // Load another chunk asynchronously.
+    await store.ensureResident(1, 0, worldSeed);
+    await store.ensureResident(0, 1, worldSeed);
+
+    // Snapshot is unaffected.
+    expect(tileQuery(0, 0)).toEqual(tileBefore);
+  });
+
+  it("snapshot TileQuery is stable after async eviction attempt of a snapshotted chunk", async () => {
+    const store = new ChunkStore();
+    await store.ensureResident(0, 0, worldSeed);
+    const snap = store.createSnapshot("w1", worldSeed, [{ cx: 0, cy: 0 }]);
+    const tileQuery = snapshotToTileQuery(snap);
+    const tileBefore = tileQuery(0, 0);
+
+    // Evict the chunk from the live store.
+    store.evict(0, 0);
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+
+    // Start a new async load (different generation cycle) for the same chunk.
+    await store.ensureResident(0, 0, worldSeed);
+
+    // The original snapshot is untouched.
+    expect(tileQuery(0, 0)).toEqual(tileBefore);
+  });
+
+  it("snapshot TileQuery returns void for chunks not in the snapshot, even if they load later", async () => {
+    const store = new ChunkStore();
+    await store.ensureResident(0, 0, worldSeed);
+    const snap = store.createSnapshot("w1", worldSeed, [{ cx: 0, cy: 0 }]);
+    const tileQuery = snapshotToTileQuery(snap);
+
+    // Chunk (1,0) not in snapshot — void.
+    expect(tileQuery(16, 0).type).toBe("void");
+
+    // Load it later — snapshot still returns void for that chunk.
+    await store.ensureResident(1, 0, worldSeed);
+    expect(tileQuery(16, 0).type).toBe("void");
+  });
+
+  it("pin/unpin/re-pin cycle with ensureResident", async () => {
+    const store = new ChunkStore();
+    await store.ensureResident(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+
+    store.pin(0, 0);
+    expect(store.residency(0, 0)).toBe("PINNED");
+    expect(store.evict(0, 0)).toBe(false);
+
+    store.unpin(0, 0);
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+
+    store.pin(0, 0);
+    expect(store.residency(0, 0)).toBe("PINNED");
+
+    store.unpin(0, 0);
+    expect(store.evict(0, 0)).toBe(true);
+    expect(store.residency(0, 0)).toBe("UNLOADED");
+  });
+
+  // ── Determinism: load order does not affect geometry ─────────────────────
+
+  it("async load order does not affect generated geometry", async () => {
+    const storeAB = new ChunkStore();
+    await storeAB.ensureResident(0, 0, worldSeed); // load A first
+    await storeAB.ensureResident(1, 0, worldSeed); // then B
+    const geoA_AB = storeAB.getGeometry(0, 0)!;
+    const geoB_AB = storeAB.getGeometry(1, 0)!;
+
+    const storeBA = new ChunkStore();
+    await storeBA.ensureResident(1, 0, worldSeed); // load B first
+    await storeBA.ensureResident(0, 0, worldSeed); // then A
+    const geoA_BA = storeBA.getGeometry(0, 0)!;
+    const geoB_BA = storeBA.getGeometry(1, 0)!;
+
+    // Chunk A geometry is the same regardless of load order.
+    expect(geoA_AB.tiles.size).toBe(geoA_BA.tiles.size);
+    for (const [k, v] of geoA_AB.tiles) {
+      expect(geoA_BA.tiles.get(k)).toEqual(v);
+    }
+    // Chunk B geometry is the same regardless of load order.
+    expect(geoB_AB.tiles.size).toBe(geoB_BA.tiles.size);
+    for (const [k, v] of geoB_AB.tiles) {
+      expect(geoB_BA.tiles.get(k)).toEqual(v);
+    }
+  });
+
+  it("concurrent async loads of different chunks produce deterministic geometry", async () => {
+    // Concurrent loads via Promise.all.
+    const storeConc = new ChunkStore();
+    await Promise.all([
+      storeConc.ensureResident(0, 0, worldSeed),
+      storeConc.ensureResident(1, 0, worldSeed),
+      storeConc.ensureResident(0, 1, worldSeed),
+    ]);
+
+    // Sequential loads.
+    const storeSeq = new ChunkStore();
+    await storeSeq.ensureResident(0, 0, worldSeed);
+    await storeSeq.ensureResident(1, 0, worldSeed);
+    await storeSeq.ensureResident(0, 1, worldSeed);
+
+    for (const [cx, cy] of [[0, 0], [1, 0], [0, 1]]) {
+      const concGeo = storeConc.getGeometry(cx, cy)!;
+      const seqGeo  = storeSeq.getGeometry(cx, cy)!;
+      expect(concGeo.tiles.size).toBe(seqGeo.tiles.size);
+      for (const [k, v] of seqGeo.tiles) {
+        expect(concGeo.tiles.get(k)).toEqual(v);
+      }
+    }
+  });
+
+  // ── RNG isolation ─────────────────────────────────────────────────────────
+
+  it("async ensureResident() does not alter an external gameplay RNG sequence", async () => {
+    const seed = 98765;
+
+    // Draw N values from gameplay RNG A, then do async loads, then draw more.
+    const rngA = mulberry32(seed);
+    const beforeA = Array.from({ length: 15 }, () => rngA());
+
+    await Promise.all([
+      new ChunkStore().ensureResident( 0,  0, seed),
+      new ChunkStore().ensureResident(-1,  5, seed),
+      new ChunkStore().ensureResident(10, 20, seed),
+    ]);
+
+    const afterA = Array.from({ length: 10 }, () => rngA());
+
+    // Reference: same seed, same counts, no chunk loading.
+    const rngB = mulberry32(seed);
+    const beforeB = Array.from({ length: 15 }, () => rngB());
+    const afterB  = Array.from({ length: 10 }, () => rngB());
+
+    expect(beforeA).toEqual(beforeB);
+    expect(afterA).toEqual(afterB);
+  });
+
+  it("async ensureResidentAndPin() does not alter an external gameplay RNG sequence", async () => {
+    const seed = 11111;
+    const rngA = mulberry32(seed);
+    const v1 = rngA();
+
+    const store = new ChunkStore();
+    await store.ensureResidentAndPin(7, 3, seed);
+
+    const v2 = rngA();
+
+    const rngRef = mulberry32(seed);
+    rngRef(); // v1
+    const expectedV2 = rngRef();
+
+    expect(v2).toBe(expectedV2);
+  });
+
+  // ── load() backward compat with inflight ──────────────────────────────────
+
+  it("synchronous load() is a no-op when chunk is LOADING", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+
+    const promise = store.ensureResident(0, 0, worldSeed);
+    expect(store.residency(0, 0)).toBe("LOADING");
+
+    // Synchronous load() should not duplicate the work.
+    store.load(0, 0, worldSeed);
+    expect(calls.filter(c => c === 0).length).toBe(0); // ensureResident hasn't run yet
+    expect(store.residency(0, 0)).toBe("LOADING");
+
+    await promise;
+    // load() did not add a second entry — still RESIDENT with one geometry.
+    expect(store.residency(0, 0)).toBe("RESIDENT");
+  });
+
+  it("synchronous load() still works independently of ensureResident()", async () => {
+    const { fn, calls } = makeCounting();
+    const store = new ChunkStore(fn);
+
+    // load() for chunk A (sync), ensureResident for chunk B (async).
+    store.load(0, 0, worldSeed);
+    const p = store.ensureResident(1, 0, worldSeed);
+
+    expect(store.residency(0, 0)).toBe("RESIDENT"); // already done
+    expect(store.residency(1, 0)).toBe("LOADING");  // in-flight
+
+    await p;
+    expect(store.residency(1, 0)).toBe("RESIDENT");
+    expect(calls.length).toBe(2); // one for each chunk
   });
 });
