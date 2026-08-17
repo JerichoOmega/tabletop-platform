@@ -37,6 +37,13 @@ import {
 } from "@/engine/rules";
 import type { ViewportState, VisibleTile } from "@/engine/viewport";
 import { getVisibleTiles, initViewport, updateViewportForActor } from "@/engine/viewport";
+// Phase F: viewport streaming — chunk prefetch + loading presentation.
+// WorldState is imported for type-only use; the ref is null for all current
+// MapDef-backed encounters. The streaming infrastructure activates automatically
+// when a world-backed encounter populates worldStateRef.current.
+import type { WorldState } from "@/engine/world";
+import { getChunksForViewport, prefetchViewportChunks, PREFETCH_MARGIN } from "@/engine/viewportStreaming";
+import { CHUNK_W, CHUNK_H } from "@/engine/chunk";
 import type { Step, RevalidationCheck, ProposedAction } from "@/intent/parser";
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
 import { FONT_IMPORT, ClassIcon, CharacterPanel, actionBtnStyle } from "@/ui/primitives";
@@ -283,6 +290,14 @@ export default function IntelligentTabletop() {
   const seedRef        = useRef(1337);
   const encounterIdRef = useRef("crypt");
   const rngRef         = useRef<Rng | null>(null);
+  // Phase F: WorldState reference for chunk-backed encounters.
+  // This is a ref (not state) so mutations — chunk loads, evictions — never
+  // trigger React re-renders. All current encounters are MapDef-backed;
+  // this ref is always null until a world-backed encounter is introduced.
+  //
+  // ISOLATION INVARIANT: worldStateRef.current must NEVER be written into
+  // GameState. It is owned exclusively by the presentation layer.
+  const worldStateRef  = useRef<WorldState | null>(null);
 
   const [gameState, setGameState] = useState(() => {
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);
@@ -300,6 +315,10 @@ export default function IntelligentTabletop() {
   const [viewport, setViewport] = useState<ViewportState>(
     () => initViewport(gameState.map, VIEWPORT_TILE_W, VIEWPORT_TILE_H)
   );
+  // Phase F: presentation-only chunk version counter.
+  // Incremented when viewport chunks finish loading, causing loadingChunkSet to
+  // re-derive and update the loading placeholder display. Never in GameState.
+  const [chunkVersion, setChunkVersion] = useState(0);
 
   const [mode, setMode]               = useState<"traditional" | "assisted" | "adventure">("traditional");
   const [selectedId, setSelectedId]   = useState<string | null>(null);
@@ -342,6 +361,36 @@ export default function IntelligentTabletop() {
     window.addEventListener("resize", updateCellPx, { passive: true });
     return () => window.removeEventListener("resize", updateCellPx);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase F: Non-blocking viewport chunk prefetch.
+  // Fires whenever the viewport changes (actor dead-zone follow or future
+  // user-driven panning). Immediately returns — chunk loads proceed in the
+  // background via ChunkStore.ensureResident() (fire-and-forget).
+  //
+  // ISOLATION INVARIANTS (Task Instruction §4, §13, §14):
+  //   • Does NOT modify gameState, viewport, or GameState.tileQuery.
+  //   • Does NOT pin chunks (only encounter setup pins via ensureResidentAndPin).
+  //   • setChunkVersion only triggers a re-render for the loading indicator —
+  //     it never writes viewport state, preventing stale-completion corruption.
+  //   • The `cancelled` flag prevents state updates after unmount.
+  //
+  // Currently a no-op for all MapDef encounters (worldStateRef.current === null).
+  useEffect(() => {
+    const ws = worldStateRef.current;
+    if (!ws) return;
+    let cancelled = false;
+    const chunks = getChunksForViewport(viewport, PREFETCH_MARGIN);
+    const promises = chunks.map(({ cx, cy }) =>
+      ws.chunkStore.ensureResident(cx, cy, ws.seed).catch(() => {
+        // Presentation load failure — chunk stays UNLOADED.
+        // Rules engine uses the immutable snapshot; this only affects display.
+      })
+    );
+    void Promise.allSettled(promises).then(() => {
+      if (!cancelled) setChunkVersion(v => v + 1);
+    });
+    return () => { cancelled = true; };
+  }, [viewport]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentActorId = gameState.turnOrder[gameState.turnIndex];
   const currentActor   = gameState.combatants[currentActorId];
@@ -394,6 +443,35 @@ export default function IntelligentTabletop() {
     () => getVisibleTiles(viewport, gameState.tileQuery),
     [viewport, gameState.tileQuery],
   );
+
+  // Phase F: Presentation loading state — which visible chunks are LOADING.
+  //
+  // ISOLATION INVARIANT: this memo is PURELY presentational.
+  //   It does NOT flow into GameState, tileQuery, or any rules engine function.
+  //   The rules engine always reads gameState.tileQuery (the immutable snapshot),
+  //   never the live ChunkStore residency checked here.
+  //
+  // Recalculates when:
+  //   • The viewport changes (new visible chunks → check their residency).
+  //   • chunkVersion increments (a prefetch completed → loading state changed).
+  //
+  // Always returns an empty Set for MapDef encounters (worldStateRef.current === null).
+  // Becomes meaningful only when a WorldState-backed encounter is active.
+  //
+  // Note: worldStateRef is a ref, not state, so this memo reads it without
+  // listing it as a dependency — React will not track it. The chunkVersion
+  // dependency is what causes re-evaluation when chunks finish loading.
+  const loadingChunkSet = useMemo(() => {
+    const ws = worldStateRef.current;
+    if (!ws) return new Set<string>();
+    const result = new Set<string>();
+    for (const { cx, cy } of getChunksForViewport(viewport, 0)) {
+      if (ws.chunkStore.residency(cx, cy) === "LOADING") {
+        result.add(`${cx},${cy}`);
+      }
+    }
+    return result;
+  }, [viewport, chunkVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reachable = useMemo(() => {
     if (!isPlayerTurn || pendingAction !== "move" || !selected || selected.id !== currentActorId) return [];
@@ -701,6 +779,11 @@ export default function IntelligentTabletop() {
     setLastRoll(null);
     setBanner(null);
     setMode("traditional");
+    // Phase F: release any active WorldState. All current encounters are
+    // MapDef-backed so this is always null→null. When world-backed encounters
+    // are introduced, this releases the previous WorldState and cancels any
+    // in-flight prefetch (the useEffect cleanup runs on next render).
+    worldStateRef.current = null;
   }
 
   // Builds a rich accessible name for a board token.
@@ -1039,8 +1122,16 @@ export default function IntelligentTabletop() {
                   // Use world coords for all lookups — never viewport-relative vx/vy.
                   const tok     = tokensByTile[key(tile.wx, tile.wy)];
                   const isReach = reachSet.has(key(tile.wx, tile.wy));
+                  // Phase F: loading placeholder — purely presentational.
+                  // True when the tile's chunk is LOADING in the live ChunkStore.
+                  // NEVER affects GameState.tileQuery or rules engine geometry.
+                  // Always false for MapDef encounters (worldStateRef.current === null).
+                  const chunkIsLoading = loadingChunkSet.has(
+                    `${Math.floor(tile.wx / CHUNK_W)},${Math.floor(tile.wy / CHUNK_H)}`
+                  );
                   let bg = "#c9bd9e";
-                  if (wall) bg = "#1c140c";
+                  if (chunkIsLoading) bg = "#14100a"; // loading: very dark neutral, no game content
+                  else if (wall) bg = "#1c140c";
                   else bg = ((tile.wx + tile.wy) % 2 === 0) ? "#d8cba6" : "#ccbe97";
                   return (
                     <div

@@ -15,7 +15,7 @@ description: Tracks which Phase 3 viewport/world-scale phases are complete and w
 | F-foundation | Chunk/Region Streaming foundation: `ChunkStore`, coordinate math, `ResidentGeometrySnapshot`, `snapshotToTileQuery()` | ✅ COMPLETE — 131 chunk tests |
 | F-async | Async streaming: `ensureResident()`, `ensureResidentAndPin()`, deduplication, pin/unpin lifecycle | ✅ COMPLETE — 33 async tests |
 | F-world | WorldState & WorldEntityRegistry: entity persistence, beginEncounter/endEncounter, buildEncounterFromEntities | ✅ COMPLETE — 92 world tests |
-| F-viewport | Viewport streaming integration: replace MapDef-backed renderer with ChunkStore-backed queries | NEXT — not yet started |
+| F-viewport | Viewport streaming integration: `getChunksForViewport`, `prefetchViewportChunks`, `worldStateRef`, `chunkVersion`, `loadingChunkSet` | ✅ COMPLETE — 53 unit tests, 13 E2E tests |
 | G | Persistent WorldState, entity survival across chunk eviction | PLANNED |
 | H | Exploration → encounter transition | PLANNED |
 
