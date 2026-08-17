@@ -112,8 +112,18 @@ export type TileQueryFn = (wx: number, wy: number) => TileInfo;
  * The returned function closes over the MapDef, which is a static value that
  * never mutates during a combat encounter — the determinism invariant is
  * automatically satisfied in Phase A.
+ *
+ * Pillar lookup uses a precomputed Set<string> (keyed by "x,y") for O(1)
+ * lookup instead of the previous O(n) Array.some() scan. Behavior is
+ * identical — this is a data-structure correction required by the Phase F
+ * geometry architecture, not a gameplay change. See Phase F migration notes
+ * in WORLD_SCALE_VIEWPORT.md §25.
  */
 export function mapDefToTileQuery(map: MapDef): TileQueryFn {
+  // Precompute pillar positions as a Set for O(1) lookup.
+  // The key format "x,y" matches the existing rules.ts key() convention.
+  const pillarSet = new Set<string>(map.pillars.map((p) => p.x + "," + p.y));
+
   return (wx: number, wy: number): TileInfo => {
     if (wx < 0 || wy < 0 || wx >= map.width || wy >= map.height) {
       return { passable: false, blocksLOS: true, providesCover: false, type: "void" };
@@ -122,7 +132,7 @@ export function mapDefToTileQuery(map: MapDef): TileQueryFn {
     if (border && !(wx === map.entrance.x && wy === map.entrance.y)) {
       return { passable: false, blocksLOS: true, providesCover: false, type: "wall" };
     }
-    if (map.pillars.some((p) => p.x === wx && p.y === wy)) {
+    if (pillarSet.has(wx + "," + wy)) {
       return { passable: false, blocksLOS: false, providesCover: true, type: "pillar" };
     }
     return { passable: true, blocksLOS: false, providesCover: false, type: "floor" };
