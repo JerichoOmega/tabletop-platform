@@ -1443,6 +1443,8 @@ import {
   viewportToWorld,
   getVisibleTiles,
   clampViewportOrigin,
+  updateViewportForActor,
+  DEAD_ZONE_MARGIN,
 } from "@/engine/viewport";
 import type { ViewportState } from "@/engine/viewport";
 
@@ -1745,7 +1747,274 @@ describe("Phase B — findCoverTile uses tileQuery, not MapDef.pillars", () => {
   });
 });
 
-describe("Phase B — Viewport: clampViewportOrigin", () => {
+// ---------------------------------------------------------------------------
+// PHASE C — VIEWPORT FOLLOW / DEAD-ZONE POLICY
+// Pure-function tests for updateViewportForActor().
+// ---------------------------------------------------------------------------
+
+describe("Phase C — Dead-zone stability", () => {
+  // Actor moves within the dead zone → viewport origin unchanged.
+  // Large viewport (20×15, margin 3) with non-zero origin.
+  const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 20, tileH: 15 };
+  // Dead zone in world coords: X [13, 26], Y [8, 17]
+  const WORLD = { w: 100, h: 80 };
+
+  it("actor at dead-zone centre — origin unchanged (same reference)", () => {
+    const result = updateViewportForActor(vp, 20, 12, WORLD.w, WORLD.h);
+    expect(result).toBe(vp);   // same reference → no re-render
+  });
+
+  it("actor at dead-zone min corner — origin unchanged", () => {
+    const result = updateViewportForActor(vp, 13, 8, WORLD.w, WORLD.h);
+    expect(result).toBe(vp);
+  });
+
+  it("actor at dead-zone max corner — origin unchanged", () => {
+    // dzMaxWx = 10 + 20 - 3 - 1 = 26; dzMaxWy = 5 + 15 - 3 - 1 = 16
+    const result = updateViewportForActor(vp, 26, 16, WORLD.w, WORLD.h);
+    expect(result).toBe(vp);
+  });
+
+  it("actor.wx/wy unchanged after stable dead-zone check", () => {
+    // updateViewportForActor must NEVER mutate the actor's position.
+    const actorWx = 20, actorWy = 12;
+    updateViewportForActor(vp, actorWx, actorWy, WORLD.w, WORLD.h);
+    expect(actorWx).toBe(20);
+    expect(actorWy).toBe(12);
+  });
+});
+
+describe("Phase C — Boundary crossing: right edge", () => {
+  // Actor crosses right dead-zone boundary → recenter.
+  // Viewport 20×15, origin (10, 5). dzMaxWx = 10 + 20 - 3 - 1 = 26.
+  // Actor at wx=27 (one past right boundary) → outside → recenter.
+  const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 20, tileH: 15 };
+  const WORLD = { w: 100, h: 80 };
+
+  it("actor one tile past right dead-zone → viewport recenters", () => {
+    const result = updateViewportForActor(vp, 27, 12, WORLD.w, WORLD.h);
+    expect(result).not.toBe(vp);
+    // Recentered on actor (wx=27): targetOriginWx = 27 - floor(20/2) = 17
+    expect(result.originWx).toBe(17);
+  });
+
+  it("actor far right → viewport recenters (clamped to world edge)", () => {
+    // Actor at wx=95. targetOriginWx = 95 - 10 = 85. clamp: min(85, 100-20=80) = 80.
+    const result = updateViewportForActor(vp, 95, 12, WORLD.w, WORLD.h);
+    expect(result.originWx).toBe(80);
+  });
+});
+
+describe("Phase C — Boundary crossing: left edge", () => {
+  // Actor crosses left dead-zone boundary. dzMinWx = 10+3 = 13.
+  // Actor at wx=12 (one before left boundary) → outside → recenter.
+  const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 20, tileH: 15 };
+  const WORLD = { w: 100, h: 80 };
+
+  it("actor one tile before left dead-zone → viewport recenters", () => {
+    const result = updateViewportForActor(vp, 12, 12, WORLD.w, WORLD.h);
+    expect(result).not.toBe(vp);
+    // targetOriginWx = 12 - 10 = 2. clamp: max(0, min(2, 80)) = 2.
+    expect(result.originWx).toBe(2);
+  });
+
+  it("actor at wx=0 → viewport origin clamped to 0", () => {
+    const result = updateViewportForActor(vp, 0, 12, WORLD.w, WORLD.h);
+    expect(result.originWx).toBe(0);
+  });
+});
+
+describe("Phase C — Boundary crossing: bottom edge", () => {
+  // Actor crosses bottom dead-zone boundary. dzMaxWy = 5 + 15 - 3 - 1 = 16.
+  // Actor at wy=17 → outside → recenter.
+  const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 20, tileH: 15 };
+  const WORLD = { w: 100, h: 80 };
+
+  it("actor one tile past bottom dead-zone → viewport recenters", () => {
+    const result = updateViewportForActor(vp, 20, 17, WORLD.w, WORLD.h);
+    expect(result).not.toBe(vp);
+    // targetOriginWy = 17 - floor(15/2) = 17 - 7 = 10. clamp: max(0, min(10, 80-15=65)) = 10.
+    expect(result.originWy).toBe(10);
+  });
+
+  it("actor far down → origin clamped to worldH - tileH", () => {
+    // Actor at wy=78. targetOriginWy = 78 - 7 = 71. clamp: min(71, 65) = 65.
+    const result = updateViewportForActor(vp, 20, 78, WORLD.w, WORLD.h);
+    expect(result.originWy).toBe(65);
+  });
+});
+
+describe("Phase C — Boundary crossing: top edge", () => {
+  // Actor crosses top dead-zone boundary. dzMinWy = 5 + 3 = 8.
+  // Actor at wy=7 → outside → recenter.
+  const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 20, tileH: 15 };
+  const WORLD = { w: 100, h: 80 };
+
+  it("actor one tile above top dead-zone → viewport recenters", () => {
+    const result = updateViewportForActor(vp, 20, 7, WORLD.w, WORLD.h);
+    expect(result).not.toBe(vp);
+    // targetOriginWy = 7 - 7 = 0. clamp: max(0, 0) = 0.
+    expect(result.originWy).toBe(0);
+  });
+
+  it("actor at wy=0 → origin clamped to 0", () => {
+    const result = updateViewportForActor(vp, 20, 0, WORLD.w, WORLD.h);
+    expect(result.originWy).toBe(0);
+  });
+});
+
+describe("Phase C — Corner behavior: diagonal dead-zone crossing", () => {
+  // Actor crosses both X and Y dead-zone boundaries simultaneously.
+  const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 20, tileH: 15 };
+  const WORLD = { w: 100, h: 80 };
+
+  it("actor past both right and bottom boundaries → recenter on both axes", () => {
+    // Actor at (27, 17): wx=27 > dzMaxWx=26, wy=17 > dzMaxWy=16 → outside.
+    const result = updateViewportForActor(vp, 27, 17, WORLD.w, WORLD.h);
+    expect(result).not.toBe(vp);
+    // originWx: 27 - 10 = 17; originWy: 17 - 7 = 10.
+    expect(result.originWx).toBe(17);
+    expect(result.originWy).toBe(10);
+  });
+
+  it("actor past both left and top boundaries → recenter clamped to (0, 0)", () => {
+    // Actor at (12, 7): wx<13, wy<8 → both outside.
+    // targetOriginWx = 12-10=2, targetOriginWy = 7-7=0. Both clamped ≥ 0.
+    const result = updateViewportForActor(vp, 12, 7, WORLD.w, WORLD.h);
+    expect(result).not.toBe(vp);
+    expect(result.originWx).toBe(2);
+    expect(result.originWy).toBe(0);
+  });
+});
+
+describe("Phase C — Map edge clamping (finite world smaller than actor center)", () => {
+  // World exactly 15×12, viewport 12×10. maxOriginWx=3, maxOriginWy=2.
+  const vp: ViewportState = { originWx: 0, originWy: 0, tileW: 12, tileH: 10 };
+  const WORLD = { w: 15, h: 12 };
+  // Dead zone: X [3, 8], Y [3, 6]
+
+  it("actor in top-left corner → clamped to origin (0, 0)", () => {
+    // wx=1 < dzMinWx=3 → outside. targetOriginWx=1-6=-5 → clamped to 0. Already 0.
+    const result = updateViewportForActor(vp, 1, 1, WORLD.w, WORLD.h);
+    expect(result).toBe(vp); // origin unchanged (was already 0,0)
+  });
+
+  it("actor at right edge of world → origin clamped to maxOriginWx", () => {
+    // wx=14 > dzMaxWx=8 → outside. targetOriginWx=14-6=8 → clamped to min(8, 3)=3.
+    const result = updateViewportForActor(vp, 14, 5, WORLD.w, WORLD.h);
+    expect(result.originWx).toBe(3);
+  });
+
+  it("actor at bottom edge of world → origin clamped to maxOriginWy", () => {
+    // wy=11 > dzMaxWy=6 → outside. targetOriginWy=11-5=6 → clamped to min(6, 2)=2.
+    const result = updateViewportForActor(vp, 5, 11, WORLD.w, WORLD.h);
+    expect(result.originWy).toBe(2);
+  });
+});
+
+describe("Phase C — Small-map behavior (spec §8: dead zone never shifts origin)", () => {
+  // Current encounters: 8×6 maps with DEAD_ZONE_MARGIN=3.
+  // Dead zone Y: dzMinWy=3, dzMaxWy=0+6-3-1=2 → DEGENERATE (min > max).
+  // Every position triggers a recenter attempt, but clampViewportOrigin forces (0,0).
+  // updateViewportForActor must return the same reference every time.
+
+  it("actor at any position in 8×6 map → same viewport reference (origin stays 0,0)", () => {
+    const map = MAP_DEFS.crypt; // 8×6
+    const vp = initViewport(map); // { originWx:0, originWy:0, tileW:8, tileH:6 }
+    for (let wx = 0; wx < map.width; wx++) {
+      for (let wy = 0; wy < map.height; wy++) {
+        const result = updateViewportForActor(vp, wx, wy, map.width, map.height);
+        expect(result).toBe(vp);  // same reference → no re-render, origin stays (0,0)
+      }
+    }
+  });
+
+  it("DEAD_ZONE_MARGIN has the spec-recommended value of 3", () => {
+    expect(DEAD_ZONE_MARGIN).toBe(3);
+  });
+});
+
+describe("Phase C — Actor/world state separation", () => {
+  it("updateViewportForActor never mutates actor world position", () => {
+    // This is a structural test: the function accepts integers, not objects.
+    // Verify the inputs are not modified (integers are value types, but test
+    // the function contract explicitly).
+    const vp: ViewportState = { originWx: 10, originWy: 5, tileW: 20, tileH: 15 };
+    const actorWxBefore = 30, actorWyBefore = 20;
+    let captured = { wx: actorWxBefore, wy: actorWyBefore };
+    updateViewportForActor(vp, captured.wx, captured.wy, 100, 80);
+    expect(captured.wx).toBe(actorWxBefore);
+    expect(captured.wy).toBe(actorWyBefore);
+  });
+
+  it("updateViewportForActor never mutates GameState combatants", () => {
+    const state = buildEncounter("crypt", 42);
+    const posBefore = JSON.stringify(
+      Object.values(state.combatants).map((c) => ({ id: c.id, wx: c.wx, wy: c.wy }))
+    );
+    const vp = initViewport(state.map);
+    Object.values(state.combatants).forEach((c) => {
+      updateViewportForActor(vp, c.wx, c.wy, state.map.width, state.map.height);
+    });
+    const posAfter = JSON.stringify(
+      Object.values(state.combatants).map((c) => ({ id: c.id, wx: c.wx, wy: c.wy }))
+    );
+    expect(posAfter).toBe(posBefore);
+  });
+});
+
+describe("Phase C — Viewport independence from GameState", () => {
+  it("computing a new viewport never alters combatant HP or turn state", () => {
+    const state = buildEncounter("crypt", 42);
+    const snapshot = JSON.stringify({
+      round:      state.round,
+      turnIndex:  state.turnIndex,
+      hps:        Object.values(state.combatants).map((c) => ({ id: c.id, hp: c.hp })),
+    });
+    const vp: ViewportState = { originWx: 3, originWy: 2, tileW: 10, tileH: 8 };
+    // Run follow policy for every combatant — none of this touches GameState.
+    Object.values(state.combatants).forEach((c) => {
+      updateViewportForActor(vp, c.wx, c.wy, state.map.width, state.map.height);
+    });
+    const afterSnapshot = JSON.stringify({
+      round:      state.round,
+      turnIndex:  state.turnIndex,
+      hps:        Object.values(state.combatants).map((c) => ({ id: c.id, hp: c.hp })),
+    });
+    expect(afterSnapshot).toBe(snapshot);
+  });
+
+  it("viewport follow policy does not consume RNG", () => {
+    const rng = mulberry32(123);
+    const state = buildEncounter("trainingYard", 42);
+    const seedBefore = rng.save();
+    const vp = initViewport(state.map);
+    Object.values(state.combatants).forEach((c) => {
+      updateViewportForActor(vp, c.wx, c.wy, state.map.width, state.map.height);
+    });
+    expect(rng.save()).toBe(seedBefore);
+  });
+});
+
+describe("Phase C — Coordinate round-trips preserved after follow", () => {
+  // Confirm that worldToViewport / viewportToWorld invariants still hold
+  // when the viewport origin has been shifted by updateViewportForActor.
+  it("worldToViewport(viewportToWorld(vx,vy)) round-trip with non-zero origin from follow", () => {
+    const vp0: ViewportState = { originWx: 10, originWy: 5, tileW: 20, tileH: 15 };
+    const followed = updateViewportForActor(vp0, 27, 17, 100, 80); // crosses both boundaries
+    // Verify the round-trip for every viewport position in the new viewport.
+    for (let vx = 0; vx < followed.tileW; vx++) {
+      for (let vy = 0; vy < followed.tileH; vy++) {
+        const world = viewportToWorld(followed, vx, vy);
+        const back  = worldToViewport(followed, world.wx, world.wy);
+        expect(back.vx).toBe(vx);
+        expect(back.vy).toBe(vy);
+      }
+    }
+  });
+});
+
+describe("Phase C — clampViewportOrigin", () => {
   it("clamps origin to (0,0) when viewport equals world size", () => {
     // Phase B case: viewport == map. Any non-zero origin is clamped to (0,0).
     expect(clampViewportOrigin(0, 0, 8, 6, 8, 6)).toEqual({ originWx: 0, originWy: 0 });

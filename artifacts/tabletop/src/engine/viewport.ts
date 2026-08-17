@@ -16,12 +16,18 @@
 // Pixel coordinates NEVER enter the rules engine or this module.
 // This module operates exclusively in integer logical tile coordinates.
 //
-// Phase B invariants:
-//   • originWx = 0, originWy = 0 for all current encounters.
+// Phase B invariants (still apply):
 //   • tileW = map.width, tileH = map.height — the entire 8×6 map is visible.
-//   • No scrolling, dead zones, or camera movement is implemented yet.
+//   • getVisibleTiles() + VisibleTile carry authoritative wx/wy for the renderer.
 //
-// Phase C will introduce viewport following; Phase F will introduce chunks.
+// Phase C additions (this file):
+//   • DEAD_ZONE_MARGIN — inner follow-zone margin in tiles.
+//   • updateViewportForActor() — pure dead-zone + recenter policy.
+//     For current 8×6 small maps, clamping ensures the origin always stays at
+//     (0, 0) so no user-visible change occurs yet (spec §8 invariant).
+//     Phase E+ will exercise this with larger maps.
+//
+// Phase F will introduce chunk-backed TileQueryFn.
 //
 // Dependency: content.ts (TileQueryFn, TileInfo).
 // ---------------------------------------------------------------------------
@@ -181,6 +187,94 @@ export function initViewport(map: { width: number; height: number }): ViewportSt
     tileW:    map.width,
     tileH:    map.height,
   };
+}
+
+// ---------------------------------------------------------------------------
+// VIEWPORT FOLLOW POLICY — pure dead-zone + recenter logic (Phase C).
+// ---------------------------------------------------------------------------
+
+/**
+ * The number of tiles from each viewport edge that form the dead zone.
+ *
+ * Recommended initial value from spec §6.5. The active actor can move
+ * within the inner rectangle without the viewport recentering.
+ *
+ * For current 8×6 encounters the Y dead zone is degenerate (tileH=6,
+ * 2×margin=6 → no interior space). updateViewportForActor handles this
+ * correctly: the recenter is computed, but clamping forces the origin back
+ * to (0, 0) — so no user-visible change occurs for small maps (spec §8).
+ */
+export const DEAD_ZONE_MARGIN = 3;
+
+/**
+ * Computes the viewport state that should follow the given actor.
+ *
+ * Dead-zone policy (spec §6.5, §7.2):
+ *
+ *   If the actor is inside the inner dead zone, the viewport is unchanged.
+ *   If the actor is outside the dead zone, the viewport recenters on the
+ *   actor (snap — no animation; tactical mode per spec §6.6).
+ *   The resulting origin is clamped to the finite world bounds.
+ *
+ * When the dead zone is degenerate in a dimension (tileW or tileH ≤
+ * 2 × deadZoneMargin), the actor is always considered outside that
+ * dimension's boundary and a recenter is computed — but clamping
+ * prevents actual origin movement on small finite maps, so no re-render
+ * is triggered (the function returns the same reference).
+ *
+ * Return value:
+ *   • Same ViewportState reference if origin is unchanged (React skips
+ *     re-render via Object.is bail-out on state updates).
+ *   • New ViewportState object if the origin changed.
+ *
+ * Caller contract:
+ *   • Must NEVER mutate GameState or combatant positions.
+ *   • Must NEVER call React state setters or access the DOM.
+ *   • Must be called with authoritative (wx, wy) from GameState.
+ *   • worldW / worldH are the finite map extent for clamping.
+ */
+export function updateViewportForActor(
+  viewport:        ViewportState,
+  actorWx:         number,
+  actorWy:         number,
+  worldW:          number,
+  worldH:          number,
+  deadZoneMargin = DEAD_ZONE_MARGIN,
+): ViewportState {
+  // ── Dead-zone bounds (world coordinates) ─────────────────────────────────
+  const dzMinWx = viewport.originWx + deadZoneMargin;
+  const dzMaxWx = viewport.originWx + viewport.tileW - deadZoneMargin - 1;
+  const dzMinWy = viewport.originWy + deadZoneMargin;
+  const dzMaxWy = viewport.originWy + viewport.tileH - deadZoneMargin - 1;
+
+  // ── Dead-zone test ────────────────────────────────────────────────────────
+  // Both dimensions must form a valid (non-empty) range AND the actor must
+  // be inside the full 2-D rectangle. If either dimension is degenerate
+  // (dzMin > dzMax), the actor is always outside and a recenter is computed.
+  const insideDeadZone =
+    dzMinWx <= dzMaxWx &&
+    dzMinWy <= dzMaxWy &&
+    actorWx >= dzMinWx && actorWx <= dzMaxWx &&
+    actorWy >= dzMinWy && actorWy <= dzMaxWy;
+
+  if (insideDeadZone) return viewport; // same reference → no React re-render
+
+  // ── Recenter: place actor at logical center of viewport ───────────────────
+  const targetOriginWx = actorWx - Math.floor(viewport.tileW / 2);
+  const targetOriginWy = actorWy - Math.floor(viewport.tileH / 2);
+
+  const { originWx, originWy } = clampViewportOrigin(
+    targetOriginWx, targetOriginWy,
+    viewport.tileW, viewport.tileH,
+    worldW, worldH,
+  );
+
+  // If clamping produces the same origin (typical for small maps where
+  // clamping forces 0,0 regardless of the desired center), return the same
+  // reference so React does not schedule an unnecessary re-render.
+  if (originWx === viewport.originWx && originWy === viewport.originWy) return viewport;
+
+  return { ...viewport, originWx, originWy };
 }
 
 // ---------------------------------------------------------------------------

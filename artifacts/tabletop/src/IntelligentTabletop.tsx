@@ -36,7 +36,7 @@ import {
   key,
 } from "@/engine/rules";
 import type { ViewportState, VisibleTile } from "@/engine/viewport";
-import { getVisibleTiles, initViewport, viewportToWorld } from "@/engine/viewport";
+import { getVisibleTiles, initViewport, updateViewportForActor } from "@/engine/viewport";
 import type { Step, RevalidationCheck, ProposedAction } from "@/intent/parser";
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
 import { FONT_IMPORT, ClassIcon, CharacterPanel, actionBtnStyle } from "@/ui/primitives";
@@ -412,8 +412,33 @@ export default function IntelligentTabletop() {
   // ---------------------------------------------------------------------------
   // EVENT HANDLERS
   // ---------------------------------------------------------------------------
-  function pushLogAndSet(next: GameState) { setGameState(next); }
-  function afterPlayerAction(next: GameState) { pushLogAndSet(next); }
+
+  /**
+   * Central state-update handler for every game action (PC move, attack,
+   * ability, end turn, enemy AI resolution, proposal execution).
+   *
+   * Phase C: after applying the new GameState, evaluates the viewport
+   * dead-zone policy against the current active actor's authoritative
+   * world position and calls setViewport only if the origin actually
+   * changes. For current 8×6 small maps, updateViewportForActor always
+   * returns the same reference (clamped to 0,0), so no extra re-render
+   * is triggered — the mechanism is present but visually dormant until
+   * Phase E introduces larger maps.
+   *
+   * Architectural invariant: viewport state is computed FROM authoritative
+   * GameState; it never flows back into GameState or the rules engine.
+   */
+  function afterPlayerAction(next: GameState) {
+    setGameState(next);
+    const actor = next.combatants[next.turnOrder[next.turnIndex]];
+    if (actor && actor.alive) {
+      const newVp = updateViewportForActor(
+        viewport, actor.wx, actor.wy, next.map.width, next.map.height,
+      );
+      if (newVp !== viewport) setViewport(newVp);
+    }
+  }
+
   function doEndTurnAndMaybeAI(state: GameState) {
     const next = endTurn(state);
     return resolveLeadingEnemyTurns(next, rngRef.current!);
@@ -442,14 +467,6 @@ export default function IntelligentTabletop() {
       setTimeout(() => setBanner(null), 2200);
     }
   }
-
-  // Converts a viewport-relative tile click (from handleTileClick's caller) to
-  // a world coordinate. Kept as a named function so Phase C viewport-scroll code
-  // can call it with a non-zero origin and the caller site is unchanged.
-  function tileClickToWorldCoord(vx: number, vy: number): { wx: number; wy: number } {
-    return viewportToWorld(viewport, vx, vy);
-  }
-  void tileClickToWorldCoord; // consumed by handleTileClick via VisibleTile.wx/wy
 
   function handleAttackTarget(targetId: string) {
     if (mode !== "traditional" || pendingAction !== "attack" || !selected) return;
@@ -640,9 +657,16 @@ export default function IntelligentTabletop() {
     rngRef.current = rng;
     const next = resolveLeadingEnemyTurns(fresh, rng);
     setGameState(next);
-    // Reset viewport to show the new encounter's full map.
-    // (Phase C will preserve/reposition the viewport instead of resetting.)
-    setViewport(initViewport(next.map));
+    // Phase C: initialize to whole-map viewport, then apply dead-zone follow
+    // to position the origin relative to the first active actor. For current
+    // 8×6 small maps this always produces (0, 0) — spec §8 invariant.
+    const baseVp = initViewport(next.map);
+    const firstActor = next.combatants[next.turnOrder[next.turnIndex]];
+    setViewport(
+      firstActor && firstActor.alive
+        ? updateViewportForActor(baseVp, firstActor.wx, firstActor.wy, next.map.width, next.map.height)
+        : baseVp
+    );
     setSelectedId(null);
     setPendingAction(null);
     setProposal(null);

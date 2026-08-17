@@ -1,0 +1,521 @@
+Absolutely. Phase C is where we introduce actual camera movement, so the prompt needs to be strict about keeping the viewport purely presentational.
+
+Send Claude this:
+
+Phase C — Viewport Following & Dead-Zone Behavior
+
+Phase B has been completed and verified at commit 0eac85d.
+
+The authoritative Phase 3 specification is:
+
+docs/WORLD_SCALE_VIEWPORT.md
+
+Phase A and Phase B are considered architectural baselines. Do not redesign them.
+
+Implement Phase C only: viewport following/dead-zone behavior.
+
+Do not implement Phase D, E, F, G, H, I, or J.
+
+⸻
+
+Core architectural invariant
+
+The viewport is presentation state only.
+
+The rules engine remains authoritative over:
+
+* combatant position
+* movement
+* attacks
+* abilities
+* turns
+* HP
+* action state
+* RNG
+* legality
+
+The viewport may respond to authoritative world-state changes, but the viewport must never cause an authoritative world-state change.
+
+The only valid direction is:
+
+GameState / world position
+         ↓
+    viewport policy
+         ↓
+   ViewportState
+         ↓
+      renderer
+
+Never:
+
+ViewportState
+      ↓
+GameState
+
+⸻
+
+1. Read the Phase C specification first
+
+Before modifying code, inspect the current WORLD_SCALE_VIEWPORT.md and identify the exact Phase C requirements for:
+
+* viewport following
+* dead-zone behavior
+* followed actor
+* viewport origin
+* clamping
+* movement-triggered updates
+* encounter initialization
+* any animation/presentation requirements
+
+Implement the specification as written.
+
+Do not invent a different camera model because it is easier to implement.
+
+If the specification is ambiguous about a behavior that materially affects correctness, stop and report the ambiguity instead of silently inventing a rule.
+
+⸻
+
+2. Establish the followed actor
+
+The viewport should follow the appropriate active/selected actor according to the Phase C specification.
+
+Determine the correct existing source of truth for the followed actor.
+
+Do not create a second authoritative notion of actor position.
+
+The viewport should obtain the actor’s current wx/wy from authoritative game state.
+
+It must never maintain its own copy of the actor’s world position.
+
+⸻
+
+3. Implement dead-zone behavior
+
+Implement the specified dead-zone policy.
+
+Conceptually:
+
+┌─────────────────────────────┐
+│                             │
+│       VIEWPORT               │
+│                             │
+│    ┌─────────────────┐      │
+│    │                 │      │
+│    │    DEAD ZONE    │      │
+│    │                 │      │
+│    └─────────────────┘      │
+│                             │
+└─────────────────────────────┘
+
+The followed actor may move within the dead zone without moving the viewport.
+
+Once the actor crosses the appropriate boundary, adjust originWx/originWy according to the specification.
+
+Do not move the actor to compensate for the viewport.
+
+Do not alter the simulation’s coordinates.
+
+⸻
+
+4. Keep viewport movement in logical tile coordinates
+
+Viewport following must operate using:
+
+wx
+wy
+originWx
+originWy
+tileW
+tileH
+
+It must not use:
+
+* CSS pixel measurements
+* DOM offsets
+* screen coordinates
+* getBoundingClientRect()
+* pointer coordinates
+* browser layout measurements
+
+for determining authoritative world positions.
+
+Pixel dimensions remain a rendering concern.
+
+⸻
+
+5. Make viewport-follow logic pure where possible
+
+Prefer a pure function such as:
+
+updateViewportForActor(
+  viewport,
+  actorWx,
+  actorWy,
+  bounds
+): ViewportState
+
+or an equivalent abstraction consistent with the repository.
+
+The function should:
+
+* receive the previous viewport state
+* receive authoritative actor coordinates
+* calculate the required viewport origin
+* clamp the resulting origin
+* return a new viewport state
+
+It should not:
+
+* mutate GameState
+* mutate the actor
+* call React setters
+* access the DOM
+* access assets
+* access the renderer
+* access RNG
+* perform asynchronous work
+
+React should merely orchestrate the presentation-state update around this pure policy.
+
+⸻
+
+6. Preserve viewport state as presentation state
+
+Keep:
+
+ViewportState
+
+outside GameState.
+
+Do not add:
+
+gameState.viewport
+
+or any equivalent.
+
+Changing the viewport must not affect:
+
+* serialized GameState
+* game rules
+* combat results
+* RNG
+* action legality
+* proposal validation
+
+⸻
+
+7. Integrate following with movement
+
+When an actor moves:
+
+executeMove()
+      ↓
+GameState receives new wx/wy
+      ↓
+React observes authoritative position
+      ↓
+viewport-follow policy evaluates actor position
+      ↓
+ViewportState may change
+      ↓
+visible tiles recompute
+
+Do not modify executeMove() or the rules engine merely to support camera behavior unless absolutely required by an existing architectural contract.
+
+The viewport should react to the resulting authoritative state rather than becoming part of action execution.
+
+⸻
+
+8. Handle turn changes correctly
+
+Verify what happens when the active actor changes.
+
+If the Phase C specification requires following the new active actor, implement that behavior through viewport state.
+
+The transition must never alter:
+
+* the actor’s world position
+* turn state
+* initiative
+* action availability
+* RNG
+
+If the current design intentionally keeps the viewport on the previous actor until a defined event, follow the specification instead.
+
+⸻
+
+9. Handle encounter initialization
+
+newEncounter() must continue to initialize a valid viewport.
+
+For the current small maps, the entire map should remain visible as required by the existing Phase B behavior unless the Phase C specification explicitly says otherwise.
+
+Do not introduce a visible camera jump merely because the new architecture exists.
+
+⸻
+
+10. Respect viewport bounds
+
+Use the existing:
+
+clampViewportOrigin()
+
+or improve it only if required by the Phase C specification.
+
+Ensure that:
+
+originWx
+originWy
+
+never become invalid for the current finite maps.
+
+Pay particular attention to:
+
+* actor near left edge
+* actor near right edge
+* actor near top edge
+* actor near bottom edge
+* maps smaller than viewport
+* viewport exactly matching map dimensions
+
+A viewport larger than the map must not produce invalid origins.
+
+⸻
+
+11. Do not introduce large-world assumptions yet
+
+Phase C is still operating against the current finite maps.
+
+Do not implement:
+
+* chunk boundaries
+* streaming
+* procedural generation
+* infinite coordinates
+* 40×40 maps
+* WorldState
+* unloaded regions
+* asynchronous tile queries
+
+The viewport architecture should be ready for those later phases, but they are not part of this implementation.
+
+⸻
+
+12. Preserve existing interaction
+
+The current tabletop must continue to support:
+
+* movement
+* attacks
+* abilities
+* targeting
+* end turn
+* victory
+* defeat
+* traditional mode
+* assisted mode
+
+The viewport must never interfere with action targeting.
+
+In particular:
+
+A viewport-relative tile must always resolve to the correct authoritative wx/wy.
+
+⸻
+
+13. Testing
+
+Add focused Phase C unit tests.
+
+At minimum test:
+
+Dead-zone stability
+
+Actor moves within the dead zone:
+
+actor position changes
+viewport origin remains unchanged
+
+Boundary crossing
+
+Actor crosses each dead-zone boundary:
+
+viewport origin changes appropriately
+
+Directional behavior
+
+Test:
+
+* left
+* right
+* up
+* down
+
+separately.
+
+Corner behavior
+
+Test an actor crossing horizontal and vertical boundaries simultaneously.
+
+Map edges
+
+Verify clamping near:
+
+* left
+* right
+* top
+* bottom
+
+edges.
+
+Small-map behavior
+
+Verify that current 8×6 maps behave correctly when the viewport is larger than or equal to the map.
+
+Actor/world-state separation
+
+Verify that viewport following never changes the actor’s wx/wy.
+
+Viewport independence
+
+Verify that changing viewport origin does not change:
+
+* GameState
+* combatant positions
+* HP
+* action state
+* turn order
+* RNG
+
+Coordinate round-trip
+
+Continue protecting:
+
+world → viewport → world
+
+and:
+
+viewport → world → viewport
+
+invariants.
+
+⸻
+
+14. E2E regression
+
+Run the complete Playwright suite.
+
+Existing behavior must remain green.
+
+Pay particular attention to:
+
+* movement
+* targeting
+* active actor changes
+* responsive layouts
+* assisted mode
+* traditional mode
+* accessibility
+
+If viewport following is not visually observable on the current 8×6 maps because the entire map remains visible, that’s acceptable.
+
+The important thing is that the underlying viewport state transitions are correct and tested.
+
+⸻
+
+15. TypeScript and build
+
+Run:
+
+* tsc --noEmit
+* all Vitest tests
+* all Playwright E2E tests
+* production build
+
+Do not weaken or delete tests.
+
+Do not hide TypeScript errors.
+
+⸻
+
+16. Do not perform P3 cleanup unless necessary
+
+The Phase B verification identified:
+
+buildIntentContext.pillars
+
+as a P3 coordinate-format cleanup.
+
+You may fix it if Phase C touches that code or if doing so is trivial and directly related.
+
+Otherwise leave it for its own cleanup task.
+
+Do not expand Phase C scope simply to clean unrelated code.
+
+⸻
+
+17. Strict scope boundary
+
+Do not implement Phase D or later.
+
+In particular, do not add:
+
+* camera animation
+* cinematic camera movement
+* camera smoothing
+* screen shake
+* zoom
+* manual pan
+* player-controlled camera
+* minimap
+* large-world viewport
+* chunking
+* streaming
+* world persistence
+
+If any of those appear necessary, stop and report the dependency instead of implementing them prematurely.
+
+⸻
+
+Completion criteria
+
+Phase C is complete only when:
+
+1. Viewport following is implemented according to WORLD_SCALE_VIEWPORT.md.
+2. Dead-zone behavior is deterministic and tested.
+3. Viewport origin is clamped correctly.
+4. Viewport state remains outside GameState.
+5. Rules code remains completely unaware of viewport state.
+6. Actor wx/wy remains authoritative.
+7. Viewport movement cannot mutate simulation state.
+8. Existing coordinate transforms remain correct.
+9. Existing gameplay behavior remains intact.
+10. All unit tests pass.
+11. All E2E tests pass.
+12. TypeScript passes.
+13. Production build passes.
+
+Do not begin Phase D. Stop after Phase C and report.
+
+⸻
+
+Final report
+
+Provide:
+
+* commit hash
+* files changed
+* viewport-follow architecture
+* dead-zone implementation
+* clamping behavior
+* how actor/world state drives viewport state
+* tests added
+* total unit tests
+* total E2E tests
+* TypeScript result
+* production build result
+* confirmation that Phase D+ was not implemented
+* any remaining risks before Phase D
+* any deviations from WORLD_SCALE_VIEWPORT.md
+
+This is a presentation-layer architecture phase. The simulation remains authoritative and deterministic at all times.
