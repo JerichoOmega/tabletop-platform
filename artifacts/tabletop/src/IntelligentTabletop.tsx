@@ -263,6 +263,22 @@ const RESPONSIVE_CSS = `
 // the URL.  Test-only encounters are hidden from the picker in normal usage.
 const isE2E = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("e2e");
 
+// ---------------------------------------------------------------------------
+// VIEWPORT SIZE — presentation constants (Phase D).
+// The tabletop is a fixed-size surface.  These values cap the viewport so it
+// never exceeds the physical table, regardless of world size.
+//
+// For small maps (8×6): initViewport clamps to min(12,8)=8 × min(10,6)=6
+//   → exactly as before — no visual change on existing encounters.
+// For large maps (40×40): clamps to 12×10 → world > viewport ✓
+//
+// DEAD_ZONE_MARGIN=3, tileW=12, tileH=10:
+//   X dead zone: [3, 8] — 5 valid tiles — non-degenerate ✓
+//   Y dead zone: [3, 6] — 3 valid tiles — non-degenerate ✓ (was degenerate on 8×6)
+// ---------------------------------------------------------------------------
+const VIEWPORT_TILE_W = 12;
+const VIEWPORT_TILE_H = 10;
+
 export default function IntelligentTabletop() {
   const seedRef        = useRef(1337);
   const encounterIdRef = useRef("crypt");
@@ -277,12 +293,13 @@ export default function IntelligentTabletop() {
   // ---------------------------------------------------------------------------
   // VIEWPORT STATE — presentation only; NEVER placed in GameState.
   // Describes which portion of the world is currently shown on the table.
-  // For Phase B, originWx/originWy = (0,0) and tileW/tileH = map dimensions,
-  // so the entire 8×6 map is always visible — no user-visible change yet.
-  // Phase C will introduce viewport following; until then this is a stable
-  // abstraction that eliminates the "array index === world coord" assumption.
+  // The viewport is capped at VIEWPORT_TILE_W × VIEWPORT_TILE_H so large
+  // worlds only render the visible window (world ≠ viewport, Phase D).
+  // For 8×6 small maps the cap clamps to 8×6 — no visual change.
   // ---------------------------------------------------------------------------
-  const [viewport, setViewport] = useState<ViewportState>(() => initViewport(gameState.map));
+  const [viewport, setViewport] = useState<ViewportState>(
+    () => initViewport(gameState.map, VIEWPORT_TILE_W, VIEWPORT_TILE_H)
+  );
 
   const [mode, setMode]               = useState<"traditional" | "assisted" | "adventure">("traditional");
   const [selectedId, setSelectedId]   = useState<string | null>(null);
@@ -666,10 +683,11 @@ export default function IntelligentTabletop() {
     rngRef.current = rng;
     const next = resolveLeadingEnemyTurns(fresh, rng);
     setGameState(next);
-    // Phase C: initialize to whole-map viewport, then apply dead-zone follow
-    // to position the origin relative to the first active actor. For current
-    // 8×6 small maps this always produces (0, 0) — spec §8 invariant.
-    const baseVp = initViewport(next.map);
+    // Phase D: cap the viewport to VIEWPORT_TILE_W × VIEWPORT_TILE_H so the
+    // tabletop surface remains fixed-size. For small maps (8×6) initViewport
+    // clamps to 8×6 unchanged; for grandHall (40×40) it becomes 12×10.
+    // Then apply dead-zone follow to position within the new world.
+    const baseVp = initViewport(next.map, VIEWPORT_TILE_W, VIEWPORT_TILE_H);
     const firstActor = next.combatants[next.turnOrder[next.turnIndex]];
     setViewport(
       firstActor && firstActor.alive
@@ -1027,6 +1045,9 @@ export default function IntelligentTabletop() {
                   return (
                     <div
                       key={key(tile.wx, tile.wy)}
+                      data-testid="board-tile"
+                      data-world-wx={tile.wx}
+                      data-world-wy={tile.wy}
                       onClick={() => handleTileClick(tile)}
                       style={{
                         width: cellPx, height: cellPx,

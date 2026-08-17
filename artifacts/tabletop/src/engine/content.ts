@@ -289,6 +289,39 @@ export const MAP_DEFS: Record<string, MapDef> = {
       wall:  "terrain.trainingYard.wall",
     },
   },
+
+  // Phase D large-area validation map.
+  // 40×40 tiles — substantially larger than the fixed tabletop viewport (12×10).
+  // Purpose: prove the viewport architecture works when world > viewport.
+  //
+  // Geometry:
+  //   • All border tiles are walls except the entrance at (0, 20) (left-centre).
+  //   • 16 pillars in a sparse 4×4 lattice at 8-tile intervals: (8k, 8j) for k,j ∈ {1,2,3,4}.
+  //     They provide cover obstacles without blocking movement corridors.
+  //   • All other interior tiles are passable floor.
+  //
+  // Rules-engine contract: mapDefToTileQuery() produces a TileQueryFn from this
+  // definition using the exact same logic as every other map — no second geometry
+  // system is introduced. The engine does NOT know the world is 40×40.
+  grandHall: {
+    id: "grandHall",
+    name: "the grand hall",
+    width: 40,
+    height: 40,
+    entrance: { x: 0, y: 20 },
+    pillars: [
+      { x:  8, y:  8 }, { x:  8, y: 16 }, { x:  8, y: 24 }, { x:  8, y: 32 },
+      { x: 16, y:  8 }, { x: 16, y: 16 }, { x: 16, y: 24 }, { x: 16, y: 32 },
+      { x: 24, y:  8 }, { x: 24, y: 16 }, { x: 24, y: 24 }, { x: 24, y: 32 },
+      { x: 32, y:  8 }, { x: 32, y: 16 }, { x: 32, y: 24 }, { x: 32, y: 32 },
+    ],
+    // Reuses existing terrain assets where registered; CSS fallback otherwise.
+    visualAssets: {
+      floor:  "terrain.crypt.floor",
+      wall:   "terrain.crypt.wall",
+      pillar: "terrain.crypt.pillar",
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -532,6 +565,25 @@ export const ENCOUNTER_DEFS: Record<string, EncounterDef> = {
     players: [{ defId: "glassPC",   instanceId: "glassPC1",   x: 2, y: 3 }],
     enemies: [{ defId: "doomEnemy", instanceId: "doomEnemy1", x: 3, y: 3 }],
   },
+  // Phase D large-area validation encounter.
+  // Proves viewport architecture on a 40×40 world with a 12×10 viewport window.
+  // Fighter starts near the entrance (6, 20); Target Dummy at (35, 20).
+  //
+  // With VIEWPORT_TILE_W=12, VIEWPORT_TILE_H=10 the initial viewport settles near
+  // origin (0, 15) after dead-zone follow on the fighter. The dummy is far off-screen,
+  // demonstrating that culling (not rendering all 40×40 tiles) is working.
+  //
+  // Neither pillar position conflicts with either combatant's starting location.
+  // testOnly: the encounter does not appear in the production picker, only ?e2e.
+  largeArena: {
+    id: "largeArena",
+    name: "Grand Hall",
+    mapId: "grandHall",
+    testOnly: true,
+    players: [{ defId: "fighter",     instanceId: "fighter", x:  6, y: 20 }],
+    enemies: [{ defId: "targetDummy", instanceId: "dummy1",  x: 35, y: 20 }],
+  },
+
   // E2E test encounter — out-of-range coverage for hover preview.
   // Fighter (Aldric, longbow range 6) at (0,3); Target Dummy at (7,3).
   // Chebyshev distance = max(7,0) = 7 > range 6 → attack always OUT_OF_RANGE.

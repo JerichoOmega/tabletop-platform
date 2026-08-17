@@ -177,15 +177,26 @@ export function getVisibleTiles(
  * and no scrolling occurs. This preserves the existing user experience
  * exactly while establishing the viewport abstraction.
  *
- * Phase C will call setViewport with a different origin when the party
- * moves toward the edge of a larger map.
+ * Phase D: maxTileW / maxTileH cap the viewport to a fixed presentation
+ * surface smaller than the world. Both parameters default to the map's
+ * full dimensions so all existing callers without arguments are unchanged.
+ * `Math.min` ensures the viewport never exceeds the world in either axis.
+ *
+ * Example — 40×40 world with 12×10 cap:
+ *   tileW = min(12, 40) = 12,  tileH = min(10, 40) = 10  →  world > viewport ✓
+ * Example — 8×6 world with 12×10 cap:
+ *   tileW = min(12,  8) =  8,  tileH = min(10,  6) =  6  →  unchanged ✓
  */
-export function initViewport(map: { width: number; height: number }): ViewportState {
+export function initViewport(
+  map:       { width: number; height: number },
+  maxTileW = map.width,
+  maxTileH = map.height,
+): ViewportState {
   return {
     originWx: 0,
     originWy: 0,
-    tileW:    map.width,
-    tileH:    map.height,
+    tileW:    Math.min(maxTileW, map.width),
+    tileH:    Math.min(maxTileH, map.height),
   };
 }
 
