@@ -1,7 +1,7 @@
 # Intelligent Tabletop — Project Status
 
-**Last updated:** 2026-08-16 (hover/target preview — Phase 2 UX)
-**Baseline commit:** `8e966cf`
+**Last updated:** 2026-08-16 (Phase A — wx/wy rename + TileQueryFn)
+**Baseline commit:** `8cfc623`
 **Build:** passing (TypeScript, Vitest, Playwright E2E)
 **Deployed at:** `/` (Replit preview)
 **GitHub:** `JerichoOmega/tabletop-platform` @ `main`

@@ -89,6 +89,9 @@ A `TileQueryFn` passed to the rules engine must be a pure, stable snapshot. It m
 
 **Why:** Conflating these leads to bugs where entity template lookups use instance keys or persistent records get overwritten by encounter-local updates.
 
+### Phase A complete (commit 8cfc623)
+`Combatant.x/y` → `wx/wy` everywhere. `TileInfo`, `TileQueryFn`, `mapDefToTileQuery` live in content.ts. `GameState.tileQuery` is the sole tile-lookup source for the rules engine. `isWall`/`isPillar`/`isBlocked` retained as MapDef-based helpers for content validation + adapter tests. `cloneState` shares `tileQuery` by reference (safe — immutable snapshot). 107 unit tests, 148 E2E, TSC clean. Phase B (viewport model) not yet started.
+
 ### Encounter authority boundary
 During an active encounter, `GameState` is the sole writer for combat-participant state. `WorldState.entityState` is frozen for those entities. `endEncounter()` is the only path that commits results back to `WorldState`. `WorldState` must not independently mutate combat-participant positions/HP while the encounter is active.
 
