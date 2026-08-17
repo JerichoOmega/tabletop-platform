@@ -12,7 +12,10 @@ description: Tracks which Phase 3 viewport/world-scale phases are complete and w
 | C | Renderer switches to virtualized tile grid (only visible tiles rendered) | ✅ COMPLETE |
 | D | Viewport follow/recenter: dead-zone logic, `shouldRecenter()`, `computeNewOrigin()` | ✅ COMPLETE |
 | E | Large-area support: 40×40 `grandHall`, dead zone active, all mechanics valid at scale | ✅ COMPLETE — commit `73e7f3d`, 217 unit tests, 154 E2E tests |
-| F | Chunk/Region Streaming: `ChunkStore`, streaming, 100-tile corridor | 🔒 DECISIONS LOCKED — ready to implement |
+| F-foundation | Chunk/Region Streaming foundation: `ChunkStore`, coordinate math, `ResidentGeometrySnapshot`, `snapshotToTileQuery()` | ✅ COMPLETE — 131 chunk tests |
+| F-async | Async streaming: `ensureResident()`, `ensureResidentAndPin()`, deduplication, pin/unpin lifecycle | ✅ COMPLETE — 33 async tests |
+| F-world | WorldState & WorldEntityRegistry: entity persistence, beginEncounter/endEncounter, buildEncounterFromEntities | ✅ COMPLETE — 92 world tests |
+| F-viewport | Viewport streaming integration: replace MapDef-backed renderer with ChunkStore-backed queries | NEXT — not yet started |
 | G | Persistent WorldState, entity survival across chunk eviction | PLANNED |
 | H | Exploration → encounter transition | PLANNED |
 
@@ -31,7 +34,7 @@ description: Tracks which Phase 3 viewport/world-scale phases are complete and w
 
 - `VIEWPORT_TILE_W = 12`, `VIEWPORT_TILE_H = 10` — in `IntelligentTabletop.tsx`
 - `DEAD_ZONE_MARGIN = 3` — in `viewport.ts`
-- `CHUNK_W = CHUNK_H = 16` — PLANNED for Phase F (only in spec so far)
+- `CHUNK_W = CHUNK_H = 16` — IMPLEMENTED in `src/engine/chunk.ts`
 
 ## Known latent issue (must fix before Phase F/H LLM integration)
 

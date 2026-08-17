@@ -1,0 +1,594 @@
+This is another excellent checkpoint. 932de54 closes the async portion of Phase F without contaminating the simulation layer.
+
+The Promise-identity detail is especially good. Making ensureResident() a normal function rather than async is the right choice when deduplicated in-flight Promise identity is itself part of the contract.
+
+Current Phase F status
+
+03af971
+Foundation
+   ↓
+932de54
+Async streaming
+   ↓
+NEXT: WorldState / WorldEntityRegistry
+   ↓
+THEN: Viewport streaming integration
+
+Current tests:
+
+* 348/348 unit
+* 154/154 E2E
+* TypeScript clean
+* Production build clean
+
+And the most important invariant remains intact:
+
+The asynchronous world system ends at the snapshot barrier. The rules engine remains synchronous.
+
+I would not jump directly to viewport integration yet. WorldState/entity ownership needs to exist first, otherwise viewport streaming would be built against temporary ownership assumptions that we’ll immediately have to change.
+
+Next prompt: WorldState / WorldEntityRegistry
+
+Give Replit this:
+
+Phase F — WorldState & WorldEntityRegistry Implementation
+
+Phase F foundation and asynchronous chunk streaming are complete.
+
+Current commits:
+
+* Phase E large-area validation: 73e7f3d
+* Phase F documentation resolution: 9edf390
+* Phase F foundation: 03af971
+* Phase F async streaming: 932de54
+
+Current baseline:
+
+* 348/348 unit tests passing
+* 154/154 E2E tests passing
+* TypeScript clean
+* Production build clean
+
+The authoritative specification is:
+
+artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md
+
+⸻
+
+Objective
+
+Implement the WorldState / WorldEntityRegistry portion of Phase F.
+
+This is the next isolated increment.
+
+Do not implement viewport streaming yet.
+
+Do not modify the renderer.
+
+Do not make GameState asynchronous.
+
+Do not introduce persistence yet.
+
+Do not redesign the existing rules engine.
+
+The purpose of this increment is to establish the authoritative persistent-world layer that the existing ChunkStore architecture was designed to plug into.
+
+⸻
+
+1. Read the architecture first
+
+Read completely:
+
+* artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md
+* src/engine/chunk.ts
+* src/engine/content.ts
+* src/engine/rules.ts
+* encounter construction
+* cloneState
+* proposal/revalidation/execution code
+* src/engine/viewport.ts
+* existing tests
+
+Also inspect every current use of:
+
+worldId
+
+and:
+
+Combatant
+
+so the implementation fits the existing three-layer identity model.
+
+⸻
+
+2. Establish WorldState ownership
+
+Introduce the minimum WorldState abstraction required by the specification.
+
+The authority model must be:
+
+WorldState
+├── ChunkStore
+└── WorldEntityRegistry
+
+WorldState owns the persistent world.
+
+It must not become another copy of GameState.
+
+It must not contain:
+
+* turn order
+* initiative
+* action-used state
+* proposal state
+* combat RNG
+* viewport state
+* React state
+
+Those remain outside WorldState.
+
+⸻
+
+3. Implement WorldEntityRegistry
+
+Establish the authoritative persistent entity collection.
+
+Each persistent world entity must have:
+
+worldId
+defId
+wx
+wy
+
+plus whatever additional persistent fields the specification requires.
+
+worldId must be globally stable within the world.
+
+It must not be derived from:
+
+* chunk coordinate
+* encounter-local Combatant.id
+* array index
+* viewport coordinate
+* render position
+
+⸻
+
+4. Three-layer identity invariant
+
+Preserve the existing identity model:
+
+Combatant.id
+    = encounter-local identity
+Combatant.defId
+    = content/template identity
+Combatant.worldId
+    = persistent-world identity
+
+A world entity entering combat must retain its worldId.
+
+Its encounter-local Combatant.id may be newly assigned.
+
+Example:
+
+WorldEntity
+worldId = "orc-17"
+defId   = "orc-warrior"
+wx      = 31
+wy      = 20
+
+may become:
+
+Combatant
+id      = "combatant-3"
+defId   = "orc-warrior"
+worldId = "orc-17"
+wx      = 31
+wy      = 20
+
+The two IDs must never be conflated.
+
+⸻
+
+5. Entity movement across chunks
+
+This is a critical test.
+
+An entity moving from:
+
+chunk (0,0)
+
+to:
+
+chunk (1,0)
+
+must retain the same:
+
+worldId
+
+Its chunk membership must always be derived from wx/wy.
+
+Do not store a second authoritative:
+
+entity.chunkX
+entity.chunkY
+
+unless the specification explicitly requires a cached value, and if such a cache exists it must be derived rather than authoritative.
+
+⸻
+
+6. ChunkStore entity separation
+
+Preserve the decision from the Phase F preflight:
+
+Chunks do not become the authoritative entity-position store.
+
+ChunkStore owns:
+
+* chunk geometry
+* residency
+* dirty state
+* chunk-local terrain/world mutations as specified
+
+WorldEntityRegistry owns:
+
+* persistent entity identity
+* persistent entity position
+* persistent entity state
+
+Do not duplicate entity positions inside chunk records.
+
+⸻
+
+7. World coordinate authority
+
+wx/wy remain authoritative.
+
+Chunk coordinates must be derived using the existing Phase F coordinate functions.
+
+Do not introduce another coordinate system for WorldState.
+
+The following must remain true:
+
+world position
+      ↓
+chunk coordinate
+      ↓
+local coordinate
+
+and never:
+
+chunk/local position
+      ↓
+authoritative world position
+
+unless explicitly reconstructing the same mathematically equivalent coordinate.
+
+⸻
+
+8. WorldEntity → Combatant conversion
+
+Implement the smallest safe adapter needed to construct encounter combatants from persistent world entities.
+
+Conceptually:
+
+WorldEntityRegistry
+       ↓
+select encounter participants
+       ↓
+buildEncounter()
+       ↓
+Combatant
+
+The resulting Combatant must carry:
+
+worldId
+defId
+wx
+wy
+
+with an encounter-local id.
+
+Do not let GameState become the persistent entity registry.
+
+⸻
+
+9. Encounter selection
+
+Establish how world entities become participants in an encounter.
+
+Follow the specification’s population rules.
+
+If the exact trigger/selection mechanism is not yet implemented, create the minimal deterministic selection function needed for testing.
+
+Do not implement the complete future encounter-trigger system.
+
+The important thing is that:
+
+WorldEntity
+      ↓
+selected participant
+      ↓
+Combatant
+
+is explicit and deterministic.
+
+⸻
+
+10. WorldState must not mutate during normal combat
+
+Preserve the authority boundary established during preflight:
+
+BEFORE ENCOUNTER
+WorldState = authoritative persistent world
+DURING ENCOUNTER
+GameState = authoritative tactical state
+AFTER ENCOUNTER
+endEncounter() = controlled commit boundary
+
+Do not introduce live dual-writing where:
+
+GameState.combatants
+
+and:
+
+WorldState.entities
+
+both continuously mutate the same entity.
+
+⸻
+
+11. Establish the endEncounter commit shape
+
+Implement the minimum commit adapter required by the specification.
+
+Conceptually:
+
+GameState
+    ↓
+encounter result
+    ↓
+endEncounter()
+    ↓
+WorldState
+
+The commit should reconcile:
+
+* surviving entity positions
+* dead entities
+* persistent entity state that the specification identifies
+* chunk/world mutations where applicable
+
+Do not implement persistence to disk/database yet.
+
+This is an in-memory authority boundary only.
+
+⸻
+
+12. Identity behavior on death
+
+Define and test what happens when a persistent world entity dies during an encounter.
+
+The encounter-local Combatant may disappear from GameState.
+
+The persistent WorldEntity must be handled according to the specification.
+
+Do not silently delete world entities merely because their Combatant was removed.
+
+If the specification defines a persistent alive/status field, use that rather than inventing a new identity model.
+
+⸻
+
+13. Identity behavior across encounter reload
+
+Test:
+
+WorldEntity
+     ↓
+Encounter A
+     ↓
+endEncounter()
+     ↓
+WorldEntity
+     ↓
+Encounter B
+
+The entity must retain the same worldId.
+
+A new encounter may assign a different Combatant.id.
+
+This is a core regression test.
+
+⸻
+
+14. WorldState and ChunkStore relationship
+
+WorldState must own the live ChunkStore reference.
+
+Do not make ChunkStore own WorldState.
+
+Avoid circular ownership such as:
+
+WorldState → ChunkStore → WorldState
+
+unless the specification explicitly requires it.
+
+Prefer:
+
+WorldState
+  ├── chunkStore
+  └── entities
+
+with services/functions receiving only the specific authority they require.
+
+⸻
+
+15. Preserve snapshot isolation
+
+WorldState/ChunkStore changes after a snapshot has been created must not alter the active GameState’s geometry.
+
+Verify:
+
+WorldState
+    ↓
+ChunkStore
+    ↓
+snapshot
+    ↓
+GameState.tileQuery
+
+Then mutate live WorldState/ChunkStore state.
+
+The existing GameState must continue seeing the exact same geometry.
+
+⸻
+
+16. RNG isolation
+
+WorldState operations must not consume gameplay RNG.
+
+Entity registration, movement, encounter selection, chunk ownership, and commit operations must be deterministic without advancing the combat RNG stream unless the specification explicitly requires a gameplay roll.
+
+Add a regression test.
+
+⸻
+
+17. Do not implement viewport streaming
+
+Do not modify:
+
+* ViewportState
+* updateViewportForActor
+* getVisibleTiles
+* renderer tile generation
+* viewport React state
+* camera behavior
+
+Viewport streaming will be the next separate increment.
+
+⸻
+
+18. Do not implement persistence
+
+Do not implement:
+
+* IndexedDB
+* localStorage persistence
+* server persistence
+* save files
+* database schema
+
+The WorldState is in-memory for this increment.
+
+⸻
+
+19. Testing requirements
+
+Add focused tests for:
+
+Identity
+
+* stable worldId
+* distinct encounter-local id
+* same defId
+* world entity → Combatant mapping
+
+Coordinates
+
+* authoritative wx/wy
+* chunk derived from world position
+* negative-coordinate entity placement
+
+Chunk crossing
+
+Entity moves across a chunk boundary without changing worldId.
+
+Encounter lifecycle
+
+WorldEntity
+→ GameState
+→ endEncounter
+→ WorldEntity
+
+preserves identity.
+
+Death
+
+Persistent entity death follows the documented rule.
+
+Snapshot isolation
+
+Live WorldState mutation does not affect existing GameState geometry.
+
+RNG
+
+WorldState operations do not alter gameplay RNG.
+
+Authority
+
+No continuous dual-write between GameState and WorldState.
+
+⸻
+
+20. Existing regression suite
+
+Run:
+
+* TypeScript
+* all Vitest tests
+* all Playwright E2E tests
+* production build
+
+Current baseline:
+
+348 unit tests
+154 E2E tests
+
+All existing tests must remain green.
+
+Do not weaken or skip tests.
+
+⸻
+
+21. Scope boundary
+
+Stop after the WorldState / WorldEntityRegistry architecture is implemented and tested.
+
+Do not begin:
+
+* viewport streaming
+* viewport-driven chunk loading
+* renderer loading states
+* prefetch
+* persistence
+* infinite-world generation
+* procedural campaign systems
+
+Those remain separate work.
+
+⸻
+
+22. Final report
+
+Report:
+
+* commit hash
+* files created/modified
+* WorldState structure
+* WorldEntityRegistry structure
+* identity model
+* entity movement/chunk behavior
+* encounter population behavior
+* endEncounter() behavior
+* death behavior
+* snapshot isolation verification
+* RNG isolation verification
+* new tests
+* total unit tests
+* total E2E tests
+* TypeScript result
+* production build result
+* remaining Phase F work
+* any deviations from WORLD_SCALE_VIEWPORT.md
+
+Stop after this increment. Do not implement viewport streaming without explicit authorization.
