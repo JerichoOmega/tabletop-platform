@@ -1,0 +1,371 @@
+PHASE 3 — MILESTONE M1
+EXPLORATION MODE + WORLD-BACKED SESSION
+
+Implement ONLY Milestone M1 from:
+
+docs/PHASE3_IMPLEMENTATION_PLAN.md
+
+The repository is authoritative.
+
+The current repository already contains the Phase 3 world/viewport foundation through the viewport-streaming work. Do NOT repeat or redesign that architecture.
+
+Current verified baseline:
+- 493 unit tests
+- 167 E2E tests
+- Phase 3 A–F viewport work already implemented
+- Commit containing the Phase 3 implementation plan: 8298c11
+
+==================================================
+GOAL
+==================================================
+
+Make the existing world/viewport/streaming infrastructure LIVE during an actual tabletop exploration session.
+
+The goal is NOT to build a new world engine.
+
+The goal is:
+
+Persistent World
+      ↓
+Exploration Session
+      ↓
+Viewport
+      ↓
+Visible World
+      ↓
+Tabletop
+
+A player should be able to explore a world larger than the fixed tabletop viewport.
+
+The tabletop remains fixed.
+
+The world moves through it.
+
+==================================================
+1. INSPECT BEFORE MODIFYING
+==================================================
+
+Before writing code, inspect:
+
+- docs/PHASE3_IMPLEMENTATION_PLAN.md
+- docs/ROADMAP.md
+- artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md
+- artifacts/tabletop/docs/PROJECT_STATUS.md
+
+Then inspect the actual implementations for:
+
+- WorldState
+- WorldCoord
+- viewport state
+- viewport coordinate conversion
+- chunk calculation
+- viewport streaming
+- visible-region calculation
+- entity/world position handling
+- current encounter/session state
+- current board rendering
+- current movement handling
+- existing exploration-related code, if any
+- existing parser/content systems
+- existing tests
+
+Do not invent replacements for systems that already exist.
+
+==================================================
+2. DO NOT REDESIGN THE STREAMING ENGINE
+==================================================
+
+The existing viewport/streaming architecture has already been implemented.
+
+Reuse it.
+
+Do NOT:
+
+- replace WorldCoord
+- replace WorldState
+- rewrite chunk calculation
+- rewrite viewport streaming
+- create a second viewport system
+- create a second coordinate system
+- move viewport state into GameState
+- redesign the existing renderer unnecessarily
+- rewrite combat to accommodate exploration
+
+If an existing abstraction is insufficient, identify the smallest required change and explain why before making it.
+
+==================================================
+3. EXPLORATION MODE
+==================================================
+
+Introduce the minimum exploration-session layer required to make the world representation observable and playable.
+
+Exploration should represent:
+
+- the party's persistent world position
+- the current viewport
+- visible world content
+- movement through the world
+- exploration state
+- transition opportunities into encounters
+
+Do NOT build a full RPG exploration system.
+
+No:
+
+- quests
+- inventory overhaul
+- faction systems
+- procedural world generation
+- dialogue system
+- crafting
+- survival mechanics
+- campaign progression
+
+Those belong to later phases.
+
+==================================================
+4. WORLD-BACKED SESSION
+==================================================
+
+The exploration session must use the existing world representation rather than a fixed encounter map.
+
+The player's location must be represented in world coordinates.
+
+Moving the player should cause the viewport to follow the player or otherwise update according to the existing viewport contract.
+
+The important distinction is:
+
+GAMEPLAY POSITION
+=
+WORLD COORDINATE
+
+DISPLAY POSITION
+=
+VIEWPORT/TABLETOP COORDINATE
+
+Never substitute one for the other.
+
+==================================================
+5. FIXED TABLETOP
+==================================================
+
+The tabletop itself must remain a fixed-size presentation surface.
+
+When the player moves:
+
+- the tabletop does not expand
+- the board does not become larger
+- the viewport moves through the world
+- tiles enter and leave the visible region
+- the player's world coordinate persists
+
+This must work for:
+
+- long corridors
+- large rooms
+- wide areas
+- multi-region spaces
+
+Do not create corridor-specific logic.
+
+==================================================
+6. MINIMUM EXPLORATION INTERACTION
+==================================================
+
+Implement only enough interaction to prove the architecture works.
+
+At minimum:
+
+- player can see their current location
+- player can move through world space
+- viewport updates
+- visible world changes
+- world coordinates remain correct
+- the same entity remains the same entity while moving
+- existing tabletop interaction conventions remain intact
+
+If the existing architecture already provides movement primitives, reuse them.
+
+Do not create a parallel movement system.
+
+==================================================
+7. SESSION STATE BOUNDARY
+==================================================
+
+Be explicit about state ownership.
+
+AUTHORITATIVE:
+
+- world coordinates
+- entity identity
+- world entity state
+- exploration state required for gameplay
+
+PRESENTATIONAL:
+
+- viewport position
+- visible chunks
+- camera offsets
+- hover state
+- animation state
+- rendering-only information
+
+Viewport movement must never accidentally mutate authoritative gameplay state.
+
+==================================================
+8. EXISTING COMBAT MUST SURVIVE
+==================================================
+
+Do not rewrite the existing combat system.
+
+Existing encounters must continue to work exactly as before.
+
+Exploration should eventually transition INTO combat rather than replacing combat.
+
+For this milestone, only establish the minimal contract necessary for a future:
+
+Exploration
+    ↓
+Encounter Trigger
+    ↓
+Combat Session
+
+Do not implement the complete transition unless the existing architecture already makes it trivial and it is explicitly part of M1.
+
+M5 handles the complete exploration → encounter → combat transition.
+
+==================================================
+9. TESTING
+==================================================
+
+Add tests only for M1 behavior.
+
+Unit tests should verify:
+
+- exploration session initialization
+- world position initialization
+- movement updates world position
+- viewport follows/updates correctly
+- world position and viewport position remain distinct
+- visible-region calculation remains correct
+
+E2E tests should verify at minimum:
+
+1. Exploration session loads.
+2. Player is visible.
+3. Player can move.
+4. World/viewport changes as the player moves.
+5. Tabletop dimensions remain fixed.
+6. Player identity persists after movement.
+7. Existing combat remains functional.
+8. Existing tabletop regression tests remain green.
+
+Do NOT weaken or remove existing tests.
+
+==================================================
+10. PERFORMANCE
+==================================================
+
+Use the existing viewport streaming implementation.
+
+Do not render the entire world.
+
+The visible region plus the existing prefetch strategy should remain the rendering boundary.
+
+Avoid introducing:
+
+- unnecessary global state
+- per-frame React state updates
+- full-world rerenders
+- duplicated coordinate calculations
+
+Measure before optimizing.
+
+==================================================
+11. DOCUMENTATION
+==================================================
+
+After implementation:
+
+Update the appropriate documentation.
+
+Specifically:
+
+- docs/PHASE3_IMPLEMENTATION_PLAN.md
+- artifacts/tabletop/docs/PROJECT_STATUS.md
+
+Mark M1 complete ONLY if its acceptance criteria are actually satisfied.
+
+Do not mark M2–M6 complete.
+
+Do not rewrite unrelated roadmap history.
+
+==================================================
+12. ACCEPTANCE CRITERIA
+==================================================
+
+M1 is complete only when:
+
+[ ] Existing world/viewport architecture is reused.
+[ ] Exploration session exists.
+[ ] Exploration is backed by persistent world coordinates.
+[ ] Player movement operates in world space.
+[ ] Viewport displays the appropriate visible world region.
+[ ] Tabletop remains fixed-size.
+[ ] World content can enter/leave the viewport.
+[ ] Entity identity remains stable while moving.
+[ ] No viewport state is placed into authoritative gameplay state.
+[ ] Existing combat still works.
+[ ] Existing tests remain passing.
+[ ] New M1 tests pass.
+[ ] Typecheck passes.
+[ ] Production build passes.
+[ ] E2E suite passes.
+[ ] Documentation reflects the actual implementation.
+
+==================================================
+13. STRICT SCOPE
+==================================================
+
+Implement M1 ONLY.
+
+Do NOT implement:
+
+- M2 chunk eviction/entity survival
+- M3 parser migration
+- M4 world bounds
+- M5 exploration/combat transitions
+- M6 performance validation
+- Ages of Empire
+- tactical RPG rules
+- AI DM
+- 3v1 DM mode
+- social platform
+- matchmaking
+- creator tools
+- new assets
+
+If implementation reveals a dependency on a later milestone, stop and report it rather than silently implementing that milestone.
+
+==================================================
+14. FINAL REPORT
+==================================================
+
+Report:
+
+1. Files changed.
+2. Existing systems reused.
+3. New systems introduced.
+4. Exact architectural changes.
+5. Tests added.
+6. Full test results.
+7. Typecheck result.
+8. Build result.
+9. E2E result.
+10. Any limitations or deferred work.
+11. Documentation updated.
+12. Commit SHA.
+
+Do not claim completion based solely on compilation.
+
+M1 is about proving that the already-built world/viewport architecture is actually connected to a playable exploration session.

@@ -3,4 +3,5 @@
 - [Test setup](test-setup.md) — vitest 4.x, vitest.config.ts with @/ alias; 131 unit tests, 148 E2E tests (Playwright); build needs PORT+BASE_PATH env vars
 - [Accessibility implementation](accessibility-impl.md) — ARIA roles, keyboard nav, focus ring, sr-only, reduced-motion; board token aria-label collision trap
 - [Hardening decisions](hardening-decisions.md) — Rng interface, RNG snapshot/restore, ally check, content validation, Phase 3 preflight resolutions (TileQueryFn invariant, MapDef wall model, 3-layer identity, encounter authority boundary)
-- [Viewport architecture](viewport-architecture.md) — Phase F-viewport complete; viewportStreaming.ts pure helpers; worldStateRef+chunkVersion in component; 493 unit / 167 E2E; Phase G next
+- [Viewport architecture](viewport-architecture.md) — Phase F-viewport complete; viewportStreaming.ts pure helpers; worldStateRef+chunkVersion in component
+- [Exploration mode (M1)](exploration-mode.md) — sessionMode encounter/exploration; live chunk reads allowed ONLY in exploration/presentation layer; fixed world seed; 513 unit / 176 E2E
