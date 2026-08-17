@@ -15,10 +15,16 @@
 //   { type: "error",    message }
 //
 // Step is one of:
-//   { kind: "move",    dest: {x,y}, description }
-//   { kind: "attack",  targetId,    description }
+//   { kind: "move",    dest: {wx,wy}, description }
+//   { kind: "attack",  targetId,      description }
 //   { kind: "ability", abilityId, targetId, description }
 //   { kind: "endTurn", description }
+//
+// Phase A changes:
+//   - dest shapes use {wx, wy} world coordinates (was {x, y}).
+//   - reachableTiles/lineOfSight now receive state.tileQuery, not state.map.
+//   - Tile internal type updated to {wx, wy, dist}.
+//   - Pillar coords in MapDef are still {x, y}; adapted at call sites.
 //
 // Dependency: content.ts (ABILITY_DEFS) + rules.ts (validation + pathfinding).
 // ---------------------------------------------------------------------------
@@ -52,8 +58,8 @@ export interface CheckItem {
 
 /** A single executable step in a proposed action sequence. */
 export type Step =
-  | { kind: "move";    dest: { x: number; y: number }; description: string }
-  | { kind: "attack";  targetId: string;                description: string }
+  | { kind: "move";    dest: { wx: number; wy: number }; description: string }
+  | { kind: "attack";  targetId: string;                  description: string }
   | { kind: "ability"; abilityId: string; targetId: string; description: string }
   | { kind: "endTurn"; description: string };
 
@@ -85,7 +91,7 @@ export interface ProposalExecutionResult {
 // ---------------------------------------------------------------------------
 // INTERNAL TILE TYPES — used only within this module.
 // ---------------------------------------------------------------------------
-type Tile = { x: number; y: number; dist: number };
+type Tile        = { wx: number; wy: number; dist: number };
 type CloserTile  = Tile & { dToTarget: number };
 type RetreatTile = Tile & { safety: number };
 
@@ -103,12 +109,12 @@ function buildIntentContext(state: GameState, actorId: string) {
       name: e.name,
       distance: chebyshev(actor, e),
       inRange: chebyshev(actor, e) <= actor.weapon.range,
-      visible: !lineOfSight(state.map, actor, e).blocked,
+      visible: !lineOfSight(state.tileQuery, actor, e).blocked,
     }));
   return {
     actorId,
     actorName: actor.name,
-    position: { x: actor.x, y: actor.y },
+    position: { wx: actor.wx, wy: actor.wy },
     moveRemaining: actor.moveRemaining,
     weapon: actor.weapon,
     actionAvailable: !actor.actionUsed,
@@ -176,7 +182,7 @@ export function exampleTargetPhrase(state: GameState): string {
 function findTargetByText(
   text: string,
   state: GameState,
-  actorPos: { x: number; y: number },
+  actorPos: { wx: number; wy: number },
 ): Combatant | null {
   const enemies = Object.values(state.combatants).filter((c) => c.type === "enemy" && c.alive);
   if (!enemies.length) return null;
@@ -259,34 +265,35 @@ function findAbilityTargetByText(
 
 // ---------------------------------------------------------------------------
 // DESTINATION RESOLVERS
-// Each finds a reachable tile satisfying an intent. Reads terrain from
-// state.map (never a module-level map reference).
+// Each finds a reachable tile satisfying an intent. Uses state.tileQuery and
+// wx/wy world coordinates throughout (never accesses state.map for tile queries).
+// Pillar positions in MapDef are {x, y}; adapted to {wx, wy} at call sites.
 // ---------------------------------------------------------------------------
 function findCoverTile(state: GameState, actor: Combatant, target: Combatant | null): Tile | null {
   const occ   = occupiedSet(state.combatants, actor.id);
-  const reach = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
+  const reach = reachableTiles(state.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
   let best: Tile | null = null;
   for (const tile of reach) {
-    if (!state.map.pillars.some((p) => chebyshev(p, tile) === 1)) continue;
-    if (target && lineOfSight(state.map, tile, target).blocked) continue;
+    if (!state.map.pillars.some((p) => chebyshev({ wx: p.x, wy: p.y }, tile) === 1)) continue;
+    if (target && lineOfSight(state.tileQuery, tile, target).blocked) continue;
     if (!best || tile.dist < best.dist) best = tile;
   }
   return best;
 }
 function findAttackPositionTile(state: GameState, actor: Combatant, target: Combatant): Tile | null {
   const occ   = occupiedSet(state.combatants, actor.id);
-  const reach = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
+  const reach = reachableTiles(state.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
   let best: Tile | null = null;
   for (const tile of reach) {
     if (chebyshev(tile, target) > actor.weapon.range) continue;
-    if (lineOfSight(state.map, tile, target).blocked) continue;
+    if (lineOfSight(state.tileQuery, tile, target).blocked) continue;
     if (!best || tile.dist < best.dist) best = tile;
   }
   return best;
 }
 function findAdjacentTile(state: GameState, actor: Combatant, target: Combatant): Tile | null {
   const occ   = occupiedSet(state.combatants, actor.id);
-  const reach = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
+  const reach = reachableTiles(state.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
   let best: Tile | null = null;
   for (const tile of reach) {
     if (chebyshev(tile, target) !== 1) continue;
@@ -296,7 +303,7 @@ function findAdjacentTile(state: GameState, actor: Combatant, target: Combatant)
 }
 function findCloserTile(state: GameState, actor: Combatant, target: Combatant): CloserTile | null {
   const occ     = occupiedSet(state.combatants, actor.id);
-  const reach   = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
+  const reach   = reachableTiles(state.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
   const curDist = chebyshev(actor, target);
   let best: CloserTile | null = null;
   for (const tile of reach) {
@@ -309,10 +316,10 @@ function findCloserTile(state: GameState, actor: Combatant, target: Combatant): 
 }
 function findRetreatTile(state: GameState, actor: Combatant): RetreatTile | null {
   const occ     = occupiedSet(state.combatants, actor.id);
-  const reach   = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
+  const reach   = reachableTiles(state.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
   const enemies = Object.values(state.combatants).filter((c) => c.type === "enemy" && c.alive);
   if (!enemies.length) return null;
-  const minDistToEnemies = (tile: { x: number; y: number }) =>
+  const minDistToEnemies = (tile: { wx: number; wy: number }) =>
     Math.min(...enemies.map((e) => chebyshev(tile, e)));
   const curSafety = minDistToEnemies(actor);
   let best: RetreatTile | null = null;
@@ -344,7 +351,7 @@ function explainAttack(
   const dist   = chebyshev(actor, target);
   const inRange = dist <= actor.weapon.range;
   items.push({ ok: inRange, label: inRange ? `Target is within weapon range (${dist}/${actor.weapon.range})` : `Target is out of weapon range (${dist}/${actor.weapon.range})` });
-  const los = lineOfSight(state.map, actor, target);
+  const los = lineOfSight(state.tileQuery, actor, target);
   items.push({ ok: !los.blocked, label: !los.blocked ? "Line of sight is clear" : "Line of sight is blocked by a wall" });
   if (!los.blocked && los.cover) items.push({ ok: true, label: "Target has pillar cover (+2 effective AC)" });
   return { overall: items.every((i) => i.ok), items };
@@ -381,7 +388,7 @@ function explainAbility(
   const inRange = dist <= ability.range;
   items.push({ ok: inRange, label: inRange ? `Target is within range (${dist}/${ability.range})` : `Target is out of range (${dist}/${ability.range})` });
   if (ability.requiresLineOfSight) {
-    const los = lineOfSight(state.map, actor, target);
+    const los = lineOfSight(state.tileQuery, actor, target);
     items.push({ ok: !los.blocked, label: !los.blocked ? "Line of sight is clear" : "Line of sight is blocked by a wall" });
   }
   return { overall: items.every((i) => i.ok), items };
@@ -475,8 +482,10 @@ export function parseIntent(text: string, state: GameState, actorId: string): Pr
     if (/\b(through|into|onto)\b.*\bpillar\b/.test(t)) {
       if (!state.map.pillars.length)
         return { type: "error", message: `There is no pillar on ${state.map.name}.` };
-      const nearestPillar = [...state.map.pillars].sort((a, b) => chebyshev(actor, a) - chebyshev(actor, b))[0];
-      steps.push({ kind: "move", dest: { x: nearestPillar.x, y: nearestPillar.y }, description: "Move through the pillar" });
+      const nearestPillar = [...state.map.pillars].sort(
+        (a, b) => chebyshev({ wx: a.x, wy: a.y }, actor) - chebyshev({ wx: b.x, wy: b.y }, actor)
+      )[0];
+      steps.push({ kind: "move", dest: { wx: nearestPillar.x, wy: nearestPillar.y }, description: "Move through the pillar" });
     } else if (c.wantsCover) {
       tile = findCoverTile(state, actor, target);
       moveDescription = "Move to Pillar Cover";
@@ -500,8 +509,8 @@ export function parseIntent(text: string, state: GameState, actorId: string): Pr
     } else {
       return { type: "error", message: 'Move where? Try mentioning a landmark, e.g. "move behind the pillar".' };
     }
-    if (tile && !(tile.x === actor.x && tile.y === actor.y)) {
-      steps.push({ kind: "move", dest: { x: tile.x, y: tile.y }, description: moveDescription ?? "Move" });
+    if (tile && !(tile.wx === actor.wx && tile.wy === actor.wy)) {
+      steps.push({ kind: "move", dest: { wx: tile.wx, wy: tile.wy }, description: moveDescription ?? "Move" });
     }
   }
 
@@ -538,8 +547,8 @@ export function revalidateProposal(
       checks.push({ step, valid: v.valid, reason: v.reason, code: v.code });
       if (v.valid) {
         const a = sim.combatants[actorId];
-        a.x = step.dest.x;
-        a.y = step.dest.y;
+        a.wx = step.dest.wx;
+        a.wy = step.dest.wy;
         a.moveRemaining -= v.cost ?? 0;
       }
     } else if (step.kind === "attack") {

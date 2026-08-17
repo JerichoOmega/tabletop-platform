@@ -357,7 +357,7 @@ export default function IntelligentTabletop() {
   const reachable = useMemo(() => {
     if (!isPlayerTurn || pendingAction !== "move" || !selected || selected.id !== currentActorId) return [];
     const occ = occupiedSet(gameState.combatants, selected.id);
-    return reachableTiles(gameState.map, { x: selected.x, y: selected.y }, selected.moveRemaining, occ);
+    return reachableTiles(gameState.tileQuery, { wx: selected.wx, wy: selected.wy }, selected.moveRemaining, occ);
   }, [gameState, pendingAction, selected, currentActorId, isPlayerTurn]);
 
   const attackPreview = useMemo(() => {
@@ -403,7 +403,7 @@ export default function IntelligentTabletop() {
 
   function handleTileClick(x: number, y: number) {
     if (mode !== "traditional" || pendingAction !== "move" || !selected) return;
-    const res = executeMove(gameState, selected.id, { x, y });
+    const res = executeMove(gameState, selected.id, { wx: x, wy: y });
     if (res.ok) {
       setPendingAction(null);
       afterPlayerAction(res.state);
@@ -640,10 +640,10 @@ export default function IntelligentTabletop() {
   // ---------------------------------------------------------------------------
   // GRID RENDERING HELPERS
   // ---------------------------------------------------------------------------
-  const reachSet    = useMemo(() => new Set(reachable.map((t) => key(t.x, t.y))), [reachable]);
+  const reachSet    = useMemo(() => new Set(reachable.map((t) => key(t.wx, t.wy))), [reachable]);
   const tokensByTile = useMemo(() => {
     const m: Record<string, typeof gameState.combatants[string]> = {};
-    Object.values(gameState.combatants).forEach((c) => { if (c.alive) m[key(c.x, c.y)] = c; });
+    Object.values(gameState.combatants).forEach((c) => { if (c.alive) m[key(c.wx, c.wy)] = c; });
     return m;
   }, [gameState]);
 
@@ -1224,7 +1224,7 @@ export default function IntelligentTabletop() {
                   {c.valid ? <Check size={14} color="#4c6b3f" style={{ marginTop: 1 }} /> : <X size={14} color="#8b2e2e" style={{ marginTop: 1 }} />}
                   <span>
                     {c.step.kind === "move"
-                      ? c.step.description || `Move to (${c.step.dest.x}, ${c.step.dest.y})`
+                      ? c.step.description || `Move to (${c.step.dest.wx}, ${c.step.dest.wy})`
                       : c.step.kind === "attack"
                       ? `${c.step.description || `Attack ${gameState.combatants[c.step.targetId].name}`}${c.cover ? " (target has cover)" : ""}`
                       : c.step.kind === "ability"

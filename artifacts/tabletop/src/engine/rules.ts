@@ -6,11 +6,18 @@
 // Turn management and enemy AI use the same validate/execute functions as
 // the player — there is no separate fast path.
 //
-// Dependency: content.ts (ABILITY_DEFS, EFFECT_HANDLERS, rollDie).
+// Phase A changes:
+//   - Combatant positions now use wx/wy (world coordinates) throughout.
+//   - TileQueryFn replaces direct MapDef lookups in path/LOS functions.
+//   - GameState.tileQuery is the sole tile-passability source for rules.
+//   - isWall/isPillar/isBlocked are retained as MapDef-based helpers for
+//     the contentValidation module and direct unit tests (map adapter tests).
+//
+// Dependency: content.ts (ABILITY_DEFS, EFFECT_HANDLERS, rollDie, TileQueryFn).
 // ---------------------------------------------------------------------------
 
 import { ABILITY_DEFS, EFFECT_HANDLERS, rollDie } from "./content";
-import type { Combatant, GameState, MapDef, AbilityDef, EffectResult, EffectHandler } from "./content";
+import type { Combatant, GameState, MapDef, TileQueryFn, AbilityDef, EffectResult, EffectHandler } from "./content";
 
 // ---------------------------------------------------------------------------
 // VALIDATION CODE — stable machine-readable codes for all validate* results.
@@ -81,8 +88,15 @@ export interface ExecutionResult {
 }
 
 // ---------------------------------------------------------------------------
-// MAP UTILITIES — operate on the `map` field of game state. The functions
-// accept any map object, so new maps need no changes here.
+// MAP UTILITIES — MapDef-based helpers.
+//
+// isWall / isPillar / isBlocked operate directly on MapDef and are kept for:
+//   • contentValidation.ts (spawn-coord checks during content validation)
+//   • unit tests that verify the map adapter and MapDef interpretation
+//   • mapDefToTileQuery() in content.ts (these are its underlying logic)
+//
+// Rules engine functions (validateMove, lineOfSight, reachableTiles, etc.)
+// do NOT call these directly — they use state.tileQuery instead.
 // ---------------------------------------------------------------------------
 export function isWall(map: MapDef, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return true;
@@ -96,91 +110,122 @@ export function isPillar(map: MapDef, x: number, y: number): boolean {
 export function isBlocked(map: MapDef, x: number, y: number): boolean {
   return isWall(map, x, y) || isPillar(map, x, y);
 }
-export function key(x: number, y: number): string {
-  return x + "," + y;
+
+/**
+ * Stable string key for a world tile coordinate.
+ * Used as keys in Sets and Maps. Handles negative coordinates correctly.
+ */
+export function key(wx: number, wy: number): string {
+  return wx + "," + wy;
 }
 
 // ---------------------------------------------------------------------------
 // PATHFINDING / LINE OF SIGHT
+// All functions below take TileQueryFn and use wx/wy world coordinates.
 // ---------------------------------------------------------------------------
+
+/**
+ * BFS reachable-tile search up to maxRange movement steps.
+ * Uses tileQuery for passability — never reads MapDef directly.
+ */
 export function reachableTiles(
-  map: MapDef,
-  start: { x: number; y: number },
+  tileQuery: TileQueryFn,
+  start: { wx: number; wy: number },
   maxRange: number,
   occupiedSet: Set<string>,
-): { x: number; y: number; dist: number }[] {
+): { wx: number; wy: number; dist: number }[] {
   const dist = new Map<string, number>();
-  dist.set(key(start.x, start.y), 0);
-  const queue: { x: number; y: number }[] = [start];
-  const result: { x: number; y: number; dist: number }[] = [];
+  dist.set(key(start.wx, start.wy), 0);
+  const queue: { wx: number; wy: number }[] = [start];
+  const result: { wx: number; wy: number; dist: number }[] = [];
   while (queue.length) {
     const cur = queue.shift()!;
-    const d = dist.get(key(cur.x, cur.y))!;
-    if (d > 0) result.push({ x: cur.x, y: cur.y, dist: d });
+    const d = dist.get(key(cur.wx, cur.wy))!;
+    if (d > 0) result.push({ wx: cur.wx, wy: cur.wy, dist: d });
     if (d >= maxRange) continue;
     for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]] as [number, number][]) {
-      const nx = cur.x + dx, ny = cur.y + dy;
-      if (isBlocked(map, nx, ny)) continue;
+      const nx = cur.wx + dx, ny = cur.wy + dy;
+      if (!tileQuery(nx, ny).passable) continue;
       if (occupiedSet.has(key(nx, ny))) continue;
       const nk = key(nx, ny);
       if (!dist.has(nk)) {
         dist.set(nk, d + 1);
-        queue.push({ x: nx, y: ny });
+        queue.push({ wx: nx, wy: ny });
       }
     }
   }
   return result;
 }
 
+/**
+ * Bresenham line rasterization. Returns all tiles on the line from
+ * (wx0, wy0) to (wx1, wy1) inclusive.
+ */
 export function lineTiles(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-): { x: number; y: number }[] {
-  const pts: { x: number; y: number }[] = [];
-  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-  let err = dx - dy, x = x0, y = y0;
-  while (!(x === x1 && y === y1)) {
-    pts.push({ x, y });
+  wx0: number,
+  wy0: number,
+  wx1: number,
+  wy1: number,
+): { wx: number; wy: number }[] {
+  const pts: { wx: number; wy: number }[] = [];
+  const dx = Math.abs(wx1 - wx0), dy = Math.abs(wy1 - wy0);
+  const sx = wx0 < wx1 ? 1 : -1, sy = wy0 < wy1 ? 1 : -1;
+  let err = dx - dy, wx = wx0, wy = wy0;
+  while (!(wx === wx1 && wy === wy1)) {
+    pts.push({ wx, wy });
     const e2 = 2 * err;
-    if (e2 > -dy) { err -= dy; x += sx; }
-    if (e2 < dx)  { err += dx; y += sy; }
+    if (e2 > -dy) { err -= dy; wx += sx; }
+    if (e2 < dx)  { err += dx; wy += sy; }
   }
-  pts.push({ x: x1, y: y1 });
+  pts.push({ wx: wx1, wy: wy1 });
   return pts;
 }
 
+/**
+ * Checks whether there is clear line of sight between two world positions.
+ * Uses TileInfo.blocksLOS for wall detection and TileInfo.providesCover for
+ * pillar-cover detection — these are distinct flags and must not be conflated.
+ *
+ * Returns:
+ *   blocked: true  → a wall tile interrupted the ray (attack invalid)
+ *   cover:   true  → a pillar tile is on the ray (LOS passes through; +2 AC)
+ */
 export function lineOfSight(
-  map: MapDef,
-  a: { x: number; y: number },
-  b: { x: number; y: number },
+  tileQuery: TileQueryFn,
+  a: { wx: number; wy: number },
+  b: { wx: number; wy: number },
 ): { blocked: boolean; cover: boolean } {
-  const tiles = lineTiles(a.x, a.y, b.x, b.y).slice(1, -1);
+  const tiles = lineTiles(a.wx, a.wy, b.wx, b.wy).slice(1, -1);
   let blocked = false, cover = false;
   for (const t of tiles) {
-    if (isWall(map, t.x, t.y))   blocked = true;
-    if (isPillar(map, t.x, t.y)) cover   = true;
+    const info = tileQuery(t.wx, t.wy);
+    if (info.blocksLOS)     blocked = true;
+    if (info.providesCover) cover   = true;
   }
   return { blocked, cover };
 }
 
+/**
+ * Chebyshev distance between two world positions.
+ * max(|Δwx|, |Δwy|) — the correct metric for 8-directional grid movement.
+ */
 export function chebyshev(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
+  a: { wx: number; wy: number },
+  b: { wx: number; wy: number },
 ): number {
-  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  return Math.max(Math.abs(a.wx - b.wx), Math.abs(a.wy - b.wy));
 }
 
 // ---------------------------------------------------------------------------
 // VALIDATION — pure read-only. ValidationResult: { valid, code, reason, …metadata }
 // `code` is stable/machine-readable; `reason` is human-readable.
 // ---------------------------------------------------------------------------
+
+/** Returns a Set of world tile keys occupied by living combatants other than excludeId. */
 export function occupiedSet(combatants: Record<string, Combatant>, excludeId: string): Set<string> {
   const s = new Set<string>();
   for (const c of Object.values(combatants)) {
-    if (c.alive && c.id !== excludeId) s.add(key(c.x, c.y));
+    if (c.alive && c.id !== excludeId) s.add(key(c.wx, c.wy));
   }
   return s;
 }
@@ -188,20 +233,20 @@ export function occupiedSet(combatants: Record<string, Combatant>, excludeId: st
 export function validateMove(
   state: GameState,
   actorId: string,
-  dest: { x: number; y: number },
+  dest: { wx: number; wy: number },
 ): ValidationResult {
   const actor = state.combatants[actorId];
   if (!actor) return { valid: false, code: "ACTOR_UNKNOWN", reason: "Unknown actor." };
   if (!actor.alive) return { valid: false, code: "ACTOR_DEAD", reason: `${actor.name} is down.` };
   if (state.turnOrder[state.turnIndex] !== actorId)
     return { valid: false, code: "NOT_YOUR_TURN", reason: `It is not ${actor.name}'s turn.` };
-  if (isBlocked(state.map, dest.x, dest.y))
+  if (!state.tileQuery(dest.wx, dest.wy).passable)
     return { valid: false, code: "BLOCKED_TILE", reason: "That tile is blocked by a wall or pillar." };
   const occ = occupiedSet(state.combatants, actorId);
-  if (occ.has(key(dest.x, dest.y)))
+  if (occ.has(key(dest.wx, dest.wy)))
     return { valid: false, code: "TILE_OCCUPIED", reason: "That tile is occupied." };
-  const reachable = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
-  const found = reachable.find((t) => t.x === dest.x && t.y === dest.y);
+  const reachable = reachableTiles(state.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
+  const found = reachable.find((t) => t.wx === dest.wx && t.wy === dest.wy);
   if (!found)
     return { valid: false, code: "OUT_OF_MOVEMENT_RANGE", reason: `Out of movement range (${actor.moveRemaining} left).` };
   return { valid: true, code: "OK", cost: found.dist };
@@ -228,7 +273,7 @@ export function validateAttack(
   const dist = chebyshev(actor, target);
   if (dist > actor.weapon.range)
     return { valid: false, code: "OUT_OF_RANGE", reason: `${target.name} is out of range (${dist} > ${actor.weapon.range}).` };
-  const los = lineOfSight(state.map, actor, target);
+  const los = lineOfSight(state.tileQuery, actor, target);
   if (los.blocked) return { valid: false, code: "BLOCKED_LINE_OF_SIGHT", reason: "No line of sight — blocked by a wall." };
   return { valid: true, code: "OK", cover: los.cover, distance: dist };
 }
@@ -270,7 +315,7 @@ export function validateAbility(
   if (dist > ability.range)
     return { valid: false, code: "OUT_OF_RANGE", reason: `${target.name} is out of range for ${ability.name} (${dist} > ${ability.range}).` };
   if (ability.requiresLineOfSight) {
-    const los = lineOfSight(state.map, actor, target);
+    const los = lineOfSight(state.tileQuery, actor, target);
     if (los.blocked) return { valid: false, code: "BLOCKED_LINE_OF_SIGHT", reason: "No line of sight — blocked by a wall." };
     return { valid: true, code: "OK", distance: dist, cover: los.cover };
   }
@@ -291,8 +336,11 @@ export function validateAbility(
  *  - `initiativeRolls`   — cloned; same rationale as turnOrder.
  *  - `map`               — shared reference. MapDef is static terrain that
  *                          never mutates during a combat encounter; sharing is
- *                          intentional and safe. Phase 3 must revisit this if
- *                          dynamic terrain is introduced.
+ *                          intentional and safe.
+ *  - `tileQuery`         — shared reference. The function is a pure, immutable
+ *                          snapshot that closes over the static MapDef (Phase A).
+ *                          Sharing by reference preserves the determinism invariant:
+ *                          the clone sees identical geometry to its source state.
  */
 export function cloneState(state: GameState): GameState {
   const cloned: Record<string, Combatant> = {};
@@ -305,22 +353,24 @@ export function cloneState(state: GameState): GameState {
     log:             [...state.log],
     turnOrder:       [...state.turnOrder],
     initiativeRolls: [...state.initiativeRolls],
+    // tileQuery: shared by reference (immutable snapshot — see JSDoc above)
+    // map: shared by reference (static terrain — never mutated)
   };
 }
 
 export function executeMove(
   state: GameState,
   actorId: string,
-  dest: { x: number; y: number },
+  dest: { wx: number; wy: number },
 ): ExecutionResult {
   const v = validateMove(state, actorId, dest);
   if (!v.valid) return { state, events: [v.reason ?? v.code], ok: false, code: v.code };
   const next  = cloneState(state);
   const actor = next.combatants[actorId];
-  actor.x = dest.x;
-  actor.y = dest.y;
+  actor.wx = dest.wx;
+  actor.wy = dest.wy;
   actor.moveRemaining -= v.cost ?? 0;
-  const line = `${actor.name} moved to (${dest.x}, ${dest.y}).`;
+  const line = `${actor.name} moved to (${dest.wx}, ${dest.wy}).`;
   next.log.push(line);
   return { state: next, events: [line], ok: true };
 }
@@ -456,12 +506,12 @@ export function runEnemyAI(
   if (!v.valid && chebyshev(actor, target) > actor.weapon.range) {
     // move toward nearest PC
     const occ   = occupiedSet(cur.combatants, actorId);
-    const reach = reachableTiles(cur.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
-    reach.push({ x: actor.x, y: actor.y, dist: 0 });
+    const reach = reachableTiles(cur.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
+    reach.push({ wx: actor.wx, wy: actor.wy, dist: 0 });
     reach.sort((a, b) => chebyshev(a, target) - chebyshev(b, target) || a.dist - b.dist);
     const dest = reach[0];
-    if (dest && !(dest.x === actor.x && dest.y === actor.y)) {
-      const mv = executeMove(cur, actorId, { x: dest.x, y: dest.y });
+    if (dest && !(dest.wx === actor.wx && dest.wy === actor.wy)) {
+      const mv = executeMove(cur, actorId, { wx: dest.wx, wy: dest.wy });
       cur = mv.state;
       events.push(...mv.events);
     }

@@ -1,0 +1,217 @@
+Excellent. 8fd79f3 is the point where I would officially consider the Phase 3 architecture locked enough to implement.
+
+The preflight caught exactly the kind of issues that are cheap to fix in documentation and potentially expensive to fix after code exists. The important part is that those decisions are now explicit rather than living in our heads.
+
+What we have now
+
+                 ┌──────────────────┐
+                 │    WorldState    │
+                 │ persistent truth │
+                 └────────┬─────────┘
+                          │
+                    buildEncounter()
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │    GameState     │
+                 │ tactical truth   │
+                 │ + TileQuery      │
+                 └────────┬─────────┘
+                          │
+                     Rules Engine
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │  Viewport Logic  │
+                 │ presentation     │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │     Renderer     │
+                 └──────────────────┘
+
+And the really important invariant is:
+
+The renderer and viewport can change constantly without changing what the rules engine considers true.
+
+That’s exactly what we need.
+
+I especially like three decisions
+
+1. Three-layer identity
+
+Having:
+
+* id = encounter-local
+* defId = content/template
+* worldId = persistent entity
+
+is the correct foundation for eventually having things like:
+
+“That same goblin you encountered three rooms ago is still alive.”
+
+rather than spawning a visually identical but technically unrelated goblin.
+
+2. GameState.tileQuery
+
+Putting the geometry snapshot into the tactical state gives the simulation a stable environment for the duration of its evaluation.
+
+That is much safer than letting rules functions reach into whatever the world/cache happens to be doing.
+
+3. endEncounter() as the synchronization boundary
+
+This is probably the most important WorldState decision.
+
+During combat:
+
+GameState owns the combatants.
+
+After combat:
+
+endEncounter() commits the persistent consequences back to WorldState.
+
+That avoids the nightmare of two systems simultaneously trying to own an entity’s HP/location/state.
+
+⸻
+
+So now: Phase A
+
+I would proceed with Phase A.
+
+And I’d keep it deliberately boring.
+
+Phase A is supposed to be the logical coordinate abstraction, not the beginning of world streaming.
+
+The spec explicitly defines it as a transparent rewrite:
+
+* x/y → wx/wy
+* TileQueryFn
+* mapDefToTileQuery()
+* optional worldId
+* GameState.tileQuery
+* no user-visible change
+* existing tests remain green
+
+That’s exactly how I’d want this migration to happen.
+
+Give Claude this:
+
+Begin Phase 3 — Phase A: Logical World-Coordinate Abstraction.
+
+The Phase 3 preflight is complete and the specification has been resolved and committed in 8fd79f3.
+
+Treat docs/WORLD_SCALE_VIEWPORT.md at this commit as the authoritative Phase 3 specification.
+
+Implement Phase A only.
+
+Do not implement Phase B, viewport scrolling, dead-zone behavior, virtualization, chunking, WorldState, exploration mode, encounter transitions, or any other Phase 3 functionality.
+
+Phase A objectives
+
+1. Introduce the logical WorldCoord representation specified by the document.
+2. Migrate the current combatant coordinate fields from local x/y semantics to wx/wy.
+3. Preserve the existing gameplay behavior exactly.
+4. Introduce the worldId?: string field without requiring existing fixtures to manufacture persistent IDs.
+5. Introduce the specified TileInfo contract including:
+
+providesCover: boolean
+
+6. Implement the specified TileQueryFn abstraction.
+7. Implement mapDefToTileQuery() according to the corrected specification.
+8. Preserve the current MapDef behavior exactly, including:
+    * implicit border walls
+    * entrance opening
+    * pillars
+    * current passability behavior
+    * current line-of-sight behavior
+    * current cover behavior
+9. Attach the stable geometry query to GameState according to the Phase 3 specification.
+10. Ensure cloning/revalidation/execution preserve the same geometry snapshot and deterministic behavior.
+
+Critical constraints
+
+This is a transparent architectural migration.
+
+There must be no intentional gameplay change.
+
+Do not:
+
+* add viewport behavior
+* add scrolling
+* add chunking
+* add world generation
+* add exploration
+* add persistence
+* add encounter transitions
+* redesign the renderer
+* redesign the UI
+* modify canonical visual assets
+* introduce unnecessary abstractions
+
+The existing small 8×6 maps must behave exactly as they do today.
+
+Preserve deterministic behavior
+
+The Phase A TileQueryFn must not close over mutable runtime state.
+
+It must provide a stable geometry view appropriate for the current GameState.
+
+The rules engine must remain completely independent of:
+
+* React
+* CSS
+* viewport position
+* pixel dimensions
+* chunk residency
+* rendering
+
+Testing
+
+Update all affected unit/E2E tests to the new coordinate naming where necessary.
+
+Add focused regression tests proving:
+
+1. the existing map adapter produces the same passability as the old MapDef logic;
+2. walls still block LOS;
+3. pillars still provide cover without blocking LOS;
+4. movement behavior is unchanged;
+5. attack range behavior is unchanged;
+6. ability range behavior is unchanged;
+7. negative world coordinates work correctly at the utility level;
+8. worldId is optional and existing fixtures remain valid;
+9. cloning/revalidation uses the same deterministic tile geometry;
+10. changing presentation/viewport concepts has no path into rules evaluation.
+
+Run:
+
+* TypeScript/typecheck
+* all unit tests
+* all E2E tests
+* production build
+
+Do not weaken or delete tests to make the migration pass.
+
+Completion criteria
+
+Phase A is complete only when:
+
+All existing tests pass, all new regression tests pass, TypeScript is clean, the production build succeeds, and there is no user-visible gameplay change.
+
+At the end, provide:
+
+* files changed
+* architecture changes
+* tests added/modified
+* validation results
+* any deviations from WORLD_SCALE_VIEWPORT.md
+* confirmation that Phase B has not been implemented
+* the resulting commit hash
+
+Do not proceed automatically to Phase B. Stop after Phase A and report the results.
+
+That is the right next move.
+
+8fd79f3 → Phase A → validate → review → commit.
+
+Then we can inspect the actual implementation before allowing Phase B to touch the viewport. This keeps the progression extremely controlled, which is exactly what you want for a foundational architectural migration.

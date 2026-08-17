@@ -19,14 +19,19 @@ export interface Weapon {
 }
 
 export interface Combatant {
-  id: string;
-  defId: string;
+  // ── Three-layer identity (Phase A: worldId added as optional) ──────────
+  id:       string;   // encounter-local key in GameState.combatants
+  defId:    string;   // content/template identity — references COMBATANT_DEFS
+  worldId?: string;   // persistent world identity — future foreign key into WorldState
+                      //   Undefined for all Phase 2 encounters and test fixtures.
+                      //   Populated in Phase G when WorldState is introduced.
   name: string;
   cls: string;
   type: "pc" | "enemy";
   icon: string;
-  x: number;
-  y: number;
+  // ── World coordinates (renamed from x/y in Phase A) ─────────────────────
+  wx: number;         // world tile x — 0-based, integer (was: x)
+  wy: number;         // world tile y — 0-based, integer (was: y)
   hp: number;
   maxHp: number;
   ac: number;
@@ -64,11 +69,82 @@ export interface InitiativeEntry {
   total: number;
 }
 
+// ---------------------------------------------------------------------------
+// TILE QUERY TYPES — Phase A: TileInfo + TileQueryFn abstraction.
+//
+// The rules engine receives a TileQueryFn rather than a raw MapDef.
+// This decouples the rules from any specific map storage format and is the
+// foundation for Phase F (chunk streaming) and Phase G (persistent world).
+//
+// TileInfo field reference:
+//   type          passable  blocksLOS  providesCover  notes
+//   ─────────────────────────────────────────────────────────────────────
+//   "floor"       true      false      false          normal traversable tile
+//   "wall"        false     true       false          border/solid obstruction
+//   "pillar"      false     false      true           blocks movement, cover only
+//   "void"        false     true       false          unloaded chunk or world edge
+//   "door_open"   true      false      false          passable, no cover
+//   "door_closed" false     true       false          treated as wall until opened
+//
+// INVARIANT: A TileQueryFn must be a pure, stable snapshot for the lifetime
+// of the GameState it was created alongside. It must NEVER close over a mutable
+// live data structure. The rules engine depends on deterministic tile lookups
+// regardless of viewport position, chunk cache state, or React render timing.
+// ---------------------------------------------------------------------------
+
+export interface TileInfo {
+  passable:      boolean;
+  blocksLOS:     boolean;
+  providesCover: boolean;
+  type: "floor" | "wall" | "pillar" | "void" | "door_open" | "door_closed";
+}
+
+/** Pure, stable snapshot function: given world tile coords, returns tile info. */
+export type TileQueryFn = (wx: number, wy: number) => TileInfo;
+
+/**
+ * Adapts a MapDef to the TileQueryFn interface used by the rules engine.
+ *
+ * Wall rule: a tile is a wall if it is a border tile AND is not the entrance.
+ * Pillar rule: tile appears in map.pillars[]. Passable=false, blocksLOS=false.
+ * Out-of-bounds: returns "void" (safe impassable default).
+ *
+ * The returned function closes over the MapDef, which is a static value that
+ * never mutates during a combat encounter — the determinism invariant is
+ * automatically satisfied in Phase A.
+ */
+export function mapDefToTileQuery(map: MapDef): TileQueryFn {
+  return (wx: number, wy: number): TileInfo => {
+    if (wx < 0 || wy < 0 || wx >= map.width || wy >= map.height) {
+      return { passable: false, blocksLOS: true, providesCover: false, type: "void" };
+    }
+    const border = wx === 0 || wx === map.width - 1 || wy === 0 || wy === map.height - 1;
+    if (border && !(wx === map.entrance.x && wy === map.entrance.y)) {
+      return { passable: false, blocksLOS: true, providesCover: false, type: "wall" };
+    }
+    if (map.pillars.some((p) => p.x === wx && p.y === wy)) {
+      return { passable: false, blocksLOS: false, providesCover: true, type: "pillar" };
+    }
+    return { passable: true, blocksLOS: false, providesCover: false, type: "floor" };
+  };
+}
+
 export interface GameState {
   started: boolean;
   encounterId: string;
   encounterName: string;
   map: MapDef;
+  /**
+   * Stable geometry snapshot for this GameState. The rules engine uses this
+   * exclusively for tile lookups — never MapDef.walls or isWall/isPillar directly.
+   *
+   * Shared by reference in cloneState() — safe because the function is immutable
+   * for the lifetime of the state (closes over a static MapDef in Phase A).
+   *
+   * Phase F will replace or augment this with a chunk-backed query when world
+   * streaming is introduced.
+   */
+  tileQuery: TileQueryFn;
   round: number;
   turnOrder: string[];
   initiativeRolls: InitiativeEntry[];
@@ -129,8 +205,8 @@ export interface AbilityDef {
 interface EncounterEntry {
   defId: string;
   instanceId: string;
-  x: number;
-  y: number;
+  x: number;   // spawn world x (local map coord in Phase A)
+  y: number;   // spawn world y (local map coord in Phase A)
 }
 
 export interface EncounterDef {
@@ -490,8 +566,8 @@ export function getProductionEncounters(): Record<string, EncounterDef> {
 export function createCombatantInstance(
   defId: string,
   instanceId: string,
-  x: number,
-  y: number,
+  wx: number,
+  wy: number,
   displayName?: string,
 ): Combatant {
   const def = COMBATANT_DEFS[defId];
@@ -510,8 +586,8 @@ export function createCombatantInstance(
     cls: def.cls,
     type: def.type,
     icon: def.icon,
-    x,
-    y,
+    wx,
+    wy,
     hp: def.maxHp,
     maxHp: def.maxHp,
     ac: def.ac,
@@ -544,6 +620,10 @@ export function buildEncounter(encounterId: string, seed: number): GameState {
   const map = MAP_DEFS[encounterDef.mapId];
   if (!map) throw new Error(`Unknown map: "${encounterDef.mapId}" (encounter "${encounterId}")`);
 
+  // Build the stable tile-query snapshot for this encounter.
+  // The rules engine uses this exclusively — never reads MapDef.pillars directly.
+  const tileQuery = mapDefToTileQuery(map);
+
   const combatants: Record<string, Combatant> = {};
   // Number display names when multiple instances share a definition
   // (e.g. three Goblins → "Goblin 1", "Goblin 2", "Goblin 3").
@@ -571,6 +651,7 @@ export function buildEncounter(encounterId: string, seed: number): GameState {
     encounterId,
     encounterName: encounterDef.name,
     map,
+    tileQuery,
     round: 1,
     turnOrder: initiative.map((i) => i.id),
     initiativeRolls: initiative,
