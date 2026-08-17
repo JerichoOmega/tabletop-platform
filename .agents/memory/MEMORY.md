@@ -3,4 +3,4 @@
 - [Test setup](test-setup.md) — vitest 4.x, vitest.config.ts with @/ alias; 131 unit tests, 148 E2E tests (Playwright); build needs PORT+BASE_PATH env vars
 - [Accessibility implementation](accessibility-impl.md) — ARIA roles, keyboard nav, focus ring, sr-only, reduced-motion; board token aria-label collision trap
 - [Hardening decisions](hardening-decisions.md) — Rng interface, RNG snapshot/restore, ally check, content validation, Phase 3 preflight resolutions (TileQueryFn invariant, MapDef wall model, 3-layer identity, encounter authority boundary)
-- [Viewport architecture](viewport-architecture.md) — Phase B complete (commit 0eac85d); ViewportState is presentation-only, VisibleTile carries wx/wy; Phase C next
+- [Viewport architecture](viewport-architecture.md) — Phase C complete; updateViewportForActor dead-zone policy wired into afterPlayerAction; Phase D next
