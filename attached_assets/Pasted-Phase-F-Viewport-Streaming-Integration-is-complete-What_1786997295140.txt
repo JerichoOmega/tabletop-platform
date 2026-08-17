@@ -1,0 +1,38 @@
+Phase F — Viewport Streaming Integration is complete.
+
+---
+
+## What was built
+
+### New file: `src/engine/viewportStreaming.ts`
+- **`getChunksForViewport(viewport, prefetchMarginChunks?)`** — pure function, returns all `{cx, cy}` covering the visible world rectangle plus an optional margin. Uses `Math.floor` chunk math (Decision 22), handles negative coordinates, chunk boundaries, multi-chunk spans, and non-zero origins.
+- **`prefetchViewportChunks(store, viewport, worldSeed, margin?, version?)`** — fire-and-forget. Calls `store.ensureResident()` (never `ensureResidentAndPin`) for each chunk. Returns `void` immediately; load completions are completely decoupled from viewport state.
+- **`PREFETCH_MARGIN = 1`** — 1-chunk lookahead in all four directions (spec §11.7).
+
+### New file: `src/__tests__/viewportStreaming.test.ts` — 53 new unit tests
+Covers: viewport at origin, non-zero origin, chunk boundaries, multi-chunk spans, prefetch radius, negative coordinates, streaming triggers loads, ChunkStore deduplication, non-blocking return, failure resilience, PINNED encounter chunks preserved after prefetch, viewport prefetch cannot change `GameState.tileQuery`, evicting prefetched chunks cannot invalidate active tileQuery, rapid viewport changes, stale async completion, and RNG isolation.
+
+### New file: `e2e/viewport-streaming.spec.ts` — 13 new E2E tests
+Against the 40×40 Grand Hall: viewport origin shifts when actor crosses the dead zone, Y-origin unchanged when actor stays in vertical dead zone, fighter token at correct world coordinates after shift, tile count remains 12×10, Target Dummy stays off-screen, fighter HP unchanged, initiative order unchanged, Attack button still functional (rules engine unaffected), small-map regression, last visible tile at correct coordinates, no tile outside the boundary is rendered.
+
+### Modified: `src/IntelligentTabletop.tsx`
+- **`worldStateRef`** — `useRef<WorldState | null>(null)`. Holds future world-backed encounter state. Always `null` for current MapDef encounters — no behaviour change.
+- **`chunkVersion`** — presentation-only counter. Incremented when viewport chunks finish loading, causing `loadingChunkSet` to re-derive.
+- **`useEffect([viewport])`** — calls `prefetchViewportChunks` fire-and-forget whenever the viewport changes. Has `cancelled` flag to prevent stale state updates after unmount. Complete no-op while `worldStateRef.current === null`.
+- **`loadingChunkSet`** — `useMemo([viewport, chunkVersion])`. Set of `"cx,cy"` keys for currently-LOADING chunks. Used by the renderer to show the loading placeholder. Empty for all current encounters.
+- **Loading placeholder** — `bg = "#14100a"` for tiles whose chunk is LOADING. Purely presentational; `gameState.tileQuery` (the immutable snapshot) is never touched.
+- **`newEncounter()`** — resets `worldStateRef.current = null` on encounter switch.
+
+### Identity audit (Task Instruction §15)
+`Combatant.id === Combatant.worldId` for world-backed entities is already documented in `world.ts` with explicit comments citing the spec decision. The fields are structurally distinct (`id` is the encounter-local key; `worldId` is the persistent FK). No refactor needed.
+
+---
+
+## Final numbers
+
+| Metric | Before | After |
+|---|---|---|
+| Unit tests | 440/440 | **493/493** |
+| E2E tests | 154/154 | **167/167** |
+| TypeScript | ✅ clean | ✅ clean |
+| Production build | ✅ clean | ✅ clean |
