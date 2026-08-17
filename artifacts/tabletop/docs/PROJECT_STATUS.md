@@ -36,7 +36,7 @@ See `docs/ROADMAP.md` for the full phase breakdown and governance rules.
 | 13 | Keyboard navigation + ARIA roles | ✅ Done |
 | 14 | Animation / tactile feedback | ✅ Done |
 | 15 | Accessibility — WCAG 2.1 AA | ✅ Done |
-| 16 | Automated game-engine tests | ⬜ Pending |
+| 16 | Automated game-engine tests | ✅ Unit suite: 93+ tests (engine, content, parser, registry, content validation); E2E suite: 133+ tests (Playwright) |
 | 17 | World-scale viewport (Phase 3) | 📋 Specified — see `artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md` |
 | 18 | Visual asset library integration | ✅ Done — 44 assets registered, see `docs/VISUAL_ASSET_LIBRARY.md` |
 

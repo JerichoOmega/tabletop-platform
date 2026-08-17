@@ -25,6 +25,7 @@ import {
 
 import type { GameState, HealResult, DamageResult } from "@/engine/content";
 import { ENCOUNTER_DEFS, ABILITY_DEFS, buildEncounter, mulberry32, getProductionEncounters } from "@/engine/content";
+import type { Rng } from "@/engine/content";
 import type { AttackResult, ValidationResult, ValidationCode } from "@/engine/rules";
 import {
   resolveLeadingEnemyTurns, endTurn,
@@ -263,7 +264,7 @@ const isE2E = typeof window !== "undefined" && new URLSearchParams(window.locati
 export default function IntelligentTabletop() {
   const seedRef        = useRef(1337);
   const encounterIdRef = useRef("crypt");
-  const rngRef         = useRef<(() => number) | null>(null);
+  const rngRef         = useRef<Rng | null>(null);
 
   const [gameState, setGameState] = useState(() => {
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);

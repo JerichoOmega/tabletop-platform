@@ -68,6 +68,12 @@ export default defineConfig({
     port,
     strictPort: true,
     host: '0.0.0.0',
+    // allowedHosts: true is required for the Replit preview pane.
+    // Replit proxies the iframe through its own domain (*.replit.dev),
+    // so incoming Host headers do not match 'localhost'.  Restricting to
+    // specific hosts would break the preview.  This setting only affects
+    // the Vite dev server; it does not widen production attack surface.
+    // Playwright E2E tests connect directly to localhost:PORT — safe regardless.
     allowedHosts: true,
     fs: {
       strict: true,
@@ -76,6 +82,7 @@ export default defineConfig({
   preview: {
     port,
     host: '0.0.0.0',
+    // Same rationale as server.allowedHosts above.
     allowedHosts: true,
   },
 });

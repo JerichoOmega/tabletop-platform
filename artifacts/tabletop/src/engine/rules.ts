@@ -221,6 +221,10 @@ export function validateAttack(
     return { valid: false, code: "NOT_YOUR_TURN", reason: `It is not ${actor.name}'s turn.` };
   if (actor.actionUsed)
     return { valid: false, code: "ACTION_USED", reason: `${actor.name} has already acted this turn.` };
+  // Friendly-fire prevention — weapon attacks can only target opponents.
+  // Ability attacks (validateAbility) handle their own faction check via isValidAbilityTarget.
+  if (actor.type === target.type)
+    return { valid: false, code: "INVALID_TARGET_TYPE", reason: `${actor.name} cannot attack ${target.name} (same faction).` };
   const dist = chebyshev(actor, target);
   if (dist > actor.weapon.range)
     return { valid: false, code: "OUT_OF_RANGE", reason: `${target.name} is out of range (${dist} > ${actor.weapon.range}).` };
@@ -276,12 +280,32 @@ export function validateAbility(
 // ---------------------------------------------------------------------------
 // EXECUTION — the ONLY functions permitted to produce new game state.
 // ---------------------------------------------------------------------------
+/**
+ * Produces a deep-enough copy of GameState for safe independent mutation.
+ *
+ * Ownership boundaries:
+ *  - `combatants`        — deep-cloned (scalars, weapon, abilities array).
+ *  - `log`               — shallow-cloned (string array; strings are immutable).
+ *  - `turnOrder`         — cloned; may be mutated in future phase work
+ *                          (e.g. combatants joining or leaving mid-encounter).
+ *  - `initiativeRolls`   — cloned; same rationale as turnOrder.
+ *  - `map`               — shared reference. MapDef is static terrain that
+ *                          never mutates during a combat encounter; sharing is
+ *                          intentional and safe. Phase 3 must revisit this if
+ *                          dynamic terrain is introduced.
+ */
 export function cloneState(state: GameState): GameState {
   const cloned: Record<string, Combatant> = {};
   for (const [id, c] of Object.entries(state.combatants)) {
     cloned[id] = { ...c, weapon: { ...c.weapon }, abilities: [...c.abilities] };
   }
-  return { ...state, combatants: cloned, log: [...state.log] };
+  return {
+    ...state,
+    combatants:      cloned,
+    log:             [...state.log],
+    turnOrder:       [...state.turnOrder],
+    initiativeRolls: [...state.initiativeRolls],
+  };
 }
 
 export function executeMove(

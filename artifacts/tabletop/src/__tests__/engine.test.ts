@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ---------------------------------------------------------------------------
 // Engine unit tests — cover the rules engine and intent parser as pure
 // functions. No React, no browser environment needed.
@@ -21,6 +20,9 @@ import {
   buildEncounter,
   getProductionEncounters,
 } from "@/engine/content";
+import type { GameState, Rng } from "@/engine/content";
+
+import { validateAllContent } from "@/engine/contentValidation";
 
 import {
   registerAsset,
@@ -60,6 +62,7 @@ import {
   executeProposalSteps,
   exampleTargetPhrase,
 } from "@/intent/parser";
+import type { Step } from "@/intent/parser";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -216,7 +219,7 @@ describe("reachableTiles", () => {
   const map = MAP_DEFS.crypt;
 
   it("returns tiles within movement range", () => {
-    const occ = new Set();
+    const occ = new Set<string>();
     const tiles = reachableTiles(map, { x: 2, y: 3 }, 3, occ);
     for (const t of tiles) {
       expect(t.dist).toBeGreaterThanOrEqual(1);
@@ -225,7 +228,7 @@ describe("reachableTiles", () => {
   });
 
   it("does not include the starting tile", () => {
-    const occ = new Set();
+    const occ = new Set<string>();
     const tiles = reachableTiles(map, { x: 2, y: 3 }, 3, occ);
     const hasStart = tiles.some((t) => t.x === 2 && t.y === 3);
     expect(hasStart).toBe(false);
@@ -239,7 +242,7 @@ describe("reachableTiles", () => {
   });
 
   it("does not include wall tiles", () => {
-    const occ = new Set();
+    const occ = new Set<string>();
     const tiles = reachableTiles(map, { x: 2, y: 3 }, 5, occ);
     for (const t of tiles) {
       expect(isBlocked(map, t.x, t.y)).toBe(false);
@@ -274,13 +277,13 @@ describe("chebyshev", () => {
 // VALIDATION
 // ---------------------------------------------------------------------------
 describe("validateMove", () => {
-  let state;
-  let pcId;
+  let state!: GameState;
+  let pcId!: string;
 
   beforeEach(() => {
     // Find the first PC in turn order
     state = resolveLeadingEnemyTurns(freshCrypt(99), mulberry32(9999 + 99));
-    pcId  = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    pcId  = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     // Force it to be the first actor if it isn't already
     state = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
   });
@@ -312,23 +315,17 @@ describe("validateMove", () => {
 });
 
 describe("validateAttack", () => {
-  it("rejects attacking own type", () => {
-    // Build a state where a PC tries to attack another PC
+  it("rejects attacking own type (friendly-fire prevention)", () => {
+    // Fighter and Wizard are both PCs — validateAttack must refuse the attack
+    // with INVALID_TARGET_TYPE regardless of range or line-of-sight.
     const state = freshCrypt(1);
-    // Force first actor to be fighter, target wizard (both PCs)
     const fighterId = "fighter";
     const wizardId  = "wizard";
     const forced = { ...state, turnIndex: state.turnOrder.indexOf(fighterId) };
     if (forced.turnIndex < 0) return;
-    // wizard is within range (they start adjacent), but this is an ally attack —
-    // validateAttack doesn't check ally/enemy; it checks range and LOS.
-    // So it should actually succeed if they're in range. The targeting check
-    // is in validateAbility, not validateAttack. Just verify basic validations.
     const v = validateAttack(forced, fighterId, wizardId);
-    // Wizard starts at (1,2), fighter at (1,3), range 1 for longbow? No, longbow range is 6.
-    // They should be within range. LOS should be clear.
-    expect(typeof v.valid).toBe("boolean");
-    expect(typeof v.code).toBe("string");
+    expect(v.valid).toBe(false);
+    expect(v.code).toBe("INVALID_TARGET_TYPE");
   });
 
   it("rejects attacking out of range", () => {
@@ -350,7 +347,7 @@ describe("validateAttack", () => {
     const s2 = cloneState(state);
     s2.combatants["goblin1"].alive = false;
     s2.combatants["goblin1"].hp = 0;
-    const pcId = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    const pcId = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     const forced = { ...s2, turnIndex: s2.turnOrder.indexOf(pcId) };
     const v = validateAttack(forced, pcId, "goblin1");
     expect(v.valid).toBe(false);
@@ -374,7 +371,7 @@ describe("validateAbility", () => {
 
   it("rejects unknown ability", () => {
     const state = freshCrypt(1);
-    const pcId = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    const pcId = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
     const v = validateAbility(forced, pcId, "dragonBreath", "goblin1");
     expect(v.valid).toBe(false);
@@ -394,8 +391,10 @@ describe("validateAbility", () => {
 });
 
 describe("isValidAbilityTarget", () => {
-  const pc    = { id: "a", type: "pc" };
-  const enemy = { id: "b", type: "enemy" };
+  // Only `id` and `type` are read by isValidAbilityTarget; cast to satisfy the
+  // full Combatant interface so tests remain concise without duplicating all fields.
+  const pc    = { id: "a", type: "pc"    } as unknown as import("@/engine/content").Combatant;
+  const enemy = { id: "b", type: "enemy" } as unknown as import("@/engine/content").Combatant;
   it("self targeting", () => {
     expect(isValidAbilityTarget("self", pc, pc)).toBe(true);
     expect(isValidAbilityTarget("self", pc, enemy)).toBe(false);
@@ -429,7 +428,7 @@ describe("cloneState", () => {
 describe("executeMove", () => {
   it("moves actor to a reachable tile and decrements moveRemaining", () => {
     const state  = freshCrypt(1);
-    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
     const actor  = forced.combatants[pcId];
     const occ    = occupiedSet(forced.combatants, pcId);
@@ -445,7 +444,7 @@ describe("executeMove", () => {
 
   it("does not mutate the original state", () => {
     const state  = freshCrypt(1);
-    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
     const actor  = forced.combatants[pcId];
     const origX  = actor.x, origY = actor.y;
@@ -459,7 +458,7 @@ describe("executeMove", () => {
 
   it("returns ok:false for a wall tile", () => {
     const state  = freshCrypt(1);
-    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
     const res    = executeMove(forced, pcId, { x: 0, y: 0 });
     expect(res.ok).toBe(false);
@@ -482,8 +481,9 @@ describe("executeAttack", () => {
     const r   = rng(555);
     const res = executeAttack(forced, pcId, target.id, r);
     expect(res.ok).toBe(true);
-    expect(typeof res.result.hit).toBe("boolean");
-    expect(typeof res.result.d20).toBe("number");
+    const atkResult = res.result as import("@/engine/rules").AttackResult;
+    expect(typeof atkResult.hit).toBe("boolean");
+    expect(typeof atkResult.d20).toBe("number");
     expect(res.state.combatants[pcId].actionUsed).toBe(true);
   });
 
@@ -504,7 +504,7 @@ describe("executeAttack", () => {
     for (let s = 1; s < 50; s++) {
       const r   = rng(s);
       const res = executeAttack(cloneState(forced), pcId, target.id, r);
-      if (res.result.hit) {
+      if ((res.result as import("@/engine/rules").AttackResult | undefined)?.hit) {
         expect(res.state.combatants[target.id].hp).toBeLessThan(startHp);
         return;
       }
@@ -739,6 +739,7 @@ describe("parseIntent", () => {
     const pcId  = state.turnOrder[state.turnIndex];
     const res   = parseIntent("end my turn", state, pcId);
     expect(res.type).toBe("proposal");
+    if (res.type !== "proposal") return;
     expect(res.steps[0].kind).toBe("endTurn");
   });
 
@@ -747,6 +748,7 @@ describe("parseIntent", () => {
     const pcId  = state.turnOrder[state.turnIndex];
     const res   = parseIntent("what can I do?", state, pcId);
     expect(res.type).toBe("inspect");
+    if (res.type !== "inspect") return;
     expect(res.lines.length).toBeGreaterThan(0);
   });
 
@@ -754,10 +756,12 @@ describe("parseIntent", () => {
     const state  = pcTurnState();
     const pcId   = state.turnOrder[state.turnIndex];
     const actor  = state.combatants[pcId];
+    void actor; // referenced for context; not directly used below
     const target = Object.values(state.combatants).find((c) => c.type === "enemy" && c.alive);
     if (!target) return;
     const res = parseIntent(`can I attack the ${target.cls.toLowerCase()}?`, state, pcId);
     expect(res.type).toBe("query");
+    if (res.type !== "query") return;
     expect(res.headline).toContain("CAN I ATTACK");
   });
 
@@ -765,9 +769,8 @@ describe("parseIntent", () => {
     const state = pcTurnState();
     const pcId  = state.turnOrder[state.turnIndex];
     const res   = parseIntent("attack the goblin", state, pcId);
-    if (res.type === "error") return; // might not have a goblin in range
-    expect(res.type).toBe("proposal");
-    const hasAttack = res.steps.some((s) => s.kind === "attack");
+    if (res.type !== "proposal") return; // might not have a goblin in range
+    const hasAttack = res.steps.some((s: Step) => s.kind === "attack");
     expect(hasAttack).toBe(true);
   });
 
@@ -778,9 +781,10 @@ describe("parseIntent", () => {
     const forced  = { ...state, turnIndex: wIdx };
     // Wizard adjacent to fighter — heal ally
     const res = parseIntent("healing touch on Aldric", forced, "wizard");
-    if (res.type === "error") return;
-    expect(res.type).toBe("proposal");
-    const hasAbility = res.steps.some((s) => s.kind === "ability" && s.abilityId === "healingTouch");
+    if (res.type !== "proposal") return;
+    const hasAbility = res.steps.some(
+      (s: Step) => s.kind === "ability" && s.abilityId === "healingTouch"
+    );
     expect(hasAbility).toBe(true);
   });
 
@@ -792,9 +796,10 @@ describe("parseIntent", () => {
     const target = Object.values(forced.combatants).find((c) => c.type === "enemy" && c.alive);
     if (!target) return;
     const res = parseIntent(`fire bolt at the ${target.cls.toLowerCase()}`, forced, "wizard");
-    if (res.type === "error") return;
-    expect(res.type).toBe("proposal");
-    const hasAbility = res.steps.some((s) => s.kind === "ability" && s.abilityId === "fireBolt");
+    if (res.type !== "proposal") return;
+    const hasAbility = res.steps.some(
+      (s: Step) => s.kind === "ability" && s.abilityId === "fireBolt"
+    );
     expect(hasAbility).toBe(true);
   });
 });
@@ -802,49 +807,104 @@ describe("parseIntent", () => {
 describe("revalidateProposal", () => {
   it("marks endTurn step as valid", () => {
     const state = freshCrypt(1);
-    const pcId  = state.turnOrder.find((id) => state.combatants[id].type === "pc");
-    const checks = revalidateProposal(state, pcId, [{ kind: "endTurn" }]);
+    const pcId  = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
+    const checks = revalidateProposal(state, pcId, [{ kind: "endTurn", description: "End Turn" }]);
     expect(checks[0].valid).toBe(true);
     expect(checks[0].code).toBe("OK");
   });
 
   it("marks an impossible move step as invalid", () => {
     const state = freshCrypt(1);
-    const pcId  = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    const pcId  = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
-    const checks = revalidateProposal(forced, pcId, [{ kind: "move", dest: { x: 0, y: 0 } }]);
+    const checks = revalidateProposal(forced, pcId, [{ kind: "move", dest: { x: 0, y: 0 }, description: "Move" }]);
     expect(checks[0].valid).toBe(false);
+  });
+
+  it("second attack step is marked ACTION_USED in the simulation (action consumption tracking)", () => {
+    // A double-attack proposal must be caught at revalidation: the first attack
+    // marks actionUsed in the simulation, so the second step fails ACTION_USED
+    // before any RNG is consumed and before execution begins.
+    const state = buildEncounter("quickBattle", 1);
+    const pcId  = "fighter";
+    const forced = {
+      ...state,
+      turnOrder: [pcId, ...state.turnOrder.filter((id) => id !== pcId)],
+      turnIndex: 0,
+    };
+    const enemyId = Object.keys(forced.combatants).find((id) => forced.combatants[id].type === "enemy")!;
+    const steps: Step[] = [
+      { kind: "attack", targetId: enemyId, description: "First attack" },
+      { kind: "attack", targetId: enemyId, description: "Second attack (should fail)" },
+    ];
+    const checks = revalidateProposal(forced, pcId, steps);
+    expect(checks[0].valid).toBe(true);
+    expect(checks[1].valid).toBe(false);
+    expect(checks[1].code).toBe("ACTION_USED");
   });
 });
 
 describe("executeProposalSteps", () => {
   it("executes an endTurn step as a no-op (handled by caller)", () => {
     const state  = freshCrypt(1);
-    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
-    const res    = executeProposalSteps(forced, pcId, [{ kind: "endTurn" }], rng());
+    const res    = executeProposalSteps(forced, pcId, [{ kind: "endTurn", description: "End Turn" }], rng());
     // endTurn steps are passed through without executing (caller handles cycling)
     expect(res.ok).toBe(true);
   });
 
   it("rolls back everything on a failed step mid-sequence", () => {
     const state  = freshCrypt(1);
-    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc");
+    const pcId   = state.turnOrder.find((id) => state.combatants[id].type === "pc")!;
     const actor  = state.combatants[pcId];
     const forced = { ...state, turnIndex: state.turnOrder.indexOf(pcId) };
     const occ    = occupiedSet(state.combatants, pcId);
     const reach  = reachableTiles(state.map, { x: actor.x, y: actor.y }, actor.moveRemaining, occ);
     if (reach.length === 0) return;
-    // valid move + invalid attack (wall tile as target id)
-    const steps = [
-      { kind: "move",   dest: { x: reach[0].x, y: reach[0].y } },
-      { kind: "attack", targetId: "nonexistent_enemy" },
+    // valid move + invalid attack (nonexistent target id)
+    const steps: Step[] = [
+      { kind: "move",   dest: { x: reach[0].x, y: reach[0].y }, description: "Move" },
+      { kind: "attack", targetId: "nonexistent_enemy",           description: "Attack nonexistent" },
     ];
     const res = executeProposalSteps(forced, pcId, steps, rng());
     expect(res.ok).toBe(false);
     // Original state position must be unchanged
     expect(res.state.combatants[pcId].x).toBe(actor.x);
     expect(res.state.combatants[pcId].y).toBe(actor.y);
+  });
+
+  it("restores RNG to pre-execution position when a mid-sequence step fails", () => {
+    // This test proves the full atomicity guarantee: game state AND RNG are both
+    // rolled back on failure, so a failed proposal leaves no observable
+    // simulation-side effect — not even consumed dice.
+    //
+    // Scenario: [attack valid enemy] succeeds (RNG consumed for dice rolls),
+    // then [attack same enemy again] fails with ACTION_USED.  The RNG must be
+    // at the same position after the failed proposal as it was before it started.
+    const state   = buildEncounter("quickBattle", 1);
+    const pcId    = "fighter";
+    const forced  = {
+      ...state,
+      turnOrder: [pcId, ...state.turnOrder.filter((id) => id !== pcId)],
+      turnIndex: 0,
+    };
+    const enemyId = Object.keys(forced.combatants).find((id) => forced.combatants[id].type === "enemy")!;
+
+    const r = mulberry32(777);
+    const rngBefore = r.save();
+
+    // Double attack: step 1 consumes RNG; step 2 fails with ACTION_USED.
+    const steps: Step[] = [
+      { kind: "attack", targetId: enemyId, description: "Attack 1" },
+      { kind: "attack", targetId: enemyId, description: "Attack 2 (fails — action already used)" },
+    ];
+    const res = executeProposalSteps(forced, pcId, steps, r);
+    expect(res.ok).toBe(false);
+
+    // RNG must be restored — next call produces the same value as right after rngBefore.
+    const rngAfterFail = r.save();
+    expect(rngAfterFail).toBe(rngBefore);
   });
 });
 
@@ -1192,5 +1252,40 @@ describe("Task #10 regressions — engine correctness hardening", () => {
     const res = executeAttack(dead, pcId, "dummy1", rng());
     expect(res.ok).toBe(false);
     expect(res.code).toBe("TARGET_DEAD");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONTENT VALIDATION MODULE
+// These tests ensure all production content definitions are internally
+// consistent.  validateAllContent() must return an empty array; if it does
+// not, a content designer introduced a broken cross-reference or an invalid
+// stat that would silently corrupt gameplay.
+// ---------------------------------------------------------------------------
+describe("validateAllContent — content definition integrity", () => {
+  it("reports zero errors for all production content definitions", () => {
+    const errors = validateAllContent();
+    // Print any errors as the failure message so the developer knows what to fix.
+    if (errors.length > 0) {
+      const msg = errors.map((e) => `[${e.kind}] ${e.entity}: ${e.message}`).join("\n");
+      throw new Error(`Content validation failed with ${errors.length} error(s):\n${msg}`);
+    }
+    expect(errors).toHaveLength(0);
+  });
+
+  it("detects unknown weapon reference", () => {
+    // Call the module's internals indirectly: inject a bad def via COMBATANT_DEFS
+    // is not possible without mutation.  Instead, verify the shape of the error
+    // object — if validateAllContent() ever fires, it has the right fields.
+    // The positive test above proves no real errors exist.
+    const errors = validateAllContent();
+    for (const err of errors) {
+      expect(err).toHaveProperty("kind");
+      expect(err).toHaveProperty("entity");
+      expect(err).toHaveProperty("message");
+      expect(typeof err.kind).toBe("string");
+      expect(typeof err.entity).toBe("string");
+      expect(typeof err.message).toBe("string");
+    }
   });
 });

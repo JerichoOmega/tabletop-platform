@@ -216,17 +216,37 @@ export const MAP_DEFS: Record<string, MapDef> = {
 };
 
 // ---------------------------------------------------------------------------
-// RNG — seeded, deterministic. mulberry32 returns a stateful thunk so the
-// caller advances the same sequence call by call across game events.
+// RNG — seeded, deterministic. mulberry32 returns a stateful Rng thunk so
+// the caller advances the same sequence call by call across game events.
+//
+// Rng extends () => number, so it is compatible with every existing call site
+// that typed the parameter as `() => number`.  The save/restore methods allow
+// callers to snapshot the RNG position before speculative execution and roll
+// it back if that execution is later rejected — preserving full simulation
+// determinism even when partial side effects must be undone.
 // ---------------------------------------------------------------------------
-export function mulberry32(seed: number): () => number {
+
+/** Callable RNG function that can additionally save and restore its state. */
+export interface Rng {
+  (): number;
+  /** Returns the current internal state token. */
+  save(): number;
+  /** Restores the RNG to a previously saved state token. */
+  restore(state: number): void;
+}
+
+export function mulberry32(seed: number): Rng {
   let s = seed >>> 0;
-  return function () {
+  const fn = function (): number {
     s = (s + 0x6d2b79f5) | 0;
     let t = Math.imul(s ^ (s >>> 15), 1 | s);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  return Object.assign(fn, {
+    save:    ()            => s,
+    restore: (state: number) => { s = state; },
+  });
 }
 
 export function rollDie(sides: number, rng: () => number): number {

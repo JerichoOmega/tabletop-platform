@@ -23,7 +23,7 @@
 // Dependency: content.ts (ABILITY_DEFS) + rules.ts (validation + pathfinding).
 // ---------------------------------------------------------------------------
 
-import type { Combatant, GameState, AbilityDef, EffectResult } from "@/engine/content";
+import type { Combatant, GameState, AbilityDef, EffectResult, Rng } from "@/engine/content";
 import { ABILITY_DEFS } from "@/engine/content";
 import type { ValidationCode, AttackResult } from "@/engine/rules";
 import {
@@ -545,9 +545,13 @@ export function revalidateProposal(
     } else if (step.kind === "attack") {
       const v = validateAttack(sim, actorId, step.targetId);
       checks.push({ step, valid: v.valid, reason: v.reason, code: v.code, cover: v.cover });
+      // Simulate action consumption so subsequent steps see the correct state.
+      if (v.valid) sim.combatants[actorId].actionUsed = true;
     } else if (step.kind === "ability") {
       const v = validateAbility(sim, actorId, step.abilityId, step.targetId);
       checks.push({ step, valid: v.valid, reason: v.reason, code: v.code });
+      // Simulate action consumption so subsequent steps see the correct state.
+      if (v.valid) sim.combatants[actorId].actionUsed = true;
     } else if (step.kind === "endTurn") {
       checks.push({ step, valid: true, code: "OK" });
     }
@@ -555,15 +559,28 @@ export function revalidateProposal(
   return checks;
 }
 
-// Executes a pre-validated sequence atomically. If any step turns out to be
-// invalid when actually applied, the ORIGINAL input state is returned
-// untouched — no partial mutation is possible.
+// Executes a pre-validated sequence atomically.
+//
+// Atomicity contract:
+//   • If ANY step fails validation at execution time, the ORIGINAL input state
+//     is returned untouched — no partial mutation is possible.
+//   • The RNG is additionally restored to its pre-execution position on
+//     failure, so no simulation-observable side effect escapes. This prevents
+//     RNG stream contamination when a later step fails after an earlier step
+//     has already consumed dice rolls.
+//
+// Note: `rng` must be the result of mulberry32() (an `Rng` with save/restore).
+// This is always the case for the production rngRef and for test usage via
+// mulberry32(). The UI and tests already satisfy this.
 export function executeProposalSteps(
   state: GameState,
   actorId: string,
   steps: Step[],
-  rng: () => number,
+  rng: Rng,
 ): ProposalExecutionResult {
+  // Snapshot the RNG before any step so we can restore it if execution fails.
+  const rngSnapshot = rng.save();
+
   let cur = state;
   const events: string[] = [];
   let lastAttackResult:  AttackResult | undefined  = undefined;
@@ -571,18 +588,27 @@ export function executeProposalSteps(
   for (const step of steps) {
     if (step.kind === "move") {
       const res = executeMove(cur, actorId, step.dest);
-      if (!res.ok) return { ok: false, state, events: res.events };
+      if (!res.ok) {
+        rng.restore(rngSnapshot);
+        return { ok: false, state, events: res.events };
+      }
       cur = res.state;
       events.push(...res.events);
     } else if (step.kind === "attack") {
       const res = executeAttack(cur, actorId, step.targetId, rng);
-      if (!res.ok) return { ok: false, state, events: res.events };
+      if (!res.ok) {
+        rng.restore(rngSnapshot);
+        return { ok: false, state, events: res.events };
+      }
       cur = res.state;
       events.push(...res.events);
       lastAttackResult = res.result as AttackResult | undefined;
     } else if (step.kind === "ability") {
       const res = executeAbility(cur, actorId, step.abilityId, step.targetId, rng);
-      if (!res.ok) return { ok: false, state, events: res.events };
+      if (!res.ok) {
+        rng.restore(rngSnapshot);
+        return { ok: false, state, events: res.events };
+      }
       cur = res.state;
       events.push(...res.events);
       lastAbilityResult = res.result as EffectResult | undefined;
