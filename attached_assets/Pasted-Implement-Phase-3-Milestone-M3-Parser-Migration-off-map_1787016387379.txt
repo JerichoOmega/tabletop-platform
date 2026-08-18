@@ -1,0 +1,60 @@
+Implement Phase 3 Milestone M3: Parser Migration off `map.pillars`.
+
+Repository state:
+- M2 (Chunk Eviction + Entity Survival) is complete and committed as `b476513`.
+- Phase 3 implementation plan remains authoritative for M3–M6.
+- Do NOT start M4 WorldBounds, M5 exploration/encounter/combat, or any Ages of Empire work.
+- Preserve all existing streaming, chunk, registry, viewport, eviction, and coordinate behavior.
+
+Objective:
+Remove the remaining runtime/parser dependency on the legacy `map.pillars` representation and make the parser consume the authoritative world/chunk representation established by Phase 3.
+
+Before changing anything:
+1. Inspect the repository and identify every remaining reference to `map.pillars`, including direct property access, parser assumptions, tests, fixtures, adapters, and serialization/deserialization paths.
+2. Read `docs/PHASE3_IMPLEMENTATION_PLAN.md` and the relevant current world/chunk/parser implementation.
+3. Confirm exactly which references are legacy compatibility boundaries versus actual runtime dependencies.
+4. Do not redesign the world model. Do not invent a replacement abstraction if the existing authoritative chunk/world APIs already provide what is needed.
+
+Implementation requirements:
+- Migrate parser/runtime consumers away from `map.pillars`.
+- Use the authoritative Phase 3 world/chunk representation instead.
+- Preserve existing semantics and output wherever the old parser behavior is still required.
+- Keep coordinate handling deterministic, including negative coordinates and chunk boundaries.
+- Do not duplicate world state merely to preserve the old parser API.
+- Do not reintroduce geometry/state coupling that M2 explicitly separated.
+- If a compatibility adapter is genuinely required, keep it narrow, explicit, and temporary/documented rather than allowing `map.pillars` to remain a hidden runtime dependency.
+- Remove obsolete parser assumptions only when tests prove the replacement is equivalent.
+- Update tests and fixtures that encode the legacy representation.
+- Add regression coverage proving the parser works correctly across chunk boundaries and with the authoritative representation.
+- Preserve deterministic world generation and entity behavior.
+- Do not modify unrelated systems.
+
+Testing requirements:
+- Run the complete existing unit suite.
+- Run the complete E2E suite.
+- Run TypeScript typecheck.
+- Run production builds.
+- Add focused M3 tests for every migrated parser path.
+- Explicitly verify that no unintended runtime references to `map.pillars` remain.
+- If a remaining reference is intentionally compatibility-only, document why and keep it isolated.
+- Report exact test counts and build/typecheck results.
+
+Scope discipline:
+- M3 only.
+- No WorldBounds implementation.
+- No exploration mode.
+- No encounter/combat transition work.
+- No new gameplay systems.
+- No Ages of Empire work.
+- No unrelated refactors or dependency changes.
+
+Before committing:
+1. Show me the files changed.
+2. Explain what `map.pillars` references were found and how each was classified.
+3. Explain the new authoritative parser path.
+4. Report the exact validation results.
+5. Provide the proposed commit message.
+6. STOP and wait for my approval before committing or pushing.
+
+Proposed commit message:
+`refactor(tabletop): migrate parser off legacy map pillars`

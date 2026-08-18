@@ -96,3 +96,8 @@ A `TileQueryFn` passed to the rules engine must be a pure, stable snapshot. It m
 During an active encounter, `GameState` is the sole writer for combat-participant state. `WorldState.entityState` is frozen for those entities. `endEncounter()` is the only path that commits results back to `WorldState`. `WorldState` must not independently mutate combat-participant positions/HP while the encounter is active.
 
 **Why:** The old spec implied `WorldState.activeEncounterState: GameState | null` (nesting), which creates a dual-write synchronization hazard. Parallel structures with a single commit boundary avoids this.
+
+## Parser geometry (Phase 3 M3)
+- **Parser cover/pillar reasoning reads only state.tileQuery, never MapDef.pillars.** Nearest-pillar tie-break contract: Chebyshev distance, then lowest wy, then lowest wx (legacy array-order ties were an authoring accident that cannot exist for chunk geometry).
+  **Why:** tileQuery is the single authoritative geometry for MapDef and world-backed encounters; array-order tie semantics are unreproducible from generated chunks.
+  **How to apply:** any new parser/AI geometry heuristic must scan tileQuery deterministically (perimeter rings, fixed order); a static-guard unit test fails if `.pillars` access reappears in parser.ts.

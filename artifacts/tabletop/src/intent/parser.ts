@@ -31,6 +31,15 @@
 //     Cover adjacency is detected via state.tileQuery(wx, wy).providesCover
 //     so that Phase F chunk data is automatically respected.
 //
+// Phase 3 M3 changes:
+//   - The parser no longer reads state.map.pillars ANYWHERE. All cover/pillar
+//     reasoning goes through state.tileQuery (the authoritative geometry
+//     snapshot), so MapDef encounters and world-backed (chunk snapshot)
+//     encounters behave identically. findNearestCoverTile() is the single
+//     replacement for the old nearest-pillar array scan; it is deterministic
+//     (expanding Chebyshev rings, fixed within-ring order) and correct for
+//     negative coordinates and chunk boundaries.
+//
 // Dependency: content.ts (ABILITY_DEFS) + rules.ts (validation + pathfinding).
 // ---------------------------------------------------------------------------
 
@@ -127,7 +136,10 @@ function buildIntentContext(state: GameState, actorId: string) {
     maxHp: actor.maxHp,
     isCurrentTurn: state.turnOrder[state.turnIndex] === actorId,
     enemies,
-    pillars: state.map.pillars,
+    // Phase 3 M3: derived from the authoritative tileQuery snapshot, never
+    // from MapDef.pillars. Bounded, deterministic enumeration of nearby
+    // cover-providing tiles (world coordinates, negative-safe).
+    nearbyCover: enumerateCoverTiles(state, actor, LLM_CONTEXT_COVER_RADIUS),
   };
 }
 
@@ -291,6 +303,95 @@ const COVER_NEIGHBOR_OFFSETS: [number, number][] = [
  * new cover-providing tile types will be automatically respected without
  * changing this function.
  */
+// ---------------------------------------------------------------------------
+// Phase 3 M3 — cover-tile discovery via the authoritative tileQuery snapshot.
+//
+// The parser previously scanned MapDef.pillars (a legacy array that world-
+// backed encounters cannot populate — their synthetic MapDef has pillars: []).
+// These helpers replace that with bounded, deterministic scans of
+// state.tileQuery, which is authoritative for BOTH MapDef and chunk-snapshot
+// geometry. Determinism: rings expand outward by Chebyshev radius; within a
+// ring, tiles are visited in fixed (wy, then wx) ascending order. Negative
+// world coordinates and chunk boundaries need no special handling — tileQuery
+// is total over ℤ² (out-of-snapshot tiles report impassable "void").
+// ---------------------------------------------------------------------------
+
+/**
+ * Search radius for "nearest pillar". Generous enough to cover the largest
+ * MapDef (16×12) from any tile and the full pin-set snapshot of a world
+ * encounter (3×3 chunks = 48 tiles), while keeping the scan bounded (O(r²)).
+ */
+const COVER_SEARCH_RADIUS = 48;
+
+/** Cover enumeration radius for the LLM context view — actor-local terrain. */
+const LLM_CONTEXT_COVER_RADIUS = 12;
+
+/**
+ * Nearest cover-providing tile (e.g. a pillar) to `from`, by Chebyshev
+ * distance, scanning the authoritative tileQuery in expanding rings.
+ * Returns null when no cover exists within COVER_SEARCH_RADIUS.
+ *
+ * TIE-BREAK CONTRACT (M3, deliberate):
+ *   Among equidistant cover tiles, the one with the lowest wy wins; among
+ *   equal wy, the lowest wx wins. The legacy implementation broke ties by
+ *   MapDef.pillars array order — an authoring-order accident that cannot be
+ *   expressed for chunk-generated geometry (there is no array). The proposed
+ *   step is a deliberately blocked destination that the rules engine rejects
+ *   with an explanation, so any equidistant pillar is behaviorally
+ *   equivalent; the coordinate-based rule simply makes the choice
+ *   deterministic and geometry-source-independent.
+ *
+ * Cost: O(r) per ring via direct perimeter enumeration — O(r²) total.
+ */
+function findNearestCoverTile(
+  state: GameState,
+  from: { wx: number; wy: number },
+): { wx: number; wy: number } | null {
+  for (let r = 1; r <= COVER_SEARCH_RADIUS; r++) {
+    // Perimeter of the Chebyshev ring at exact radius r, enumerated directly
+    // in ascending (dy, dx) order — top/bottom edges are full rows; interior
+    // rows contribute only their two side tiles.
+    for (let dy = -r; dy <= r; dy++) {
+      const edgeRow = Math.abs(dy) === r;
+      const dxs = edgeRow ? undefined : [-r, r];
+      if (edgeRow) {
+        for (let dx = -r; dx <= r; dx++) {
+          const wx = from.wx + dx;
+          const wy = from.wy + dy;
+          if (state.tileQuery(wx, wy).providesCover) return { wx, wy };
+        }
+      } else {
+        for (const dx of dxs!) {
+          const wx = from.wx + dx;
+          const wy = from.wy + dy;
+          if (state.tileQuery(wx, wy).providesCover) return { wx, wy };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * All cover-providing tiles within `radius` (Chebyshev) of the actor, in
+ * deterministic (wy, wx) ascending order. Used by the LLM context view.
+ */
+function enumerateCoverTiles(
+  state: GameState,
+  from: { wx: number; wy: number },
+  radius: number,
+): { wx: number; wy: number }[] {
+  const out: { wx: number; wy: number }[] = [];
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const wx = from.wx + dx;
+      const wy = from.wy + dy;
+      if (state.tileQuery(wx, wy).providesCover) out.push({ wx, wy });
+    }
+  }
+  return out;
+}
+
 function findCoverTile(state: GameState, actor: Combatant, target: Combatant | null): Tile | null {
   const occ   = occupiedSet(state.combatants, actor.id);
   const reach = reachableTiles(state.tileQuery, { wx: actor.wx, wy: actor.wy }, actor.moveRemaining, occ);
@@ -508,12 +609,12 @@ export function parseIntent(text: string, state: GameState, actorId: string): Pr
     // Propose a literal blocked tile so the rules engine rejects it with a
     // real explanation instead of quietly rerouting.
     if (/\b(through|into|onto)\b.*\bpillar\b/.test(t)) {
-      if (!state.map.pillars.length)
+      // Phase 3 M3: nearest cover tile via the authoritative tileQuery
+      // snapshot — identical semantics for MapDef and world-backed encounters.
+      const nearestPillar = findNearestCoverTile(state, actor);
+      if (!nearestPillar)
         return { type: "error", message: `There is no pillar on ${state.map.name}.` };
-      const nearestPillar = [...state.map.pillars].sort(
-        (a, b) => chebyshev({ wx: a.x, wy: a.y }, actor) - chebyshev({ wx: b.x, wy: b.y }, actor)
-      )[0];
-      steps.push({ kind: "move", dest: { wx: nearestPillar.x, wy: nearestPillar.y }, description: "Move through the pillar" });
+      steps.push({ kind: "move", dest: nearestPillar, description: "Move through the pillar" });
     } else if (c.wantsCover) {
       tile = findCoverTile(state, actor, target);
       moveDescription = "Move to Pillar Cover";
