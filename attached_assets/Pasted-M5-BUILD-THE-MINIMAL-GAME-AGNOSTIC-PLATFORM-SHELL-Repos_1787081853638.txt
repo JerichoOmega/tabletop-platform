@@ -1,0 +1,506 @@
+M5 — BUILD THE MINIMAL GAME-AGNOSTIC PLATFORM SHELL
+
+Repository:
+JerichoOmega/tabletop-platform
+
+The platform philosophy has been formally locked and documented in:
+
+docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md
+
+Commit:
+36be18d
+
+The architecture review identified the smallest coherent next milestone:
+
+BUILD A MINIMAL GAME-AGNOSTIC PLATFORM SHELL AND MOUNT THE EXISTING RPG AS THE FIRST REGISTERED EXPERIENCE.
+
+This is now APPROVED.
+
+==================================================
+1. GOAL
+==================================================
+
+Create the first real platform boundary for Intelligent Tabletop.
+
+Today:
+
+App.tsx
+  ↓
+IntelligentTabletop
+  ↓
+RPG encounter
+
+After M5:
+
+App.tsx
+  ↓
+Platform Shell
+  ↓
+Experience Router / Registry
+  ↓
+RPG Experience
+
+The RPG remains the first and only implemented Experience.
+
+The platform shell must NOT become RPG-specific.
+
+==================================================
+2. PLATFORM NAVIGATION
+==================================================
+
+Establish the platform-level navigation model:
+
+PLAY
+BROWSE
+LIBRARY
+CREATE
+PROFILE
+
+Settings should be accessible separately.
+
+For this milestone, these destinations do NOT need full implementations.
+
+They should have clean platform-level routes/views/placeholders where necessary.
+
+Do NOT build fake functionality.
+
+Clearly mark unimplemented platform destinations as future functionality.
+
+==================================================
+3. EXPERIENCE MODEL
+==================================================
+
+Create a generic Experience abstraction.
+
+The platform must be able to represent:
+
+Experience
+- id
+- title
+- game type
+- description/metadata as appropriate
+- entry point/view
+- optional artwork/asset reference
+
+Do not hard-code:
+
+- RPG
+- campaign
+- dungeon
+- character
+- encounter
+
+into the generic Experience abstraction.
+
+The first implementation can be:
+
+Experience:
+  id: "rpg"
+  title: "RPG"
+  gameType: "rpg"
+
+But this must be registered through the generic Experience mechanism.
+
+Future Experiences could be:
+
+- card game
+- board game
+- strategy game
+- Risk-style game
+- Monopoly-style game
+
+without modifying the platform shell's fundamental architecture.
+
+==================================================
+4. EXPERIENCE REGISTRY
+==================================================
+
+Create an appropriate registry under:
+
+src/platform/
+
+For example:
+
+src/platform/experiences/
+
+Use the repository's conventions if a better structure exists.
+
+The registry should provide a generic mechanism for:
+
+- registering Experiences
+- listing Experiences
+- resolving an Experience by ID
+- entering an Experience
+
+Do not create a giant switch statement such as:
+
+if RPG → ...
+else if Card Game → ...
+else if Strategy → ...
+
+The platform must use registration rather than hard-coded game branching.
+
+==================================================
+5. MOUNT THE EXISTING RPG
+==================================================
+
+The existing RPG experience is the first registered Experience.
+
+Move/restructure only what is necessary so that the existing RPG UI is mounted by the platform shell.
+
+DO NOT rewrite the RPG.
+
+DO NOT rewrite the encounter engine.
+
+DO NOT modify RPG rules.
+
+DO NOT change combat.
+
+DO NOT change WorldBounds.
+
+DO NOT change the tabletop renderer.
+
+DO NOT change the Grand Gaming Table integration.
+
+The RPG should simply become the first Experience mounted by the shell.
+
+==================================================
+6. PRESERVE EXISTING RPG FUNCTIONALITY
+==================================================
+
+Everything that currently works inside the RPG should continue to work.
+
+That includes:
+
+- encounter selection
+- exploration
+- movement
+- combat
+- world state
+- terrain
+- miniatures
+- existing UI
+- existing tests
+
+If the current RPG opens directly into the crypt encounter, it may continue doing so when entering the RPG Experience for this milestone.
+
+Do NOT implement the full RPG lobby/discovery flow yet.
+
+==================================================
+7. APP.TSX
+==================================================
+
+App.tsx should become the platform entry point.
+
+Conceptually:
+
+App
+  ↓
+PlatformShell
+  ↓
+Current platform destination
+  ↓
+Experience or platform view
+
+Do not allow App.tsx to directly own RPG-specific navigation.
+
+==================================================
+8. PLATFORM VS EXPERIENCE BOUNDARY
+==================================================
+
+Platform owns:
+
+- global navigation
+- Experience discovery entry points
+- current Experience selection
+- platform-level layout
+- future profile
+- future library
+- future titles
+- future settings
+
+Experience owns:
+
+- rules
+- gameplay state
+- game-specific UI
+- game-specific rendering
+- game-specific content
+- game-specific progression
+
+For the RPG:
+
+Platform
+  ↓
+RPG Experience
+  ↓
+Existing RPG engine/UI
+
+Do not move RPG-specific systems into src/platform/.
+
+==================================================
+9. CURRENT PLATFORM DESTINATIONS
+==================================================
+
+For M5:
+
+PLAY:
+Should provide the entry point to the first Experience.
+
+BROWSE:
+Placeholder/future view.
+
+LIBRARY:
+Placeholder/future view.
+
+CREATE:
+Placeholder/future view.
+
+PROFILE:
+Placeholder/future view.
+
+SETTINGS:
+Placeholder/future view.
+
+Do NOT create fake cards, fake profiles, fake achievements, fake titles, or fake game catalogs.
+
+We will implement those systems in later milestones.
+
+==================================================
+10. VISUAL DESIGN
+==================================================
+
+Do not attempt to reproduce the final Discover mockup yet.
+
+The purpose of M5 is architectural.
+
+However, establish enough visual structure that the platform shell is clearly distinct from the RPG Experience.
+
+The eventual visual direction is documented in:
+
+docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md
+
+and the approved multi-game tabletop platform mockup.
+
+Do not perform a large visual redesign during this milestone.
+
+==================================================
+11. ROUTING / STATE
+==================================================
+
+Use the project's existing routing approach if one exists.
+
+If no router exists, implement the smallest appropriate navigation mechanism.
+
+Do not introduce a large routing dependency unless necessary.
+
+The shell should be able to represent:
+
+platform destination
+and
+current Experience
+
+as separate concepts.
+
+For example:
+
+Platform:
+PLAY
+
+Experience:
+RPG
+
+This distinction is important for future:
+
+PLAY → Card Game
+PLAY → Strategy Game
+PLAY → RPG
+
+==================================================
+12. NO PROFILE IMPLEMENTATION YET
+==================================================
+
+Do NOT implement:
+
+- accounts
+- authentication
+- profile persistence
+- localStorage profile data
+- achievements
+- titles
+- progression
+
+Those belong to the next milestone.
+
+The shell should simply provide the architectural location where Profile will eventually live.
+
+==================================================
+13. NO DISCOVER SYSTEM YET
+==================================================
+
+Do NOT implement:
+
+- recommendation algorithms
+- dynamic content rows
+- personalization
+- trending systems
+- search catalog
+- game discovery backend
+
+Those belong to a later Discover/Browse milestone.
+
+For now, PLAY only needs to provide a clean entry point into the registered RPG Experience.
+
+==================================================
+14. NO NEW GAME TYPES YET
+==================================================
+
+Do NOT implement placeholder engines for:
+
+- card games
+- Risk-style games
+- Monopoly-style games
+- strategy games
+
+The architecture should support them conceptually.
+
+Only RPG is currently implemented.
+
+==================================================
+15. TESTING
+==================================================
+
+Existing baseline:
+
+663 unit tests
+178 E2E tests
+TypeScript clean
+Production build clean
+
+Preserve this baseline.
+
+Add tests for the platform shell and Experience registry.
+
+At minimum test:
+
+- Experience registration
+- Experience lookup
+- Experience listing
+- RPG registration
+- platform navigation
+- entering RPG Experience
+- invalid Experience ID handling
+- separation between platform destination and Experience
+
+Do not weaken or remove existing tests.
+
+==================================================
+16. ARCHITECTURE REVIEW
+==================================================
+
+Before implementation, inspect the existing architecture again.
+
+If the repository already contains a structure that accomplishes part of this, reuse it.
+
+Do not duplicate registries.
+
+Do not create competing routing systems.
+
+Do not create competing asset systems.
+
+Do not create a second state-management architecture.
+
+Prefer the smallest clean seam.
+
+==================================================
+17. DOCUMENTATION
+==================================================
+
+Update:
+
+docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md
+
+to document the actual implemented shell.
+
+Update:
+
+docs/PROJECT_STATUS.md
+
+to distinguish:
+
+LOCKED DESIGN:
+- Discover
+- Profile
+- Titles
+- Multi-game platform
+
+IMPLEMENTED:
+- Initial platform shell
+- RPG registered as first Experience
+
+Do not claim future systems are implemented.
+
+==================================================
+18. GIT
+==================================================
+
+Do NOT commit immediately.
+
+First provide a pre-commit implementation report containing:
+
+1. Files to be added
+2. Files to be modified
+3. Platform architecture
+4. Experience registry design
+5. Routing approach
+6. RPG mounting approach
+7. Tests added
+8. Any architectural concerns
+
+Stop for approval before committing/pushing.
+
+==================================================
+FINAL RULE
+==================================================
+
+This milestone establishes the PLATFORM SEAM.
+
+Do not turn it into a full Discover redesign.
+
+Do not build Profile.
+
+Do not build Titles.
+
+Do not build multiplayer.
+
+Do not build additional games.
+
+Do not rewrite the RPG.
+
+Build the smallest clean platform shell capable of hosting the existing RPG as its first Experience.
+
+The desired long-term architecture is:
+
+INTELLIGENT TABLETOP
+        │
+        ├── PLAY
+        ├── BROWSE
+        ├── LIBRARY
+        ├── CREATE
+        ├── PROFILE
+        └── SETTINGS
+                │
+                ↓
+        EXPERIENCE REGISTRY
+                │
+        ┌───────┴────────┐
+        ↓                ↓
+      RPG          Future Experiences
+                    ├── Card
+                    ├── Strategy
+                    ├── Board
+                    └── etc.
+
+The platform is the table.
+
+The Experiences are what we put on it.

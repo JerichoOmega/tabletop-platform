@@ -15,7 +15,7 @@ import { test, expect } from "@playwright/test";
  */
 test.describe("Traditional mode", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?experience=rpg");
     // Switch to the Training Yard — 1 PC vs 1 enemy, open map, no pillars.
     await page.getByRole("button", { name: "Training Yard" }).click();
     // resolveLeadingEnemyTurns guarantees we always land on a PC turn.

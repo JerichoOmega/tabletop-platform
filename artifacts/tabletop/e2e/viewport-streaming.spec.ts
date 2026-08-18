@@ -45,7 +45,7 @@ const VIEWPORT_TILE_H = 10;
 // ---------------------------------------------------------------------------
 test.describe("Viewport streaming — Grand Hall", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
     await page.getByRole("button", { name: "Grand Hall" }).click();
     // Fighter (Aldric) always wins initiative (dex +2 vs −10 for Target Dummy).
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({

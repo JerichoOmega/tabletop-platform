@@ -15,7 +15,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Victory detection", () => {
   test("Victory banner appears once all enemies are defeated", async ({ page }) => {
     // ?e2e enables the test-only "Quick Battle" encounter in the picker.
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
 
     // Switch to the Quick Battle encounter (deterministic 1-hit win).
     await page.getByRole("button", { name: "Quick Battle" }).click();

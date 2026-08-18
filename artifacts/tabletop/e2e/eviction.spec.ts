@@ -82,7 +82,7 @@ function orcOf(snap: WorldDebugSnapshot) {
 test.describe("Phase 3 completion gate — leave, evict, return", () => {
   test("entity survives chunk eviction with identical identity and state; geometry regenerates deterministically", async ({ page }) => {
     test.setTimeout(180_000);
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
     await page.getByRole("button", { name: "Explore World" }).click();
     await expect(page.locator(LOCATION)).toContainText("(8, 8)");
 

@@ -30,7 +30,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Harmful abilities — Fire Bolt", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
     await page.getByRole("button", { name: "Ability Test" }).click();
     // testWizard always goes first — Fire Bolt button is immediately visible.
     await expect(page.getByRole("button", { name: "Fire Bolt" })).toBeVisible({ timeout: 5_000 });
@@ -81,7 +81,7 @@ test.describe("Harmful abilities — Fire Bolt", () => {
 
 test.describe("Beneficial abilities — Healing Touch", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
     await page.getByRole("button", { name: "Ability Test" }).click();
     await expect(page.getByRole("button", { name: "Healing Touch" })).toBeVisible({ timeout: 5_000 });
   });

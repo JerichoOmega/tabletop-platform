@@ -167,20 +167,40 @@ modern); Experience artwork belongs to the Experience. The platform UI is the
 common identity. The approved main-menu reference is the multi-game discovery
 dashboard mockup, not the earlier RPG-heavy mockup.
 
-## 11. Current-state boundary (as of this document)
+## 11. Implemented platform shell (M5)
 
-What exists today is the RPG Experience mounted directly at the app root:
-`App.tsx` renders `IntelligentTabletop` with no shell, router, discovery,
-profile, persistence, or title system. That is acceptable **for now** — the
-constraint going forward:
+The minimal game-agnostic platform shell IS IMPLEMENTED (milestone M5):
 
-- New platform surfaces (navigation, discovery, profile, titles, library)
-  must be built game-agnostically per this document.
-- The RPG game (`IntelligentTabletop`, `engine/`) should become an Experience
-  mounted BY a future platform shell, not the shell itself. The engine layer
-  stays untouched by platform work.
-- The natural seam: a future `src/platform/` (or shell) layer that `App.tsx`
-  renders, with Experiences registered behind a generic interface rather than
-  the shell importing RPG content (e.g. `ENCOUNTER_DEFS`) directly.
+```
+App.tsx → PlatformShell → platform destination → Experience (via registry)
+```
+
+- `src/platform/experiences/types.ts` — generic `ExperienceDefinition`
+  (id, title, gameType, description, optional artwork, `Component` entry
+  point). No RPG concepts in the abstraction.
+- `src/platform/experiences/registry.ts` — generic register/get/has/list
+  mechanism; the shell discovers Experiences ONLY through it (no game
+  branching). Duplicate/invalid registrations throw.
+- `src/platform/experiences/registerBuiltIn.ts` — the only file that knows
+  which Experiences ship; registers the RPG (`id: "rpg"`, mounts the existing
+  `IntelligentTabletop` unchanged).
+- `src/platform/shellState.ts` — pure shell state: platform destination
+  (play/browse/library/create/profile/settings) and active Experience are
+  SEPARATE concepts; URL codec (`?dest=…`, `?experience=…`) preserves
+  unrelated params; unknown Experience IDs degrade safely to Play.
+- `src/platform/PlatformShell.tsx` — navigation + Play surface listing
+  registered Experiences; all other destinations are explicit
+  future-functionality placeholders (no fake content); restrained dark-oak/
+  parchment/gold visual language; inside an Experience, a thin exit bar
+  returns to the platform.
+
+Still design-only (NOT implemented): Discover/Browse system, Library,
+Create, Profile, persistence, titles, multiplayer, additional game types.
+
+Constraints going forward:
+
+- New platform surfaces must be built game-agnostically per this document;
+  the shell must never import RPG content (e.g. `ENCOUNTER_DEFS`) directly.
+- The engine layer stays untouched by platform work.
 - Do not build fake multiplayer, fake progression, fake title data, or
   placeholder catalogs ahead of real implementation milestones.

@@ -13,7 +13,7 @@ import { test, expect } from "@playwright/test";
  */
 test.describe("Assisted mode", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?experience=rpg");
     // Training Yard: 1 PC (Aldric, longbow range 6) vs 1 Orc at distance 4.
     // The longbow can reach the Orc from the starting position.
     await page.getByRole("button", { name: "Training Yard" }).click();

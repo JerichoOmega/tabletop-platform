@@ -24,7 +24,7 @@ const VIEWPORT_TILE_H = 10;
 test.describe("Large-map viewport", () => {
   test.beforeEach(async ({ page }) => {
     // ?e2e enables the test-only "Grand Hall" encounter in the switcher.
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
     await page.getByRole("button", { name: "Grand Hall" }).click();
     // Wait until the fighter's action controls appear (fighter always wins
     // initiative over Target Dummy, dexMod 2 vs −10).

@@ -22,7 +22,7 @@ import { test, expect } from "@playwright/test";
 test.describe("Defeat detection", () => {
   test("Defeat banner appears once all party members fall", async ({ page }) => {
     // ?e2e enables the test-only "Quick Defeat" encounter in the picker.
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
 
     // Switch to the Quick Defeat encounter.
     await page.getByRole("button", { name: "Quick Defeat" }).click();
@@ -40,7 +40,7 @@ test.describe("Defeat detection", () => {
   });
 
   test("New Encounter button resets the game to a playable state after defeat", async ({ page }) => {
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
 
     // Load the Quick Defeat encounter and wait for the defeat banner.
     await page.getByRole("button", { name: "Quick Defeat" }).click();

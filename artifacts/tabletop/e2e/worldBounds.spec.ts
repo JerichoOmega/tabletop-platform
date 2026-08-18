@@ -69,7 +69,7 @@ function expectAllChunksInWorld(snap: WorldDebugSnapshot, when: string) {
 test.describe("Phase 3 M4 — world edge is authoritative", () => {
   test("party can approach the west edge, cannot cross it, and returns inward", async ({ page }) => {
     test.setTimeout(120_000);
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
     await page.getByRole("button", { name: "Explore World" }).click();
     await expect(page.locator(LOCATION)).toContainText("(8, 8)");
 

@@ -19,7 +19,10 @@ _Last updated: Phase 3 Milestone M1 complete — exploration mode + world-backed
 
 See `docs/ROADMAP.md` for the full phase breakdown and governance rules.
 **Product/design milestones (LOCKED DESIGN — not implemented functionality):**
-- Platform experience philosophy: `docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md` — Intelligent Tabletop is a multi-game tabletop platform (RPG is one Experience); Discover-style Play/Browse/Library/Create/Profile navigation, Experience Cards, persistent player profile, Destiny-style earned titles, platform vs Experience data separation. None of the Discover, profile, or title systems are implemented yet; the current app mounts the RPG Experience directly.
+- Platform experience philosophy: `docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md` — Intelligent Tabletop is a multi-game tabletop platform (RPG is one Experience); Discover-style Play/Browse/Library/Create/Profile navigation, Experience Cards, persistent player profile, Destiny-style earned titles, platform vs Experience data separation. The Discover system, profile, persistence, and titles remain LOCKED DESIGN — not implemented.
+
+**IMPLEMENTED (M5): initial platform shell**
+- `App.tsx → PlatformShell → destination → Experience registry`; the RPG is registered as the first Experience and mounted unchanged. Play lists registered Experiences; Browse/Library/Create/Profile/Settings exist as explicit future-functionality placeholders. See `docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md` §11.
 - Core presentation & camera design direction (locked): `docs/PRESENTATION_CAMERA_DIRECTION.md` — shared tabletop perspective, Grand Gaming Table as foundational environment, zoom as a presentation transition, static-miniature phase, and the gameplay/rendering separation every future feature must preserve.
 
 | § | Milestone | Status |

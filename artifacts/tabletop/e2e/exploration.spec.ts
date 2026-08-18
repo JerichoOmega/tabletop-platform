@@ -21,7 +21,7 @@ const TILE = '[data-testid="board-tile"]';
 const LOCATION = '[data-testid="exploration-location"]';
 
 async function enterExploration(page: Page) {
-  await page.goto("/");
+  await page.goto("/?experience=rpg");
   await page.getByRole("button", { name: "Explore World" }).click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
 }

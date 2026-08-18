@@ -44,7 +44,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Target preview — Attack mode", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Attack" })).toBeVisible({ timeout: 5_000 });
   });
@@ -70,7 +70,7 @@ test.describe("Target preview — Attack mode", () => {
   });
 
   test("hovering an out-of-range enemy shows 'out of range' in the preview", async ({ page }) => {
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
     await page.getByRole("button", { name: "Range Test" }).click();
     await expect(page.getByRole("button", { name: "Attack" })).toBeVisible({ timeout: 5_000 });
 
@@ -109,7 +109,7 @@ test.describe("Target preview — Attack mode", () => {
 
 test.describe("Target preview — Ability mode", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?e2e");
+    await page.goto("/?e2e&experience=rpg");
     await page.getByRole("button", { name: "Ability Test" }).click();
     await expect(page.getByRole("button", { name: "Fire Bolt" })).toBeVisible({ timeout: 5_000 });
   });
@@ -170,7 +170,7 @@ test.describe("Target preview — Ability mode", () => {
 
 test.describe("Target preview — mode transitions", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Attack" })).toBeVisible({ timeout: 5_000 });
   });
