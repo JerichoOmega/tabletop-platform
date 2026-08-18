@@ -6,3 +6,4 @@
 - [Viewport architecture](viewport-architecture.md) — Phase F-viewport complete; viewportStreaming.ts pure helpers; worldStateRef+chunkVersion in component
 - [Ages of Empire mode](ages-of-empire.md) — separate rules domain in engine/agesOfEmpire; AOE_BALANCE single tuning point; pure state + external age timer; battle-lock + input validation traps
 - [Exploration mode (M1)](exploration-mode.md) — sessionMode encounter/exploration; live chunk reads allowed ONLY in exploration/presentation layer; fixed world seed; 513 unit / 176 E2E
+- [Presentation & camera direction](presentation-camera.md) — locked design direction: shared tabletop camera, zoom = transition not mode, rules engine never sees animation; doc at artifacts/tabletop/docs/PRESENTATION_CAMERA_DIRECTION.md

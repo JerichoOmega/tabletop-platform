@@ -211,7 +211,7 @@ These assets are not in-world dungeon props. They are the physical environment a
 
 **Kind:** `environment` (foundational stage asset — not a prop)
 
-**Runtime:** Registered. Not yet rendered in any gameplay screen. Presentation integration (zoom-out camera, table-framing view) is a future step.
+**Runtime:** Registered. Not yet rendered in any gameplay screen. Presentation integration (zoom-out camera, table-framing view) is a future step — the locked design direction for that integration is `docs/PRESENTATION_CAMERA_DIRECTION.md`.
 
 **Important — dragon consistency rule:** All four legs must use the *same* dragon design. Do not create four different dragons. Do not give each leg a different motif. Do not create unique dragon poses. The approved canonical image is the visual master reference.
 

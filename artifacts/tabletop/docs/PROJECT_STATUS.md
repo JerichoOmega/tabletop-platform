@@ -18,6 +18,7 @@ _Last updated: Phase 3 Milestone M1 complete — exploration mode + world-backed
 ## Roadmap milestone status
 
 See `docs/ROADMAP.md` for the full phase breakdown and governance rules.
+Core presentation & camera design direction (locked): `docs/PRESENTATION_CAMERA_DIRECTION.md` — shared tabletop perspective, Grand Gaming Table as foundational environment, zoom as a presentation transition, static-miniature phase, and the gameplay/rendering separation every future feature must preserve.
 
 | § | Milestone | Status |
 |---|---|---|
