@@ -1,0 +1,87 @@
+Update Task #28 — Security dependency maintenance pass — before implementation.
+
+Important correction:
+
+orval pins js-yaml exactly at 4.3.0, so a normal pnpm lockfile refresh cannot remediate that advisory. Do NOT upgrade or replace orval solely to resolve this issue.
+
+Instead, resolve js-yaml using the narrowest possible pnpm scoped override.
+
+Requirements:
+
+1. js-yaml
+   - Current vulnerable version: 4.3.0
+   - Patched version: 4.3.1
+   - Because orval pins js-yaml exactly at 4.3.0, add the minimum-scope pnpm override necessary to force the affected dependency path to js-yaml 4.3.1.
+   - Prefer a scoped override rather than a broad global override if pnpm's override syntax allows the dependency relationship to be targeted precisely.
+   - Do not upgrade orval merely to work around the pin.
+   - Verify the resulting dependency tree with:
+       pnpm why js-yaml
+     and confirm the vulnerable 4.3.0 version is no longer installed where the advisory applies.
+
+2. Other advisories
+   Apply the previously proposed minimal fixes:
+   - fast-uri 3.1.4 → 3.1.5
+   - brace-expansion 5.0.8 → 5.0.9
+   - nanoid 3.3.16 → 3.3.18
+   - esbuild 0.27.3 → >=0.28.1
+
+3. Preserve scope
+   - This is a security/dependency maintenance task.
+   - Do not refactor application code.
+   - Do not upgrade unrelated dependencies.
+   - Do not change application behavior intentionally.
+   - Do not modify roadmap or architecture documentation.
+   - Keep the final diff as small and surgical as possible.
+
+4. Orval verification
+   Because js-yaml is being overridden underneath orval:
+   - Verify Orval/API code generation still works.
+   - Verify TypeScript compilation remains clean.
+   - Confirm the override does not create incompatible dependency resolution.
+
+5. Validation
+   Run the complete existing validation suite:
+   - dependency/security rescan
+   - typecheck
+   - all unit tests
+   - all E2E tests
+   - production builds
+   - tabletop web workflow
+
+   The repository currently has approximately:
+   - 513 unit tests
+   - 176 E2E tests
+
+   Use the actual current counts rather than assuming these numbers have not changed.
+
+6. Existing tabletop workflow failure
+   The tabletop web workflow was previously reporting as failed.
+
+   Explicitly determine whether:
+   - it was already failing before this task,
+   - the dependency changes caused the failure, or
+   - the dependency changes resolve it.
+
+   Do not silently classify a pre-existing failure as a successful validation result.
+
+7. Final security verification
+   After all changes:
+   - run pnpm why for every affected package where useful,
+   - run the security scanner again,
+   - confirm whether all five advisories are remediated,
+   - document any remaining findings and why they remain.
+
+8. Before committing
+   STOP and provide me with:
+   - exact files changed,
+   - exact dependency changes,
+   - the js-yaml override that was added and why it is scoped,
+   - pnpm why js-yaml output/summary,
+   - validation results,
+   - security scan results,
+   - tabletop workflow result,
+   - confirmation that no production source code was intentionally changed.
+
+Do NOT commit or push until I review that report.
+
+If validation fails, investigate and fix only issues caused by this maintenance task. Do not broaden the task unnecessarily.
