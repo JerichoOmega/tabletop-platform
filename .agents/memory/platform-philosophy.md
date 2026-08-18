@@ -15,3 +15,8 @@ Authoritative doc: `artifacts/tabletop/docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md`.
 
 **Why:** product identity is "the table"; games are what's placed on it; player identity persists across games.
 **How to apply:** any menu/navigation/profile/progression work must follow the doc; keep platform-level vs Experience-level data separate.
+
+## M5 implemented (platform shell)
+- Shell live: App → PlatformShell → dest → Experience registry → RPG. Files under src/platform/. URL contract ?dest=…&experience=… (replaceState, preserves ?e2e; unknown experience id dominates → Play surface).
+- E2E entry URLs now require ?experience=rpg (all specs updated); shell has its own e2e spec. Baseline after M5: 683 unit / 184 E2E.
+- Deferred deliberately: no history/popstate navigation (revisit at routing milestone); exit bar adds ~30px above RPG's 100vh root.
