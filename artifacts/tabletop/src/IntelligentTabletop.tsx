@@ -401,7 +401,9 @@ export default function IntelligentTabletop() {
     const ws = worldStateRef.current;
     if (!ws) return;
     let cancelled = false;
-    const chunks = getChunksForViewport(viewport, PREFETCH_MARGIN);
+    // M4: ws.bounds filters chunks entirely outside the playable world —
+    // the prefetch margin near a world edge never generates out-of-world chunks.
+    const chunks = getChunksForViewport(viewport, PREFETCH_MARGIN, ws.bounds);
     const promises = chunks.map(({ cx, cy }) =>
       ws.chunkStore.ensureResident(cx, cy, ws.seed).catch(() => {
         // Presentation load failure — chunk stays UNLOADED.
@@ -543,7 +545,7 @@ export default function IntelligentTabletop() {
     const ws = worldStateRef.current;
     if (!ws) return new Set<string>();
     const result = new Set<string>();
-    for (const { cx, cy } of getChunksForViewport(viewport, 0)) {
+    for (const { cx, cy } of getChunksForViewport(viewport, 0, ws.bounds)) {
       if (ws.chunkStore.residency(cx, cy) === "LOADING") {
         result.add(`${cx},${cy}`);
       }

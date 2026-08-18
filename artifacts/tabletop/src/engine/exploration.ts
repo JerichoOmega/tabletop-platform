@@ -37,10 +37,22 @@
 import type { TileInfo } from "@/engine/content";
 import { WorldState, type WorldEntity } from "@/engine/world";
 import { CHUNK_W, CHUNK_H, localKey } from "@/engine/chunk";
+import {
+  createWorldBounds, isInBounds, boundsWidth, boundsHeight, type WorldBounds,
+} from "@/engine/worldBounds";
 
-/** Finite exploration region for M1 (4×4 chunks). Replaced by WorldBounds in M4. */
-export const EXPLORE_WORLD_W = 64;
-export const EXPLORE_WORLD_H = 64;
+/**
+ * Authoritative playable-world bounds of the exploration world (M4).
+ * Inclusive rectangle covering chunks (0,0)..(3,3) — the same 64×64 region
+ * M1 hardcoded. This is the ONLY place the exploration world's extent is
+ * defined; every other consumer derives from it (directly or via
+ * session.worldState.bounds).
+ */
+export const EXPLORE_WORLD_BOUNDS: WorldBounds = createWorldBounds(0, 0, 63, 63);
+
+/** Exploration world extent in tiles — DERIVED from EXPLORE_WORLD_BOUNDS. */
+export const EXPLORE_WORLD_W = boundsWidth(EXPLORE_WORLD_BOUNDS);
+export const EXPLORE_WORLD_H = boundsHeight(EXPLORE_WORLD_BOUNDS);
 
 /**
  * Fixed world seed for the M1 exploration world. Deterministic terrain is
@@ -90,7 +102,9 @@ export interface ExplorationSession {
  * tolerate an initial window where tiles are unmapped.
  */
 export function createExplorationSession(): ExplorationSession {
-  const worldState = new WorldState(EXPLORE_WORLD_ID, EXPLORE_WORLD_SEED);
+  const worldState = new WorldState(
+    EXPLORE_WORLD_ID, EXPLORE_WORLD_SEED, undefined, EXPLORE_WORLD_BOUNDS,
+  );
   worldState.entities.register({
     worldId: PARTY_WORLD_ID,
     defId: "fighter",
@@ -124,7 +138,7 @@ export function createExplorationSession(): ExplorationSession {
  *   2. Exploration movement validation (there is no GameState in exploration).
  *
  * Resolution:
- *   • Outside the M1 exploration region → VOID.
+ *   • Outside the world's authoritative WorldBounds (M4) → VOID.
  *   • Chunk not RESIDENT/PINNED → VOID (unmapped = impassable, safe default).
  *   • Sparse tile present → that tile (pillars); absent → implicit FLOOR.
  */
@@ -133,7 +147,8 @@ export function explorationTileInfo(
   wx: number,
   wy: number,
 ): TileInfo {
-  if (wx < 0 || wy < 0 || wx >= EXPLORE_WORLD_W || wy >= EXPLORE_WORLD_H) {
+  const bounds = session.worldState.bounds;
+  if (bounds && !isInBounds(bounds, wx, wy)) {
     return VOID_TILE;
   }
   const cx = Math.floor(wx / CHUNK_W);
@@ -184,6 +199,13 @@ export function movePartyStep(
   const dy = Math.abs(wy - party.wy);
   if (dx === 0 && dy === 0) return { ok: false, reason: "You are already there." };
   if (dx > 1 || dy > 1) return { ok: false, reason: "Too far — move one tile at a time." };
+  // M4: crossing the authoritative world boundary is rejected explicitly and
+  // deterministically, BEFORE tile lookup, with a distinct reason (the tile
+  // path would report it as "unmapped", which is wrong at a real world edge).
+  const bounds = session.worldState.bounds;
+  if (bounds && !isInBounds(bounds, wx, wy)) {
+    return { ok: false, reason: "You have reached the edge of the world." };
+  }
   const tile = explorationTileInfo(session, wx, wy);
   if (!tile.passable) {
     return {

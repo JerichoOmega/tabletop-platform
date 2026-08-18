@@ -1,0 +1,202 @@
+Implement the next remaining Phase 3 milestone: M4 — WorldBounds.
+
+Repository authority:
+- Work from the current github/main state.
+- M2 is committed as b476513.
+- M3 is committed as 59abd64.
+- Do not assume older roadmap descriptions are authoritative where they conflict with the current repository.
+- Read docs/ROADMAP.md and docs/PHASE3_IMPLEMENTATION_PLAN.md first, then inspect the current implementation before changing anything.
+
+OBJECTIVE
+
+Implement the WorldBounds system required to make the streamed exploration world spatially authoritative and safe before M5 exploration ↔ encounter transitions begin.
+
+The goal is NOT to redesign the chunk system or create gameplay content.
+
+The goal is to establish one authoritative definition of the playable world's finite boundaries and ensure every relevant world/viewport/movement path respects it consistently.
+
+DESIGN REQUIREMENTS
+
+1. Establish an authoritative WorldBounds representation.
+
+It should explicitly define the playable world rectangle in world/tile coordinates, including:
+- minimum X
+- maximum X
+- minimum Y
+- maximum Y
+
+Use the coordinate conventions already established by the repository. Do not introduce a second coordinate system.
+
+The bounds must work correctly with:
+- negative coordinates if supported by the current world model
+- chunk boundaries
+- multi-tile viewport rectangles
+- entity positions
+- movement queries
+
+2. Make WorldBounds the single source of truth.
+
+Search the repository for any existing hard-coded or implicit assumptions about world edges, map dimensions, spawn limits, viewport limits, or coordinate clamping.
+
+Classify every occurrence.
+
+Where it represents the playable-world boundary, migrate it to WorldBounds.
+
+Do NOT blindly replace unrelated constants.
+
+3. Movement must respect WorldBounds.
+
+A player/entity must never be able to move outside the authoritative playable rectangle.
+
+The movement/query layer should reject or otherwise resolve an attempted move beyond the boundary using the repository's existing movement semantics.
+
+Do not introduce UI-only clamping that allows the underlying world state to disagree with what the player sees.
+
+4. Exploration viewport behavior must respect WorldBounds.
+
+The camera/viewport may approach the edge of the world, but it must never imply that playable terrain exists outside the authoritative bounds.
+
+Do not generate or retain unnecessary chunks indefinitely outside the playable world.
+
+Make the smallest architectural change necessary to ensure viewport chunk selection and world streaming remain bounds-aware.
+
+5. Chunk streaming must remain compatible with M2.
+
+Preserve:
+- deterministic chunk generation
+- eviction hysteresis
+- pinned chunk protection
+- LOADING protection
+- entity registry authority
+- entity survival across eviction
+- bit-identical regeneration
+
+WorldBounds must constrain what can be streamed; it must NOT change the entity/chunk authority model.
+
+6. Entity behavior at the boundary must be deterministic.
+
+An entity cannot be moved outside WorldBounds.
+
+If an entity is already at an edge, movement attempts beyond that edge must resolve consistently.
+
+Do not silently delete, teleport, or duplicate entities because they encounter a boundary.
+
+7. Encounter/world state must remain compatible.
+
+M5 will depend on this system.
+
+WorldBounds should therefore be available through the authoritative world state/query layer rather than being something only the renderer knows about.
+
+Do not implement M5 in this task.
+
+8. Preserve the existing legacy MapDef compatibility boundary.
+
+M3 deliberately moved parser geometry reasoning to tileQuery.
+
+Do not reintroduce map.pillars or make parser logic dependent on MapDef geometry.
+
+WorldBounds should operate independently of the legacy pillar compatibility layer.
+
+TESTING REQUIREMENTS
+
+Add focused unit tests covering at minimum:
+
+- points inside bounds
+- points exactly on each boundary
+- points outside each boundary
+- negative coordinates where supported
+- attempted movement across each edge
+- multi-tile/entity footprints if the current engine supports them
+- chunk coordinates intersecting the boundary
+- chunks entirely outside the playable world
+- viewport rectangles crossing each world edge
+- deterministic behavior at boundaries
+- no regression to M2 eviction behavior
+- no regression to M3 tileQuery/parser behavior
+
+Add or update E2E coverage where appropriate.
+
+The E2E test should exercise the real exploration path rather than testing only isolated helpers.
+
+At minimum verify:
+1. the player can approach a world edge,
+2. cannot cross it,
+3. the viewport remains coherent,
+4. no invalid outside-world exploration state is created,
+5. returning inward still works normally.
+
+REGRESSION REQUIREMENTS
+
+Run the complete existing validation suite.
+
+Expected baseline before this task:
+- 632 unit tests
+- 177 E2E tests
+
+Report the actual totals after implementation.
+
+Must pass:
+- all unit tests
+- all E2E tests
+- TypeScript typecheck
+- production build
+- relevant lint/static checks
+- architectural/code review
+
+IMPORTANT ARCHITECTURAL CONSTRAINTS
+
+Do NOT:
+- redesign ChunkStore
+- redesign WorldEntityRegistry
+- redesign viewport streaming
+- redesign the parser
+- implement exploration encounters
+- implement campaign logic
+- implement M5
+- add unrelated gameplay systems
+- change the established coordinate convention
+- introduce a second competing bounds system
+- perform broad dependency upgrades
+- modify assets
+- rewrite unrelated documentation
+
+Prefer:
+- small authoritative primitives
+- pure functions where possible
+- deterministic behavior
+- explicit contracts
+- regression tests
+- additive/surgical changes
+
+Before coding:
+
+1. Inspect the current repository implementation.
+2. Identify the existing world coordinate and chunk coordinate contracts.
+3. Identify where movement, viewport calculation, chunk loading, and world state currently live.
+4. Identify any existing implicit world limits.
+5. Produce a short implementation plan.
+6. Implement only M4.
+
+Before committing:
+
+- Review the diff for scope creep.
+- Verify there is exactly one authoritative WorldBounds contract.
+- Verify no M3 parser regression.
+- Verify M2 eviction/entity-survival behavior remains intact.
+- Run the full validation suite.
+- Report:
+  - files changed
+  - WorldBounds API/contract
+  - places migrated to it
+  - tests added
+  - actual unit/E2E totals
+  - typecheck/build results
+  - review findings
+  - any remaining concerns
+
+STOP before committing or pushing.
+
+Wait for explicit approval from me before creating the commit or pushing to github/main.
+
+Proposed commit:
+feat(tabletop): add authoritative world bounds

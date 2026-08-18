@@ -38,6 +38,7 @@ import {
   chunkKey,
 } from "./chunk";
 import type { ChunkGeneratorFn, ResidentGeometrySnapshot } from "./chunk";
+import { isInBounds, filterChunksToBounds, type WorldBounds } from "./worldBounds";
 
 // ---------------------------------------------------------------------------
 // WORLD ENTITY — persistent identity (spec §12.1)
@@ -108,8 +109,34 @@ export class WorldEntityRegistry {
   private readonly entities = new Map<string, WorldEntity>();
 
   /**
+   * Optional playable-world bounds (M4). When present, register() and move()
+   * refuse positions outside the bounds. This is an INVARIANT GUARD, not the
+   * primary rejection path — movement layers (exploration.ts movePartyStep,
+   * combat tileQuery VOID) must reject boundary crossings first with proper
+   * user-facing semantics. Reaching this throw indicates a caller bug.
+   */
+  private readonly bounds?: WorldBounds;
+
+  constructor(bounds?: WorldBounds) {
+    this.bounds = bounds;
+  }
+
+  /** Throws if (wx, wy) lies outside the registry's world bounds (if any). */
+  private assertInBounds(op: string, worldId: string, wx: number, wy: number): void {
+    if (this.bounds && !isInBounds(this.bounds, wx, wy)) {
+      throw new Error(
+        `WorldEntityRegistry.${op}: entity "${worldId}" position (${wx}, ${wy}) ` +
+        `is outside WorldBounds [${this.bounds.minWx}..${this.bounds.maxWx}] × ` +
+        `[${this.bounds.minWy}..${this.bounds.maxWy}]. Movement layers must ` +
+        `reject out-of-bounds positions before mutating the registry.`,
+      );
+    }
+  }
+
+  /**
    * Registers a new world entity.
-   * @throws If an entity with the same worldId has already been registered.
+   * @throws If an entity with the same worldId has already been registered,
+   *         or its position is outside the world bounds (when bounds exist).
    */
   register(entity: WorldEntity): void {
     if (this.entities.has(entity.worldId)) {
@@ -118,6 +145,7 @@ export class WorldEntityRegistry {
         `World IDs must be globally unique within a registry.`,
       );
     }
+    this.assertInBounds("register", entity.worldId, entity.wx, entity.wy);
     this.entities.set(entity.worldId, entity);
   }
 
@@ -163,6 +191,7 @@ export class WorldEntityRegistry {
         `WorldEntityRegistry.move: entity "${worldId}" is not registered.`,
       );
     }
+    this.assertInBounds("move", worldId, wx, wy);
     entity.wx = wx;
     entity.wy = wy;
   }
@@ -248,6 +277,7 @@ export interface PreparedEncounter {
  */
 export function computePinSet(
   participants: readonly WorldEntity[],
+  bounds?: WorldBounds,
 ): { cx: number; cy: number }[] {
   const seen = new Set<string>();
   const result: { cx: number; cy: number }[] = [];
@@ -267,7 +297,10 @@ export function computePinSet(
       }
     }
   }
-  return result;
+  // M4: never pin (and therefore never generate) chunks entirely outside the
+  // playable world. Chunks partially intersecting the boundary are kept —
+  // their out-of-bounds tiles read VOID via snapshotToTileQuery.
+  return filterChunksToBounds(result, bounds);
 }
 
 // ---------------------------------------------------------------------------
@@ -457,19 +490,30 @@ export class WorldState {
   readonly entities: WorldEntityRegistry;
 
   /**
+   * Authoritative playable-world bounds (M4). Undefined = unbounded world.
+   * Lives on WorldState (the authoritative world/query layer) so movement,
+   * streaming, and future M5 encounter transitions all read ONE contract —
+   * never a renderer-local copy.
+   */
+  readonly bounds?: WorldBounds;
+
+  /**
    * @param worldId      Stable world identifier.
    * @param seed         World RNG seed for chunk generation.
    * @param generateFn   Optional custom chunk generator (for testing).
+   * @param bounds       Optional authoritative playable-world bounds (M4).
    */
   constructor(
     worldId: string,
     seed: number,
     generateFn?: ChunkGeneratorFn,
+    bounds?: WorldBounds,
   ) {
     this.worldId = worldId;
     this.seed = seed;
     this.chunkStore = new ChunkStore(generateFn);
-    this.entities = new WorldEntityRegistry();
+    this.entities = new WorldEntityRegistry(bounds);
+    this.bounds = bounds;
   }
 
   /**
@@ -499,7 +543,7 @@ export class WorldState {
     participants: WorldEntity[],
     generationVersion = 0,
   ): Promise<PreparedEncounter> {
-    const pinnedChunks = computePinSet(participants);
+    const pinnedChunks = computePinSet(participants, this.bounds);
 
     // Load and atomically pin every chunk in the encounter set.
     // Concurrent loads: each chunk loads independently and in parallel.
@@ -515,6 +559,7 @@ export class WorldState {
       this.worldId,
       this.seed,
       pinnedChunks,
+      this.bounds,
     );
 
     return {
@@ -546,6 +591,27 @@ export class WorldState {
     gameState: GameState,
     pinnedChunks: readonly { cx: number; cy: number }[],
   ): void {
+    // ── M4 pre-validation: no partial commits ──────────────────────────────
+    // Every surviving combatant that maps to a registered entity must land
+    // inside the world bounds. Validate ALL positions BEFORE mutating ANY
+    // entity, so a malformed combat result rejects atomically (deterministic
+    // throw, registry untouched, pins untouched) instead of half-committing.
+    // Combat geometry cannot legitimately produce this: the snapshot tile
+    // query VOIDs out-of-world tiles, so reaching here indicates a caller bug.
+    if (this.bounds) {
+      for (const combatant of Object.values(gameState.combatants)) {
+        if (!combatant.worldId || !this.entities.has(combatant.worldId)) continue;
+        if (combatant.alive && !isInBounds(this.bounds, combatant.wx, combatant.wy)) {
+          throw new Error(
+            `WorldState.endEncounter: combatant "${combatant.worldId}" position ` +
+            `(${combatant.wx}, ${combatant.wy}) is outside WorldBounds ` +
+            `[${this.bounds.minWx}..${this.bounds.maxWx}] × ` +
+            `[${this.bounds.minWy}..${this.bounds.maxWy}]. No results were committed.`,
+          );
+        }
+      }
+    }
+
     // ── Commit combat results to persistent entity state ──────────────────
     for (const combatant of Object.values(gameState.combatants)) {
       if (!combatant.worldId) continue; // test fixture — no persistent record

@@ -32,6 +32,9 @@
 
 import type { TileInfo, TileQueryFn } from "./content";
 import { mulberry32 } from "./content";
+// Type-only import: worldBounds.ts imports CHUNK_W/H from this module at
+// runtime, so this must stay `import type` to avoid a runtime cycle.
+import type { WorldBounds } from "./worldBounds";
 
 // ---------------------------------------------------------------------------
 // CHUNK DIMENSION CONSTANTS (Decision 21)
@@ -214,6 +217,13 @@ export interface ResidentGeometrySnapshot {
   readonly worldId: string;
   /** The world seed. */
   readonly seed: number;
+  /**
+   * Authoritative playable-world bounds at snapshot time (M4), if the world
+   * is bounded. snapshotToTileQuery() returns VOID for tiles outside them,
+   * so encounter geometry can never imply terrain beyond the world edge —
+   * even when a pinned boundary chunk extends past it.
+   */
+  readonly bounds?: WorldBounds;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +253,13 @@ export interface ResidentGeometrySnapshot {
  * (do not crash). In tests: this state should never be reached.
  */
 export function snapshotToTileQuery(snapshot: ResidentGeometrySnapshot): TileQueryFn {
+  const bounds = snapshot.bounds;
   return (wx: number, wy: number): TileInfo => {
+    // M4: tiles outside the playable world are VOID, regardless of whether a
+    // boundary chunk happens to carry generated geometry past the edge.
+    if (bounds && (wx < bounds.minWx || wx > bounds.maxWx || wy < bounds.minWy || wy > bounds.maxWy)) {
+      return VOID_TILE;
+    }
     // Inline the floor division (identical to wxToChunk/wyToChunk) to avoid
     // object allocation on every hot-path tile query call.
     const cx = Math.floor(wx / CHUNK_W);
@@ -672,12 +688,15 @@ export class ChunkStore {
    * @param worldId  World identifier (stored as snapshot metadata).
    * @param seed     World seed (stored as snapshot metadata).
    * @param coords   Chunks to include. ALL must be RESIDENT or PINNED.
+   * @param bounds   Optional playable-world bounds (M4) — carried on the
+   *                 snapshot so derived tile queries VOID out-of-world tiles.
    * @throws If any chunk is UNLOADED or LOADING.
    */
   createSnapshot(
     worldId: string,
     seed: number,
     coords: { cx: number; cy: number }[],
+    bounds?: WorldBounds,
   ): ResidentGeometrySnapshot {
     const chunks = new Map<string, ChunkGeometryData>();
     for (const { cx, cy } of coords) {
@@ -701,6 +720,7 @@ export class ChunkStore {
       chunks: chunks as ReadonlyMap<string, ChunkGeometryData>,
       worldId,
       seed,
+      bounds,
     };
   }
 }

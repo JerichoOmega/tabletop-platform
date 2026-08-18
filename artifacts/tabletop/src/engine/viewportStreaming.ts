@@ -47,6 +47,7 @@
 import type { ViewportState } from "./viewport";
 import type { ChunkStore } from "./chunk";
 import { wxToChunk, wyToChunk } from "./chunk";
+import { filterChunksToBounds, type WorldBounds } from "./worldBounds";
 
 // ---------------------------------------------------------------------------
 // PREFETCH POLICY CONSTANT
@@ -99,13 +100,22 @@ export const PREFETCH_MARGIN = 1;
  *   Viewport at negative origin { originWx:-5, originWy:-5, tileW:4, tileH:4 }, margin=0:
  *     wx=[-5..-2], wy=[-5..-2] → cx=floor(-5/16)=-1, cy=-1 → 1 chunk.
  *
+ * WORLD BOUNDS (M4):
+ *   When `bounds` is provided, chunks that lie ENTIRELY outside the playable
+ *   world are excluded — the prefetch margin near a world edge must not
+ *   generate or retain chunks that contain no playable terrain. Chunks that
+ *   partially intersect the boundary are kept (their out-of-world tiles read
+ *   VOID at the tile-query layer).
+ *
  * @param viewport             The current viewport state.
  * @param prefetchMarginChunks Extra chunks to include beyond visible bounds.
+ * @param bounds               Optional playable-world bounds (M4 filter).
  * @returns Array of distinct chunk coordinates covering the region.
  */
 export function getChunksForViewport(
   viewport: ViewportState,
   prefetchMarginChunks = 0,
+  bounds?: WorldBounds,
 ): { cx: number; cy: number }[] {
   const { originWx, originWy, tileW, tileH } = viewport;
 
@@ -131,7 +141,7 @@ export function getChunksForViewport(
       result.push({ cx, cy });
     }
   }
-  return result;
+  return filterChunksToBounds(result, bounds);
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +189,8 @@ export function getChunksForViewport(
  * @param worldSeed            World seed forwarded to generateChunk().
  * @param prefetchMarginChunks Extra chunks to prefetch beyond the visible area.
  * @param generationVersion    Chunk generation version (default 0).
+ * @param bounds               Optional playable-world bounds (M4): chunks
+ *                             entirely outside them are never requested.
  */
 export function prefetchViewportChunks(
   store: ChunkStore,
@@ -186,8 +198,9 @@ export function prefetchViewportChunks(
   worldSeed: number,
   prefetchMarginChunks = PREFETCH_MARGIN,
   generationVersion = 0,
+  bounds?: WorldBounds,
 ): void {
-  const chunks = getChunksForViewport(viewport, prefetchMarginChunks);
+  const chunks = getChunksForViewport(viewport, prefetchMarginChunks, bounds);
   for (const { cx, cy } of chunks) {
     // Intentionally not awaited — fire and forget.
     // Catch to prevent unhandled-rejection warnings; failure is benign.
