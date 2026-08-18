@@ -20,7 +20,16 @@ import {
 const Noop = () => null;
 
 function def(id: string, extra: Partial<ExperienceDefinition> = {}): ExperienceDefinition {
-  return { id, title: `Title ${id}`, gameType: "rpg", Component: Noop, ...extra };
+  return {
+    id,
+    title: `Title ${id}`,
+    gameType: "rpg",
+    version: "1.0.0",
+    capabilities: ["local", "synchronous"],
+    players: { min: 1, max: 4 },
+    Component: Noop,
+    ...extra,
+  };
 }
 
 describe("Experience registry", () => {
@@ -71,6 +80,50 @@ describe("Experience registry", () => {
     );
   });
 
+  it("requires a major.minor.patch version (M6 contract)", () => {
+    const reg = createExperienceRegistry();
+    expect(() => reg.register(def("a", { version: "1.0" }))).toThrow(/version/);
+    expect(() => reg.register(def("b", { version: "" }))).toThrow(/version/);
+    expect(() => reg.register(def("c", { version: "v1.0.0" }))).toThrow(/version/);
+    reg.register(def("d", { version: "2.13.0" })); // valid
+    expect(reg.get("d")?.version).toBe("2.13.0");
+  });
+
+  it("validates capabilities: known values only, no duplicates, game concepts rejected", () => {
+    const reg = createExperienceRegistry();
+    expect(() =>
+      reg.register(def("a", { capabilities: ["supportsDungeons" as never] })),
+    ).toThrow(/unknown capability/);
+    expect(() =>
+      reg.register(def("b", { capabilities: ["local", "local"] })),
+    ).toThrow(/duplicate capabilities/);
+    expect(() => reg.register(def("c", { capabilities: undefined as never }))).toThrow(
+      /capabilities/,
+    );
+    // A hidden-information card game and a shared-board strategy game are both
+    // expressible with generic hosting capabilities alone.
+    reg.register(def("card-like", { capabilities: ["local", "synchronous", "hidden-information"] }));
+    reg.register(
+      def("strategy-like", {
+        gameType: "strategy",
+        capabilities: ["shared-board", "synchronous", "host-authoritative"],
+        players: { min: 2, max: 4 },
+      }),
+    );
+    expect(reg.list()).toHaveLength(2);
+  });
+
+  it("validates the players range", () => {
+    const reg = createExperienceRegistry();
+    expect(() => reg.register(def("a", { players: { min: 0, max: 2 } }))).toThrow(/players/);
+    expect(() => reg.register(def("b", { players: { min: 3, max: 2 } }))).toThrow(/players/);
+    expect(() =>
+      reg.register(def("c", { players: undefined as never })),
+    ).toThrow(/players/);
+    reg.register(def("d", { players: { min: 2, max: 6 } }));
+    expect(reg.get("d")?.players).toEqual({ min: 2, max: 6 });
+  });
+
   it("returns undefined / false for unknown IDs", () => {
     const reg = createExperienceRegistry();
     expect(reg.get("nope")).toBeUndefined();
@@ -89,6 +142,9 @@ describe("Built-in registration", () => {
     const rpg = experienceRegistry.get("rpg");
     expect(rpg?.title).toBe("Tabletop RPG");
     expect(rpg?.gameType).toBe("rpg");
+    expect(rpg?.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(rpg?.capabilities).toEqual(["local", "synchronous", "shared-board"]);
+    expect(rpg?.players).toEqual({ min: 1, max: 1 });
     expect(typeof rpg?.Component).toBe("function");
     expect(experienceRegistry.list().some((e) => e.id === "rpg")).toBe(true);
   });

@@ -28,6 +28,30 @@ export type GameType =
   | "puzzle"
   | "social";
 
+/**
+ * Generic capabilities the PLATFORM itself needs to understand (M6).
+ * These describe how an Experience is hosted — never what it contains.
+ * Game concepts (dungeons, cards, territories…) must never appear here.
+ */
+export const EXPERIENCE_CAPABILITIES = [
+  "local",
+  "online",
+  "synchronous",
+  "asynchronous",
+  "persistent-session",
+  "shared-board",
+  "hidden-information",
+  "host-authoritative",
+] as const;
+
+export type ExperienceCapability = (typeof EXPERIENCE_CAPABILITIES)[number];
+
+/** Supported player range (inclusive). */
+export interface PlayerRange {
+  readonly min: number;
+  readonly max: number;
+}
+
 /** A playable tabletop game or mode registered with the platform. */
 export interface ExperienceDefinition {
   /** Unique, URL-safe identifier (lowercase letters, digits, hyphens). */
@@ -36,6 +60,18 @@ export interface ExperienceDefinition {
   readonly title: string;
   /** Primary game-type classification. */
   readonly gameType: GameType;
+  /**
+   * Contract version of THIS Experience, "major.minor.patch". The platform
+   * never interprets Experience internals; the version exists so future
+   * platform/Experience compatibility decisions have an identifier to key on.
+   * Breaking changes to an Experience's externally visible contract bump
+   * major (policy in docs/EXPERIENCE_CONTRACT.md).
+   */
+  readonly version: string;
+  /** Hosting capabilities the platform must understand (validated). */
+  readonly capabilities: readonly ExperienceCapability[];
+  /** Supported player count (inclusive range). */
+  readonly players: PlayerRange;
   /** Short player-facing description (optional). */
   readonly description?: string;
   /** Optional visual-asset registry ID for artwork (platform never assumes one exists). */
@@ -43,7 +79,7 @@ export interface ExperienceDefinition {
   /**
    * Entry point: the React component the shell mounts when the player enters
    * this Experience. The component owns everything inside it (rules,
-   * gameplay state, game-specific UI/rendering/content).
+   * gameplay state, game-specific UI/rendering/content, outcome logic).
    */
   readonly Component: ComponentType;
 }

@@ -6,9 +6,10 @@
 // is permitted anywhere in the shell.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { ExperienceDefinition } from "./types";
+import { EXPERIENCE_CAPABILITIES, type ExperienceDefinition } from "./types";
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 export interface ExperienceRegistry {
   /** Register an Experience. Throws on invalid definition or duplicate ID. */
@@ -40,6 +41,35 @@ export function createExperienceRegistry(): ExperienceRegistry {
       }
       if (typeof def.gameType !== "string" || def.gameType.length === 0) {
         throw new Error(`Experience "${def.id}" requires a gameType.`);
+      }
+      if (typeof def.version !== "string" || !VERSION_PATTERN.test(def.version)) {
+        throw new Error(
+          `Experience "${def.id}" requires a version in "major.minor.patch" form (got ${JSON.stringify(def.version)}).`,
+        );
+      }
+      if (!Array.isArray(def.capabilities)) {
+        throw new Error(`Experience "${def.id}" requires a capabilities array.`);
+      }
+      for (const cap of def.capabilities) {
+        if (!(EXPERIENCE_CAPABILITIES as readonly string[]).includes(cap)) {
+          throw new Error(
+            `Experience "${def.id}" declares unknown capability ${JSON.stringify(cap)}.`,
+          );
+        }
+      }
+      if (new Set(def.capabilities).size !== def.capabilities.length) {
+        throw new Error(`Experience "${def.id}" declares duplicate capabilities.`);
+      }
+      if (
+        !def.players ||
+        !Number.isInteger(def.players.min) ||
+        !Number.isInteger(def.players.max) ||
+        def.players.min < 1 ||
+        def.players.max < def.players.min
+      ) {
+        throw new Error(
+          `Experience "${def.id}" requires a valid players range (integers, 1 <= min <= max).`,
+        );
       }
       if (typeof def.Component !== "function" && typeof def.Component !== "object") {
         throw new Error(`Experience "${def.id}" requires a Component entry point.`);

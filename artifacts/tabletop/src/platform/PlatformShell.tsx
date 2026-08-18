@@ -13,8 +13,10 @@
 // full Discover design is a later milestone.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer } from "react";
 
+import { ErrorBoundary, type ErrorFallbackProps } from "@/components/error-boundary";
+import { ExperiencePlatformProvider } from "./experiences/platformContext";
 import { experienceRegistry } from "./experiences/registry";
 import {
   applyShellStateToSearch,
@@ -102,9 +104,44 @@ function useShell(): [ShellState, (action: ShellAction) => void] {
   return [state, rawDispatch];
 }
 
+function ExperienceFailureFallback({
+  resetError,
+  onReturn,
+}: ErrorFallbackProps & { onReturn: () => void }) {
+  return (
+    <div className="pf-main" data-testid="experience-launch-failure">
+      <h2>This experience could not be started</h2>
+      <div className="pf-future">
+        Something went wrong inside the game. The Intelligent Tabletop platform
+        is still running.
+      </div>
+      <p>
+        <button
+          type="button"
+          data-testid="experience-failure-return"
+          onClick={() => {
+            resetError();
+            onReturn();
+          }}
+          style={{ font: "inherit", padding: "8px 20px", cursor: "pointer" }}
+        >
+          Return to platform
+        </button>
+      </p>
+    </div>
+  );
+}
+
 export default function PlatformShell() {
   const [state, dispatch] = useShell();
   const experiences = useMemo(() => experienceRegistry.list(), []);
+  const exitExperience = useCallback(() => dispatch({ type: "exitExperience" }), [dispatch]);
+  const fallback = useCallback(
+    (props: ErrorFallbackProps) => (
+      <ExperienceFailureFallback {...props} onReturn={exitExperience} />
+    ),
+    [exitExperience],
+  );
   const active =
     state.activeExperienceId !== null
       ? experienceRegistry.get(state.activeExperienceId)
@@ -125,7 +162,20 @@ export default function PlatformShell() {
           </button>
           <span data-testid="platform-active-experience">{active.title}</span>
         </div>
-        <ActiveComponent />
+        {/* Launch/runtime failure boundary (M6): an Experience crash must
+            never take down the platform shell — the fallback returns the
+            player to the platform. resetKey clears the error on exit. */}
+        <ErrorBoundary resetKey={active.id} FallbackComponent={fallback}>
+          <ExperiencePlatformProvider
+            value={{
+              experienceId: active.id,
+              experienceVersion: active.version,
+              requestExit: exitExperience,
+            }}
+          >
+            <ActiveComponent />
+          </ExperiencePlatformProvider>
+        </ErrorBoundary>
       </div>
     );
   }

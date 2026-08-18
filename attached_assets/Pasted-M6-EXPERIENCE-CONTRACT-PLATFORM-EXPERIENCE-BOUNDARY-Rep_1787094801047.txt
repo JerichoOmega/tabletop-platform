@@ -1,0 +1,683 @@
+M6 — EXPERIENCE CONTRACT & PLATFORM/EXPERIENCE BOUNDARY
+
+Repository:
+JerichoOmega/tabletop-platform
+
+M5 is complete:
+
+feat(tabletop): add minimal game-agnostic platform shell (M5)
+
+Current architecture:
+
+App
+→ PlatformShell
+→ Platform Destinations
+→ Experience Registry
+→ Experience
+→ RPG
+
+The RPG is currently the first registered Experience.
+
+M4 established authoritative WorldBounds.
+
+M5 established the platform shell and generic Experience registry.
+
+We now need to formalize the boundary between the Intelligent Tabletop PLATFORM and individual EXPERIENCES before beginning the RPG vertical slice.
+
+This is an architecture/documentation milestone with only the minimum implementation necessary to prove the contract.
+
+DO NOT turn this into a broad platform-services implementation.
+
+==================================================
+1. CORE PRINCIPLE
+==================================================
+
+Intelligent Tabletop is the platform.
+
+The individual games are Experiences.
+
+The platform should provide durable cross-Experience services and lifecycle infrastructure.
+
+The Experience owns its own:
+
+- rules
+- game state
+- content
+- gameplay systems
+- game-specific UI
+- rendering
+- progression
+- victory/defeat logic
+- game-specific data
+
+The platform must NOT become a generic tabletop game engine.
+
+The desired relationship is:
+
+INTELLIGENT TABLETOP
+        │
+        ├── Platform Shell
+        │
+        ├── Platform Services
+        │
+        └── Experience Boundary
+                 │
+                 ├── RPG
+                 ├── Future Card Game
+                 ├── Future Strategy Game
+                 ├── Future Board Game
+                 └── Future Experiences
+
+==================================================
+2. OBJECTIVE
+==================================================
+
+Define and implement the smallest coherent Experience Contract.
+
+The contract should answer:
+
+1. What is an Experience?
+2. What metadata does the platform need to know?
+3. How does the platform launch an Experience?
+4. How does an Experience identify itself?
+5. How does an Experience expose capabilities?
+6. Where does platform state end?
+7. Where does Experience state begin?
+8. How can future Experiences use platform services without importing RPG-specific code?
+9. How can an Experience evolve/version without forcing the platform to understand its internal rules?
+
+The contract must remain small.
+
+==================================================
+3. DO NOT OVERENGINEER
+==================================================
+
+This milestone is NOT permission to build:
+
+- authentication
+- online accounts
+- multiplayer
+- matchmaking
+- voice chat
+- friends
+- social systems
+- cloud saves
+- achievements
+- titles
+- recommendation algorithms
+- creator tools
+- content marketplace
+- commerce
+- additional games
+- generic tabletop rules engine
+- generic combat engine
+- generic card engine
+- generic board-game engine
+
+Those are future systems.
+
+Do not create empty abstractions for every possible future feature.
+
+Only establish the boundary needed to support them cleanly later.
+
+==================================================
+4. EXPERIENCE DEFINITION
+==================================================
+
+Review the existing:
+
+src/platform/experiences/types.ts
+
+and determine whether the current ExperienceDefinition is sufficient.
+
+The current concept includes:
+
+- id
+- title
+- gameType
+- description
+- optional artwork
+- Component entry point
+
+Extend it only where the contract genuinely requires it.
+
+Consider adding platform-facing metadata such as:
+
+- version
+- supported player count
+- estimated session length
+- capabilities
+- content classification where appropriate
+
+Do not add fields merely because they might someday be useful.
+
+==================================================
+5. CAPABILITY MODEL
+==================================================
+
+Do NOT create a giant interface such as:
+
+supportsCards
+supportsRPG
+supportsGM
+supportsCampaigns
+supportsDice
+supportsCharacters
+supportsTerritories
+etc.
+
+Those are game concepts.
+
+Instead, if capabilities are required, establish a small generic capability model.
+
+Examples of capability concepts that may be appropriate:
+
+- synchronous
+- asynchronous
+- local
+- online
+- persistent-session
+- shared-board
+- hidden-information
+- host-authoritative
+
+Only include capabilities that the platform itself needs to understand.
+
+The platform should never need to know:
+
+"This Experience uses a dungeon."
+
+or:
+
+"This Experience has a fighter character."
+
+==================================================
+6. EXPERIENCE LIFECYCLE
+==================================================
+
+Define the minimum lifecycle.
+
+At minimum, conceptually support:
+
+DISCOVER / SELECT
+        ↓
+LAUNCH
+        ↓
+ACTIVE
+        ↓
+SUSPEND / EXIT
+        ↓
+RETURN
+
+Do not implement complex session persistence yet.
+
+The contract should simply establish where lifecycle ownership belongs.
+
+Platform responsibilities:
+
+- select Experience
+- launch Experience
+- provide platform context
+- handle return to platform
+- handle unavailable/invalid Experience
+
+Experience responsibilities:
+
+- initialize its own game state
+- render its own game
+- run its own rules
+- clean up its own state
+- determine its own gameplay outcome
+
+==================================================
+7. PLATFORM CONTEXT
+==================================================
+
+If the Experience needs platform context, define a minimal platform context object.
+
+Potential examples:
+
+- experience identity
+- player identity placeholder
+- session identity placeholder
+- platform navigation callback
+- environment/runtime information
+
+Do NOT implement actual accounts or sessions.
+
+Use explicit optional/future-compatible fields only if they provide real architectural value.
+
+Avoid creating:
+
+any: any
+
+or a giant context object containing hypothetical future services.
+
+==================================================
+8. PLATFORM SERVICES
+==================================================
+
+Document the intended future boundary between:
+
+PLATFORM SERVICES
+
+and:
+
+EXPERIENCE SERVICES.
+
+Future platform-level services may eventually include:
+
+- player identity
+- persistence
+- library
+- friends
+- parties
+- presence
+- invites
+- titles
+- achievements
+- discovery
+- accessibility
+- privacy
+- notifications
+
+But NONE of these need to be implemented in M6.
+
+The important requirement is:
+
+An Experience must not directly depend on RPG-specific platform code.
+
+==================================================
+9. EXPERIENCE STATE
+==================================================
+
+Explicitly document that game-specific state belongs to the Experience.
+
+For example, RPG state may contain:
+
+- world state
+- characters
+- encounters
+- combat state
+- terrain
+- miniatures
+- exploration
+- campaign state
+
+A future card game may contain:
+
+- decks
+- hands
+- cards
+- hidden information
+- turns
+
+A strategy game may contain:
+
+- territories
+- armies
+- resources
+- diplomacy
+- turns
+
+The platform should not attempt to unify these into one generic state model.
+
+==================================================
+10. RENDERING BOUNDARY
+==================================================
+
+Document and preserve:
+
+Platform owns:
+
+- platform shell
+- global navigation
+- platform-level surfaces
+- transition into/out of Experiences
+
+Experience owns:
+
+- game UI
+- game camera
+- game rendering
+- game-specific visual systems
+- game-specific interaction
+
+For the RPG:
+
+Platform
+↓
+RPG Experience
+↓
+Existing RPG UI / renderer / engine
+
+Do not move the RPG renderer into the platform.
+
+==================================================
+11. ASSET BOUNDARY
+==================================================
+
+The existing visual asset registry remains the canonical asset infrastructure.
+
+Do not create a second asset system.
+
+Determine whether the current registry needs a small concept for Experience ownership/association.
+
+If it does not, leave it alone.
+
+Do NOT reorganize the existing canonical visual asset library.
+
+The Grand Gaming Table remains a foundational environment asset.
+
+==================================================
+12. SAVE / PERSISTENCE BOUNDARY
+==================================================
+
+Do not implement cloud saves.
+
+Do not implement accounts.
+
+But document the intended ownership:
+
+Platform eventually owns:
+
+- player identity
+- library
+- platform-level preferences
+- platform progression
+- titles
+
+Experience eventually owns:
+
+- game saves
+- campaign state
+- match state
+- game-specific progression
+
+Where appropriate, the platform may provide persistence infrastructure later, but the platform should not interpret the internal structure of an RPG save.
+
+==================================================
+13. VERSIONING
+==================================================
+
+The Experience contract should include a lightweight versioning concept.
+
+The purpose is to avoid future situations where:
+
+Platform version X
+and
+Experience version Y
+
+cannot communicate.
+
+Do NOT build a migration framework.
+
+Simply establish a version identifier or compatibility concept if appropriate.
+
+Document how future breaking changes should be handled.
+
+==================================================
+14. ERROR / FAILURE BOUNDARY
+==================================================
+
+Define the minimum behavior for:
+
+- unknown Experience
+- invalid Experience definition
+- Experience launch failure
+- unavailable Experience
+
+The platform should be able to safely return to the platform shell.
+
+An Experience should not be able to crash the entire platform shell conceptually.
+
+Do not build a sophisticated crash recovery system.
+
+==================================================
+15. RPG ADAPTER
+==================================================
+
+The existing RPG must remain essentially unchanged.
+
+Do not rewrite:
+
+- combat
+- WorldBounds
+- exploration
+- world state
+- terrain
+- encounter systems
+- renderer
+- existing RPG UI
+
+The RPG should simply conform to the Experience boundary through the smallest possible adapter/registration layer.
+
+If the current registration structure already achieves this, do not add unnecessary wrappers.
+
+==================================================
+16. SECOND-EXPERIENCE THOUGHT EXPERIMENT
+==================================================
+
+Before finalizing the contract, perform an architecture thought experiment.
+
+Pretend we are adding:
+
+EXPERIENCE #2:
+A small turn-based territory-control strategy game.
+
+It has:
+
+- 2–4 players
+- territories
+- armies
+- resources
+- turn order
+- victory conditions
+- shared board
+- different visual presentation
+
+Do NOT implement this game.
+
+Instead, determine whether the proposed Experience Contract would allow it to be added without:
+
+- changing PlatformShell
+- adding RPG-specific conditionals
+- adding strategy-specific conditionals
+- modifying the Experience registry architecture
+- creating platform-level territory/army concepts
+
+If the contract fails this thought experiment, fix the abstraction.
+
+Then perform a second mental check for:
+
+EXPERIENCE #3:
+A card game with hidden player hands.
+
+Again, do not implement it.
+
+Determine whether the platform boundary can support it without learning what a "card" or "hand" means.
+
+==================================================
+17. DOCUMENTATION
+==================================================
+
+Create or update an appropriate document, preferably:
+
+docs/EXPERIENCE_CONTRACT.md
+
+Document:
+
+- Experience definition
+- platform/Experience boundary
+- lifecycle
+- capability model
+- platform context
+- state ownership
+- rendering ownership
+- persistence ownership
+- asset relationship
+- versioning
+- error handling
+- RPG implementation
+- second-Experience compatibility test
+
+Cross-reference:
+
+docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md
+docs/PRESENTATION_CAMERA_DIRECTION.md
+docs/VISUAL_ASSET_LIBRARY.md
+docs/PROJECT_STATUS.md
+
+Do not duplicate large sections unnecessarily.
+
+==================================================
+18. TESTING
+==================================================
+
+Existing baseline after M5:
+
+683 unit tests
+184 E2E tests
+TypeScript clean
+Production build clean
+
+Preserve all existing behavior.
+
+Add focused tests for the contract.
+
+At minimum:
+
+- valid Experience definition
+- invalid Experience definition
+- version handling
+- capability validation if implemented
+- Experience lifecycle entry/exit
+- platform/Experience state separation
+- RPG registration through the contract
+- unknown Experience handling
+- launch failure handling
+- registry compatibility
+
+Do not weaken existing tests.
+
+==================================================
+19. ARCHITECTURE REVIEW
+==================================================
+
+Before changing code, inspect the existing M5 implementation.
+
+Determine:
+
+- what already satisfies the contract
+- what genuinely needs to change
+- what should remain untouched
+
+Do not create duplicate abstractions.
+
+Do not create a second Experience registry.
+
+Do not create a second routing system.
+
+Do not create a second asset system.
+
+Do not create a generic game engine.
+
+Prefer the smallest possible change.
+
+==================================================
+20. MILESTONE BOUNDARY
+==================================================
+
+M6 is COMPLETE when:
+
+1. The Experience contract is explicitly documented.
+2. The platform/Experience boundary is clear.
+3. The existing RPG conforms to the contract.
+4. A second strategy Experience could theoretically be added without RPG-specific platform changes.
+5. A hidden-information card Experience could theoretically be added without platform-level card concepts.
+6. Existing functionality remains intact.
+7. Tests pass.
+8. TypeScript passes.
+9. Production build passes.
+
+M6 is NOT COMPLETE merely because new interfaces were created.
+
+The abstraction must actually make architectural sense.
+
+==================================================
+21. DO NOT BUILD THE NEXT MILESTONE
+==================================================
+
+Do not begin:
+
+- multiplayer
+- profile
+- Discover
+- Library
+- Titles
+- additional Experiences
+- camera overhaul
+- animated miniatures
+
+Those are subsequent milestones.
+
+M6 exists to make sure we have the correct foundation before M7.
+
+==================================================
+22. GIT
+==================================================
+
+Do NOT commit or push immediately.
+
+First provide a pre-commit report containing:
+
+1. Existing architecture reviewed
+2. Files added
+3. Files modified
+4. Experience contract design
+5. Platform/Experience boundary
+6. Capability model
+7. Lifecycle model
+8. RPG adapter/registration approach
+9. Second-Experience thought experiment results
+10. Tests added
+11. Test totals
+12. TypeScript result
+13. Production build result
+14. Any architectural concerns
+
+STOP for approval before committing.
+
+==================================================
+FINAL PRINCIPLE
+==================================================
+
+The goal of M6 is NOT to build more game.
+
+The goal is to make sure the platform knows:
+
+"Here is an Experience."
+
+without needing to know:
+
+"Here is an RPG."
+
+The platform should know how to:
+
+SELECT
+LAUNCH
+HOST
+EXIT
+RETURN
+IDENTIFY
+and eventually provide services to an Experience.
+
+The Experience should know how to:
+
+PLAY.
+
+Keep that boundary clean.
+
+The next milestone after this will be the actual RPG vertical slice.
+
+M6 should prepare for that without stealing work from it.

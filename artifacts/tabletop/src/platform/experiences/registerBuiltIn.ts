@@ -22,8 +22,36 @@ export function registerBuiltInExperiences(): void {
     id: "rpg",
     title: "Tabletop RPG",
     gameType: "rpg",
+    version: "1.0.0",
+    // Hosting capabilities only — how the game is hosted, never what's in it.
+    capabilities: ["local", "synchronous", "shared-board"],
+    players: { min: 1, max: 1 },
     description:
       "Tactical tabletop role-playing on the Grand Gaming Table — dungeon encounters and open-world exploration with miniatures.",
     Component: IntelligentTabletop,
   });
+
+  // E2E-only fixture: a deliberately failing Experience used to verify the
+  // launch-failure boundary. Double-gated: the `import.meta.env.DEV` check is
+  // a BUILD-TIME gate (dead-code-eliminated from production bundles, so no
+  // URL parameter can ever register it in production), and the ?e2e flag
+  // keeps it out of ordinary dev sessions.
+  if (
+    import.meta.env.DEV &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("e2e")
+  ) {
+    experienceRegistry.register({
+      id: "e2e-broken",
+      title: "E2E Broken Experience",
+      gameType: "puzzle",
+      version: "1.0.0",
+      capabilities: ["local"],
+      players: { min: 1, max: 1 },
+      description: "Test fixture that throws on mount.",
+      Component: () => {
+        throw new Error("e2e-broken: intentional launch failure");
+      },
+    });
+  }
 }

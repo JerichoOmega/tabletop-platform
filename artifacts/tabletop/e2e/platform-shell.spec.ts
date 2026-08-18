@@ -61,4 +61,20 @@ test.describe("Platform shell", () => {
     await expect(page.locator('[data-testid="board-tile"]').first()).toBeVisible();
     expect(page.url()).toContain("e2e");
   });
+
+  test("an Experience that fails to launch is contained; player returns to the shell", async ({
+    page,
+  }) => {
+    // The e2e-broken fixture Experience registers only under ?e2e.
+    await page.goto("/?e2e&experience=e2e-broken");
+    await expect(page.getByTestId("experience-launch-failure")).toBeVisible();
+    // Platform chrome is still alive (exit bar renders around the failure).
+    await expect(page.getByTestId("platform-exit")).toBeVisible();
+    await page.getByTestId("experience-failure-return").click();
+    await expect(page.getByTestId("platform-shell")).toBeVisible();
+    await expect(page.getByTestId("platform-view-play")).toBeVisible();
+    // And a healthy Experience still launches afterwards.
+    await page.getByTestId("experience-enter-rpg").click();
+    await expect(page.locator('[data-testid="board-tile"]').first()).toBeVisible();
+  });
 });

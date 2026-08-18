@@ -23,6 +23,9 @@ See `docs/ROADMAP.md` for the full phase breakdown and governance rules.
 
 **IMPLEMENTED (M5): initial platform shell**
 - `App.tsx → PlatformShell → destination → Experience registry`; the RPG is registered as the first Experience and mounted unchanged. Play lists registered Experiences; Browse/Library/Create/Profile/Settings exist as explicit future-functionality placeholders. See `docs/PLATFORM_EXPERIENCE_PHILOSOPHY.md` §11.
+
+**IMPLEMENTED (M6): Experience contract & platform/Experience boundary**
+- Authoritative contract: `docs/EXPERIENCE_CONTRACT.md`. Experience definitions carry validated `version`, generic hosting `capabilities`, and `players` range; the shell provides a minimal platform context (`experienceId`, `experienceVersion`, `requestExit`); Experience crashes are contained by a launch-failure boundary that returns the player to the shell. RPG conforms through registration alone — engine/renderer untouched. Second-Experience thought experiments (strategy, hidden-information card game) pass without platform changes.
 - Core presentation & camera design direction (locked): `docs/PRESENTATION_CAMERA_DIRECTION.md` — shared tabletop perspective, Grand Gaming Table as foundational environment, zoom as a presentation transition, static-miniature phase, and the gameplay/rendering separation every future feature must preserve.
 
 | § | Milestone | Status |
