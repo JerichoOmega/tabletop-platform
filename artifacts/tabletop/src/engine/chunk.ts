@@ -614,6 +614,23 @@ export class ChunkStore {
     }
   }
 
+  /**
+   * Lists all chunks currently held in memory (RESIDENT or PINNED) with
+   * their coordinates and residency. LOADING and UNLOADED chunks are not
+   * included (they hold no geometry).
+   *
+   * Used by the M2 eviction policy to enumerate eviction candidates.
+   * Deterministic: iteration follows Map insertion order.
+   */
+  listChunks(): { cx: number; cy: number; residency: "RESIDENT" | "PINNED" }[] {
+    const out: { cx: number; cy: number; residency: "RESIDENT" | "PINNED" }[] = [];
+    for (const [k, entry] of this.entries) {
+      const [cx, cy] = k.split(",").map(Number);
+      out.push({ cx, cy, residency: entry.residency });
+    }
+    return out;
+  }
+
   // ── Eviction ─────────────────────────────────────────────────────────────
 
   /**

@@ -4,4 +4,5 @@
 - [Accessibility implementation](accessibility-impl.md) — ARIA roles, keyboard nav, focus ring, sr-only, reduced-motion; board token aria-label collision trap
 - [Hardening decisions](hardening-decisions.md) — Rng interface, RNG snapshot/restore, ally check, content validation, Phase 3 preflight resolutions (TileQueryFn invariant, MapDef wall model, 3-layer identity, encounter authority boundary)
 - [Viewport architecture](viewport-architecture.md) — Phase F-viewport complete; viewportStreaming.ts pure helpers; worldStateRef+chunkVersion in component
+- [Ages of Empire mode](ages-of-empire.md) — separate rules domain in engine/agesOfEmpire; AOE_BALANCE single tuning point; pure state + external age timer; battle-lock + input validation traps
 - [Exploration mode (M1)](exploration-mode.md) — sessionMode encounter/exploration; live chunk reads allowed ONLY in exploration/presentation layer; fixed world seed; 513 unit / 176 E2E

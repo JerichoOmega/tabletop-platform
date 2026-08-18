@@ -13,3 +13,11 @@ description: Design decisions for the exploration session layer and its boundari
 - **Gotcha:** the turnKey auto-select effect does not refire when returning from exploration (seed+actor unchanged) — exitExploration must restore selectedId manually or the action bar stays hidden.
 - **Gotcha (E2E):** `getByText("INITIATIVE")` collides with the session-log "Initiative: ..." line — use role=heading with exact match. Inline style substring checks like `inset 0 0 0 2px` fail (browser reorders box-shadow); use `cursor: pointer` instead.
 - Baseline after M1: 513 unit / 176 E2E, commit pushed to github main.
+
+## Eviction (M2, complete)
+- **Eviction is distance-based with hysteresis, never timer-based.** `engine/evictionPolicy.ts` evicts RESIDENT chunks at Chebyshev distance > PREFETCH_MARGIN+1 from the VISIBLE chunk rect, run in the component prefetch effect only after `Promise.allSettled` and only if the effect wasn't cancelled.
+  **Why:** the 1-chunk gap between prefetch ring (≤1) and eviction (>2) prevents load/evict thrash at chunk boundaries; the cancelled-flag check prevents evicting against a stale viewport.
+  **How to apply:** any future streaming trigger must keep pure selection (`selectChunksToEvict`) separate from execution, and rely on the double immunity layer (selection skips PINNED; `ChunkStore.evict()` refuses PINNED/LOADING).
+- **Eviction touches geometry only.** WorldEntityRegistry is never read or written by the eviction path — entity survival is by construction, and tests assert registry object identity across evict/reload.
+- **E2E world inspection:** read-only `window.__worldDebug(cx,cy)` hook exists behind the existing `?e2e` gate (residency, geometry hash, held chunks, entity snapshots). The eviction E2E walks a hardcoded BFS-verified path to (58,58); a unit test anchors that path's passability so terrain drift fails fast instead of timing out the E2E.
+- Baseline after M2: 622 unit / 177 E2E.

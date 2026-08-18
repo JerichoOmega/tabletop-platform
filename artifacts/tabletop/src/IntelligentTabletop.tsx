@@ -44,6 +44,7 @@ import { getVisibleTiles, initViewport, updateViewportForActor } from "@/engine/
 import type { WorldState } from "@/engine/world";
 import { worldEntityToCombatant } from "@/engine/world";
 import { getChunksForViewport, prefetchViewportChunks, PREFETCH_MARGIN } from "@/engine/viewportStreaming";
+import { evictDistantChunks } from "@/engine/evictionPolicy";
 // Phase 3 M1: exploration session — party moves through the streaming world.
 import type { ExplorationSession } from "@/engine/exploration";
 import {
@@ -408,10 +409,58 @@ export default function IntelligentTabletop() {
       })
     );
     void Promise.allSettled(promises).then(() => {
-      if (!cancelled) setChunkVersion(v => v + 1);
+      if (cancelled) return;
+      // Phase 3 M2: eviction runs AFTER prefetch settles (never on a timer).
+      // Removes RESIDENT chunks beyond the hysteresis threshold; PINNED and
+      // LOADING chunks are immune. Geometry only — WorldEntityRegistry and
+      // all authoritative state are untouched by design (Decision 25).
+      evictDistantChunks(ws.chunkStore, viewport);
+      setChunkVersion(v => v + 1);
     });
     return () => { cancelled = true; };
   }, [viewport]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---------------------------------------------------------------------------
+  // Phase 3 M2 — E2E diagnostics hook (test builds only, ?e2e query param).
+  //
+  // Read-only inspection of the live WorldState so the completion-gate E2E can
+  // verify chunk residency, deterministic geometry, and entity survival. It
+  // returns plain serializable snapshots and NEVER mutates anything. It is not
+  // installed in production sessions (isE2E is false without the query param).
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isE2E) return;
+    type WorldDebug = (cx: number, cy: number) => {
+      residency: string;
+      geometryHash: string | null;
+      heldChunks: { cx: number; cy: number; residency: string }[];
+      entities: { worldId: string; defId: string; wx: number; wy: number; hp: number; maxHp: number; alive: boolean }[];
+    } | null;
+    const hook: WorldDebug = (cx, cy) => {
+      const ws = worldStateRef.current;
+      if (!ws) return null;
+      const geometry = ws.chunkStore.getGeometry(cx, cy);
+      const geometryHash = geometry
+        ? [...geometry.tiles.entries()]
+            .map(([k, t]) => `${k}:${t.type}`)
+            .sort()
+            .join("|")
+        : null;
+      return {
+        residency: ws.chunkStore.residency(cx, cy),
+        geometryHash,
+        heldChunks: ws.chunkStore.listChunks(),
+        entities: ws.entities.getAll().map((e) => ({
+          worldId: e.worldId, defId: e.defId, wx: e.wx, wy: e.wy,
+          hp: e.hp, maxHp: e.maxHp, alive: e.alive,
+        })),
+      };
+    };
+    (window as unknown as { __worldDebug?: WorldDebug }).__worldDebug = hook;
+    return () => {
+      delete (window as unknown as { __worldDebug?: WorldDebug }).__worldDebug;
+    };
+  }, []);
 
   const currentActorId = gameState.turnOrder[gameState.turnIndex];
   const currentActor   = gameState.combatants[currentActorId];
