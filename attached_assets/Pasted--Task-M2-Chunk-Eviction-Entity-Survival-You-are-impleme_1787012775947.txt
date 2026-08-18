@@ -1,0 +1,411 @@
+# Task M2 — Chunk Eviction + Entity Survival
+
+You are implementing the next milestone in the canonical Intelligent Tabletop roadmap.
+
+READ THESE DOCUMENTS FIRST:
+
+1. `docs/ROADMAP.md`
+2. `docs/PHASE3_IMPLEMENTATION_PLAN.md`
+3. `artifacts/tabletop/docs/WORLD_SCALE_VIEWPORT.md`
+4. Relevant existing engine/test files under:
+   - `src/engine/chunk.ts`
+   - `src/engine/world.ts`
+   - `src/engine/viewportStreaming.ts`
+   - `src/engine/exploration.ts`
+   - `src/IntelligentTabletop.tsx`
+   - existing chunk/world/viewport/E2E tests
+
+The repository is authoritative. Do not rely on assumptions from older planning documents.
+
+## Objective
+
+Implement:
+
+**Phase 3 — M2: Chunk Eviction Policy + Entity Survival**
+
+The goal is to complete the missing chunk-lifecycle behavior required for the Phase 3 large-world architecture.
+
+M1 (exploration mode + world-backed session) is already complete.
+
+M2 must prove that the world can stream chunks out of memory while authoritative world entities remain persistent and recover correctly when the player returns.
+
+This is a foundational infrastructure task, NOT a gameplay expansion.
+
+---
+
+# HARD ARCHITECTURAL CONSTRAINTS
+
+Do NOT redesign or replace the existing architecture.
+
+The following decisions are already canonical and must remain intact:
+
+- Existing 16×16 chunk model.
+- Existing `ChunkStore`.
+- Existing `WorldState`.
+- Existing `WorldEntityRegistry`.
+- Existing world coordinates (`wx`, `wy`).
+- Existing `ViewportState`.
+- Existing viewport streaming/prefetch system.
+- Existing immutable `ResidentGeometrySnapshot`.
+- Existing `TileQueryFn` abstraction.
+- Existing separation between authoritative state and presentation state.
+- Existing M1 exploration session.
+- Existing deterministic chunk generation.
+- Existing encounter pinning model.
+
+Do NOT introduce:
+- a new chunk system
+- a new coordinate system
+- a second entity registry
+- procedural generation systems
+- persistence-to-disk
+- multiplayer
+- AI DM behavior
+- narrative triggers
+- new gameplay mechanics
+- a universal world simulation
+- a new framework or abstraction layer unless the existing code genuinely requires a very small isolated helper
+
+This should be an additive/surgical implementation.
+
+---
+
+# REQUIRED BEHAVIOR
+
+## 1. Automatic distance-based eviction
+
+Implement automatic eviction for `RESIDENT` chunks that are sufficiently far outside the active viewport/prefetch region.
+
+Use the existing canonical hysteresis recommendation:
+
+- Prefetch margin = existing `PREFETCH_MARGIN`
+- Eviction threshold = `PREFETCH_MARGIN + 1` chunk distance
+- Use Chebyshev chunk distance, consistent with the Phase 3 implementation plan.
+
+Only evict chunks that are:
+
+- `RESIDENT`
+
+Never automatically evict:
+
+- `PINNED`
+- `LOADING`
+
+Do not evict the currently required viewport/prefetch chunks.
+
+Eviction should occur after the required prefetch work settles rather than on an arbitrary timer.
+
+Do not introduce timer-based eviction unless the existing architecture makes that absolutely necessary.
+
+---
+
+# 2. Entity data MUST survive eviction
+
+This is critical.
+
+Chunk geometry and world entities are separate systems.
+
+Evicting a chunk must NEVER:
+
+- delete an entity
+- recreate an entity with a new identity
+- reset HP
+- reset position
+- reset alive/dead state
+- reset any other authoritative entity state
+- modify `WorldEntityRegistry`
+- modify campaign/world state
+
+Entities remain authoritative in `WorldEntityRegistry`.
+
+Chunk eviction only removes cached/generated geometry.
+
+When the player returns to an evicted region, geometry should be regenerated deterministically while the entity registry supplies the authoritative entity state.
+
+---
+
+# 3. Deterministic regeneration
+
+When a previously evicted chunk becomes resident again:
+
+- It must regenerate using the existing deterministic generation path.
+- Do not introduce new randomness.
+- Do not mutate the world seed.
+- Do not introduce generation state that is not already part of the canonical chunk-generation contract.
+
+Given identical:
+
+- world seed
+- chunk coordinates
+- generation version/configuration
+
+the regenerated geometry must be equivalent to the geometry before eviction.
+
+Do not solve this by retaining the geometry forever.
+
+The purpose of M2 is specifically to prove that geometry can be discarded and reconstructed safely.
+
+---
+
+# 4. Resident chunk bound
+
+The implementation should prevent resident chunks from growing without bound during normal exploration.
+
+After prefetch/eviction settles:
+
+- viewport-required chunks remain resident
+- prefetch-margin chunks remain resident
+- pinned chunks remain resident
+- distant unpinned resident chunks are evicted
+
+Add a test proving the resident set remains bounded according to the existing viewport/prefetch model, plus pinned chunks where applicable.
+
+Do not over-optimize beyond what the existing architecture requires.
+
+---
+
+# 5. Preserve encounter pinning semantics
+
+Existing encounter pinning is authoritative.
+
+M2 must not break the existing behavior where chunks required by an active encounter are pinned.
+
+Verify that:
+
+- pinned chunks cannot be evicted
+- moving the viewport does not evict encounter-required chunks
+- encounter snapshots remain valid even if unrelated chunks are evicted
+- ending an encounter correctly releases its pins through the existing mechanism
+
+Do not redesign encounter pinning.
+
+---
+
+# TEST REQUIREMENTS
+
+Add focused tests for the new behavior.
+
+## Unit tests
+
+At minimum, cover:
+
+### Eviction selection
+
+Verify:
+
+- near chunks are retained
+- prefetch-margin chunks are retained
+- distant chunks are selected for eviction
+- `PINNED` chunks are immune
+- `LOADING` chunks are immune
+- already-unloaded chunks are ignored
+- eviction selection is deterministic
+
+### Geometry regeneration
+
+Test:
+
+1. Generate chunk.
+2. Capture its immutable geometry representation.
+3. Evict chunk.
+4. Re-resident the same chunk.
+5. Generate/read its geometry again.
+6. Assert equivalent geometry.
+
+### Entity survival
+
+Test:
+
+1. Create a world entity in a chunk.
+2. Record its world ID, position, HP, and relevant authoritative state.
+3. Evict the chunk containing it.
+4. Verify the entity remains in `WorldEntityRegistry`.
+5. Change/verify authoritative state as appropriate.
+6. Re-resident the chunk.
+7. Verify the entity retains exactly the same identity and state.
+
+The test must demonstrate that entity persistence is independent of chunk residency.
+
+### Pinned entity/encounter behavior
+
+Verify an entity involved in a pinned encounter remains protected from eviction through the existing pinning mechanism.
+
+Do not create a duplicate pinning architecture.
+
+---
+
+# REQUIRED END-TO-END COMPLETION-GATE TEST
+
+Add the Phase 3 completion-gate E2E test described in `PHASE3_IMPLEMENTATION_PLAN.md`.
+
+The test should exercise the actual world-backed session, not merely isolated mocks.
+
+Conceptually:
+
+1. Start a world-backed exploration session.
+2. Establish an entity at a known world coordinate.
+3. Verify the entity's initial identity/state.
+4. Traverse far enough away that its containing chunk becomes eligible for eviction.
+5. Allow streaming/eviction to settle.
+6. Confirm the distant chunk was actually evicted.
+7. Return to the original region.
+8. Allow the chunk to become resident again.
+9. Verify:
+   - same entity identity
+   - same world coordinates
+   - same HP/state
+   - same authoritative world state
+   - regenerated geometry is deterministic
+10. Verify no duplicate entity was created.
+11. Verify viewport movement did not mutate authoritative entity state.
+
+This test is the critical proof that:
+
+WORLD ENTITY STATE
+≠
+CHUNK CACHE STATE
+
+---
+
+# REGRESSION REQUIREMENTS
+
+The existing test suite is a hard regression gate.
+
+At minimum, run:
+
+- all unit tests
+- all E2E tests
+- typecheck
+- production builds
+
+The repository previously reported:
+
+- 513/513 unit tests
+- 176/176 E2E tests
+
+Do not assume these counts remain unchanged if legitimate new tests are added. Report the actual final counts.
+
+All pre-existing tests must continue passing.
+
+Do not weaken, delete, skip, or rewrite existing regression tests simply to make M2 pass.
+
+---
+
+# PERFORMANCE REQUIREMENTS
+
+Use the existing architecture.
+
+Verify that:
+
+- resident chunks remain bounded during exploration
+- eviction does not cause unnecessary React re-rendering beyond the existing `chunkVersion` mechanism
+- no timer-driven eviction loop is introduced
+- eviction does not repeatedly thrash chunks at the viewport boundary
+- the existing one-chunk prefetch buffer/hysteresis remains effective
+
+Do not prematurely optimize.
+
+Measure first and only change performance-sensitive behavior when evidence requires it.
+
+---
+
+# FILE/SCOPE DISCIPLINE
+
+Expected implementation areas are primarily:
+
+- `src/engine/chunk.ts`
+- `src/engine/viewportStreaming.ts`
+- possibly a small `src/engine/evictionPolicy.ts` if that produces a cleaner isolated implementation
+- relevant world/exploration integration
+- focused unit tests
+- focused E2E test
+
+Do NOT modify unrelated gameplay code.
+
+Do NOT begin M3, M4, M5, Phase 4, RPG Mission Contracts, Session Contracts, Ages of Empire, or AI DM work as part of this task.
+
+Those are separate roadmap milestones.
+
+---
+
+# IMPORTANT: DO NOT "FIX" THINGS OUTSIDE M2
+
+If you discover issues unrelated to M2:
+
+1. Determine whether they block M2.
+2. If they do not block M2, leave them alone.
+3. Report them separately.
+
+In particular, do NOT silently implement:
+
+- parser migration (`state.map.pillars` → `tileQuery`) — that is M3
+- WorldBounds — that is M4
+- exploration → encounter → combat — that is M5
+
+If M2 exposes a dependency that genuinely blocks implementation, stop and explain it rather than expanding scope automatically.
+
+---
+
+# VALIDATION REPORT
+
+Before committing, provide a concise report containing:
+
+## Implementation
+- files changed
+- eviction policy implemented
+- entity survival behavior
+- deterministic regeneration behavior
+- encounter pinning behavior
+
+## Tests
+- unit test count
+- E2E test count
+- typecheck result
+- production build result
+- Phase 3 completion-gate E2E result
+
+## Scope
+Confirm:
+- no existing architecture was replaced
+- no unrelated roadmap phases were implemented
+- no production behavior outside M2 was changed unnecessarily
+
+## Security
+Run the normal security check if it is already part of the repository validation workflow, but do not perform unrelated dependency upgrades.
+
+## Git
+Do NOT commit or push until you have shown the complete validation report and I approve the final commit.
+
+If the environment/workflow normally requires an agent to commit automatically, STOP before committing and report the proposed commit message and exact changed-file list instead.
+
+Recommended commit message:
+
+`feat(tabletop): add chunk eviction and entity survival`
+
+---
+
+# SUCCESS CONDITION
+
+M2 is complete only when the repository can demonstrate all of the following:
+
+> The player can explore a world larger than the active viewport.
+
+> Distant unpinned chunks are automatically evicted.
+
+> Evicted chunks can be regenerated deterministically.
+
+> World entities survive chunk eviction independently of geometry residency.
+
+> Returning to an evicted region restores the same authoritative world state.
+
+> Encounter-pinned chunks remain protected.
+
+> Resident memory remains bounded during normal exploration.
+
+> The leave-and-return completion-gate E2E passes.
+
+> The entire existing test/build suite remains green.
+
+Do not declare M2 complete based only on unit tests. The world-backed leave → eviction → return → entity identity/state E2E is the defining acceptance test.
+
+At the end, stop and give me the validation report for review. Do not push a commit without my approval.
