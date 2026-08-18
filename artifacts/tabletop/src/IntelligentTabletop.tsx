@@ -466,7 +466,11 @@ export default function IntelligentTabletop() {
 
   const currentActorId = gameState.turnOrder[gameState.turnIndex];
   const currentActor   = gameState.combatants[currentActorId];
-  const isPlayerTurn   = currentActor && currentActor.type === "pc";
+  // A "player turn" only exists while the encounter is ongoing — after
+  // victory/defeat the turn cycle is terminal (engine endTurn guard), so no
+  // turn-scoped controls (Attack / End Turn / intent bar) may render.
+  const isPlayerTurn =
+    currentActor && currentActor.type === "pc" && checkEncounterStatus(gameState) === "ongoing";
   const selected       = selectedId ? gameState.combatants[selectedId] : null;
 
   // ---------------------------------------------------------------------------
@@ -624,6 +628,11 @@ export default function IntelligentTabletop() {
   }
 
   function doEndTurnAndMaybeAI(state: GameState) {
+    // Lifecycle guard (mirrors the engine's own endTurn terminal guard):
+    // after victory/defeat no path may cycle turns or run enemy AI. The
+    // engine guard is authoritative; this early-return just avoids useless
+    // state churn from stale UI events.
+    if (checkEncounterStatus(state) !== "ongoing") return state;
     const next = endTurn(state);
     return resolveLeadingEnemyTurns(next, rngRef.current!);
   }

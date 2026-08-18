@@ -101,3 +101,8 @@ During an active encounter, `GameState` is the sole writer for combat-participan
 - **Parser cover/pillar reasoning reads only state.tileQuery, never MapDef.pillars.** Nearest-pillar tie-break contract: Chebyshev distance, then lowest wy, then lowest wx (legacy array-order ties were an authoring accident that cannot exist for chunk geometry).
   **Why:** tileQuery is the single authoritative geometry for MapDef and world-backed encounters; array-order tie semantics are unreproducible from generated chunks.
   **How to apply:** any new parser/AI geometry heuristic must scan tileQuery deterministically (perimeter rings, fixed order); a static-guard unit test fails if `.pillars` access reappears in parser.ts.
+
+## Combat terminal-state guard (post-M6 bugfix)
+Rule: encounter outcome stays a pure derivation (checkEncounterStatus) — no persisted outcome field. `endTurn` returns the SAME state reference when status is non-ongoing (idempotent no-op; React state bailout), and `isPlayerTurn` in the UI requires ongoing status so turn controls unmount on victory/defeat.
+**Why:** real-gameplay bug — victory banner showed but End Turn stayed rendered and endTurn had no terminal guard, so turns advanced forever after victory.
+**How to apply:** any new caller of endTurn/enemy AI, or any future rewards/persistence system, must key off the derived status; add a persisted outcome only when outcome gains side effects (rewards, endEncounter wiring).

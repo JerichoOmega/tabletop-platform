@@ -453,6 +453,13 @@ export function executeAbility(
 // TURN MANAGEMENT + ENCOUNTER STATUS
 // ---------------------------------------------------------------------------
 export function endTurn(state: GameState): GameState {
+  // Terminal guard: once the encounter has reached victory or defeat, the
+  // turn cycle is over. Returning the state unchanged makes the terminal
+  // state authoritative AND idempotent — no caller (UI handler, proposal
+  // approval, AI loop, or future orchestration) can generate further turns,
+  // and repeated calls cannot produce duplicate transitions or log entries.
+  if (checkEncounterStatus(state) !== "ongoing") return state;
+
   const next      = cloneState(state);
   const currentId = next.turnOrder[next.turnIndex];
   const actor     = next.combatants[currentId];

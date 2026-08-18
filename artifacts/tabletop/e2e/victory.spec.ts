@@ -49,4 +49,50 @@ test.describe("Victory detection", () => {
       page.getByRole("button", { name: "New Encounter" })
     ).toBeVisible();
   });
+
+  // Regression: after the final enemy fell, victory was detected but the turn
+  // system could keep advancing (endTurn had no terminal guard). This test
+  // plays the real combat flow to victory, then asserts the turn cycle STOPS.
+  test("after victory the turn cycle stops and the player can continue", async ({
+    page,
+  }) => {
+    await page.goto("/?e2e&experience=rpg");
+    await page.getByRole("button", { name: "Quick Battle" }).click();
+    await expect(page.getByRole("button", { name: "Attack" })).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // Capture the turn indicator before the kill (Round N · X's turn).
+    const turnIndicator = page.getByText(/Round \d+ ·/);
+    await expect(turnIndicator).toBeVisible();
+    const beforeKill = (await turnIndicator.textContent()) ?? "";
+
+    // Real lifecycle: attack → final enemy dies → victory.
+    await page.getByRole("button", { name: "Attack" }).click();
+    await page.locator('[title="Target Dummy"]').click();
+    await expect(page.getByText("Victory!", { exact: false })).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // 1. No further turn is generated: combat action controls are gone…
+    await expect(page.getByRole("button", { name: "End Turn" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Attack" })).toHaveCount(0);
+
+    // …and the turn/round indicator does not advance. Give any stray
+    // async turn-advancement a moment to fire before re-reading.
+    await page.waitForTimeout(750);
+    const afterVictory = (await turnIndicator.textContent()) ?? "";
+    expect(afterVictory).toBe(beforeKill);
+
+    // 2. No duplicate completion: exactly one Victory banner.
+    await expect(page.getByText(/Victory!/)).toHaveCount(1);
+
+    // 3. The player can continue normally from the terminal state.
+    await page.getByRole("button", { name: "New Encounter" }).click();
+    await page.getByRole("button", { name: "Training Yard" }).click();
+    await expect(page.getByRole("button", { name: "Attack" })).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(page.getByText(/Victory!/)).toHaveCount(0);
+  });
 });
