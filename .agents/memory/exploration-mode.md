@@ -21,3 +21,8 @@ description: Design decisions for the exploration session layer and its boundari
 - **Eviction touches geometry only.** WorldEntityRegistry is never read or written by the eviction path — entity survival is by construction, and tests assert registry object identity across evict/reload.
 - **E2E world inspection:** read-only `window.__worldDebug(cx,cy)` hook exists behind the existing `?e2e` gate (residency, geometry hash, held chunks, entity snapshots). The eviction E2E walks a hardcoded BFS-verified path to (58,58); a unit test anchors that path's passability so terrain drift fails fast instead of timing out the E2E.
 - Baseline after M2: 622 unit / 177 E2E.
+
+## WorldBounds (M4)
+- One authoritative bounds contract: `engine/worldBounds.ts` inclusive rectangle; lives on WorldState (never renderer-only). Exploration extent defined ONLY by EXPLORE_WORLD_BOUNDS (W/H derived).
+- Layered enforcement: movement rejects edge crossings first (friendly reason), registry + endEncounter throw as invariant guards (atomic, no partial commits); snapshot tileQuery VOIDs out-of-world tiles; streaming/pin-set filter chunks entirely outside.
+- Known limitation (deliberately deferred): clampViewportOrigin assumes 0-based worlds — must be extended before rendering a negative-origin world. Do NOT change it until such a world exists.
