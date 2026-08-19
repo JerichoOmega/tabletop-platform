@@ -1,0 +1,446 @@
+M7 HOTFIX — RESTORE EXPLORATION ENCOUNTER TRIGGERS
+
+We have just approved the M7 implementation:
+
+feat(tabletop): exploration-first launch and automatic victory return (M7)
+
+Current validated baseline before this issue:
+
+697 unit tests
+188 E2E tests
+TypeScript clean
+Production build clean
+
+However, after the M7 changes, the player-facing RPG now launches into exploration correctly, but ENCOUNTERS NO LONGER TRIGGER during normal exploration.
+
+This is a regression.
+
+STOP all new feature work and diagnose/fix this issue before doing anything else.
+
+==================================================
+1. EXPECTED PLAYER LOOP
+==================================================
+
+The intended loop is:
+
+EXPLORE
+   ↓
+approach hostile
+   ↓
+encounter triggers
+   ↓
+TACTICAL COMBAT
+   ↓
+victory / defeat
+   ↓
+return to exploration
+
+Current broken behavior:
+
+EXPLORE
+   ↓
+approach hostile
+   ↓
+nothing happens
+
+The encounter system MUST trigger again.
+
+==================================================
+2. IMPORTANT: DO NOT REDESIGN
+==================================================
+
+Do NOT:
+
+- create a new encounter system
+- create a second proximity system
+- rewrite combat
+- rewrite WorldState
+- rewrite WorldBounds
+- change the combat rules
+- change the Experience Contract
+- change the PlatformShell
+- add random encounters
+- add procedural generation
+- add missions
+- add AI
+- add persistence
+- add multiplayer
+
+The encounter infrastructure already existed and was working.
+
+Find the regression and restore the existing path.
+
+==================================================
+3. START WITH GIT / DIFF ANALYSIS
+==================================================
+
+Inspect the exact changes made for M7.
+
+Compare the current working tree/commit against the last known-good state where exploration encounters triggered.
+
+Pay particular attention to:
+
+src/IntelligentTabletop.tsx
+
+and any files touched by task #36 / M7.
+
+Trace the complete runtime path:
+
+exploration movement
+→ hostile detection
+→ encounter trigger
+→ buildEncounterFromEntities
+→ beginEncounter
+→ combat state
+→ combat UI
+
+Do not assume the bug is in the detection code.
+
+Determine exactly where the signal stops.
+
+==================================================
+4. VERIFY THE HOSTILE ENTITY EXISTS
+==================================================
+
+When the RPG launches into normal exploration:
+
+- Is the expected hostile entity actually registered?
+- Is it in WorldState?
+- Does it have the expected position?
+- Is it active/alive?
+- Is it discoverable by the exploration query?
+- Is it being streamed/pinned?
+- Is it excluded by any new filtering?
+- Is its entity type/category still recognized as hostile?
+
+Log or test the relevant state if necessary.
+
+Do not leave noisy production logging behind unless justified.
+
+==================================================
+5. VERIFY MOVEMENT
+==================================================
+
+Confirm that exploration movement still updates the authoritative party position.
+
+Verify:
+
+party position before movement
+→ movement
+→ WorldState position
+→ hostile proximity calculation
+
+Do not rely only on visual movement.
+
+The encounter trigger must use the same authoritative world position that movement updates.
+
+==================================================
+6. VERIFY ADJACENCY / PROXIMITY
+==================================================
+
+Task #36 reportedly implemented:
+
+adjacent hostile detection
+→ world-backed encounter
+
+Find the exact predicate used.
+
+Verify:
+
+- coordinate system
+- distance calculation
+- inclusive/exclusive boundary
+- hostile filtering
+- entity filtering
+- party/entity ownership
+- movement timing
+- trigger evaluation timing
+
+Pay special attention to whether M7's new exploration-first launch changed when or where this check runs.
+
+==================================================
+7. CHECK REACT LIFECYCLE CHANGES
+==================================================
+
+M7 changed:
+
+src/IntelligentTabletop.tsx
+
+including session-mode lifecycle and automatic victory return.
+
+Review whether the new state/effect structure accidentally prevents the encounter detector from running.
+
+Specifically inspect for:
+
+- stale state
+- stale closures
+- effects that no longer depend on party position
+- effects that only run in practice mode
+- effects gated by combat state
+- effects gated by an obsolete encounter-picker condition
+- early returns
+- mode checks
+- incorrect session initialization
+- state initialization that now skips exploration setup
+
+The normal player-facing exploration path must use the same encounter trigger logic as the previously working wilderness test.
+
+==================================================
+8. CHECK PRACTICE VS NORMAL ENTRY
+==================================================
+
+M7 deliberately changed:
+
+normal RPG launch
+→ exploration
+
+while preserving:
+
+?practice
+→ encounter picker / developer testing
+
+Verify that the encounter trigger was NOT accidentally restricted to:
+
+?practice
+
+or accidentally coupled to the encounter-picker state.
+
+The following must both remain true:
+
+NORMAL:
+
+Platform
+→ Play
+→ RPG
+→ Exploration
+→ approach hostile
+→ Combat
+
+PRACTICE:
+
+?practice
+→ Encounter Picker
+→ manually select encounter
+→ Combat
+
+These are separate entry paths.
+
+==================================================
+9. REPRODUCE WITH A DETERMINISTIC TEST
+==================================================
+
+Before changing code, create or identify the smallest deterministic reproduction.
+
+The test should:
+
+1. Launch normal RPG exploration.
+2. Locate the hostile entity.
+3. Move the party toward it.
+4. Enter the trigger condition.
+5. Assert that combat begins.
+
+Do not accept a test that merely checks that the world loads.
+
+The test must prove:
+
+EXPLORATION → COMBAT
+
+==================================================
+10. USE THE EXISTING WILDERNESS TEST
+==================================================
+
+The M7 report says the wilderness E2E previously covered:
+
+- exploration
+- hostile encounter
+- combat
+- victory
+- automatic return
+- position preservation
+- enemy removal
+- movement after victory
+
+Inspect that test carefully.
+
+Determine why it passes or fails relative to the real player flow.
+
+If the test currently passes while the actual player experience does not, investigate whether the E2E is accidentally using:
+
+- a special fixture
+- a practice flag
+- a test-only entity
+- a different entry path
+- a forced state
+- mocked behavior
+
+Do NOT weaken the E2E.
+
+Make the E2E reflect the actual player-facing flow.
+
+==================================================
+11. DO NOT HIDE THE BUG
+==================================================
+
+Do not "fix" the issue by:
+
+- adding a debug encounter button
+- automatically starting combat on page load
+- forcing an encounter after a timer
+- making every exploration launch trigger combat
+- increasing the trigger radius arbitrarily
+- bypassing hostile detection
+- hardcoding an encounter into the UI
+
+The correct fix is:
+
+PLAYER MOVES THROUGH WORLD
+        ↓
+PLAYER ENTERS HOSTILE TRIGGER CONDITION
+        ↓
+EXISTING ENCOUNTER SYSTEM FIRES
+
+==================================================
+12. PRESERVE M7 BEHAVIOR
+==================================================
+
+Once the trigger is restored, all M7 behavior must remain intact:
+
+- exploration-first launch
+- automatic combat start
+- world-backed encounter
+- existing combat engine
+- authoritative endEncounter
+- automatic victory return
+- 1.4 second victory presentation
+- Continue Exploring immediate skip
+- party position preservation
+- defeated enemy removal
+- exploration controls restored
+- encounter picker remains practice-only
+
+Do not regress the new automatic return while fixing the trigger.
+
+==================================================
+13. TESTS REQUIRED
+==================================================
+
+Current baseline:
+
+697 unit
+188 E2E
+
+Add or restore focused coverage as necessary.
+
+At minimum verify:
+
+UNIT:
+
+- hostile entity is detected from exploration
+- adjacency/proximity predicate works with actual world coordinates
+- normal exploration state permits encounter detection
+- practice mode does not control normal encounter detection
+- encounter trigger invokes the world-backed encounter path
+
+E2E:
+
+NORMAL PLAYER FLOW:
+
+1. Launch RPG normally.
+2. Confirm exploration screen.
+3. Move party.
+4. Approach hostile.
+5. Confirm combat automatically begins.
+6. Complete combat deterministically.
+7. Confirm automatic return to exploration.
+8. Confirm enemy is gone.
+9. Confirm party position persists.
+10. Confirm movement resumes.
+
+PRACTICE FLOW:
+
+1. Launch with ?practice.
+2. Encounter picker remains available.
+3. Existing practice encounter tests still work.
+
+Do not weaken existing assertions.
+
+==================================================
+14. REGRESSION SEARCH
+==================================================
+
+After fixing the issue, search the codebase for any other logic that assumes:
+
+- encounter picker is the entry point
+- exploration only exists in a test
+- combat must be manually selected
+- hostile detection only happens under practice mode
+- combat state is initialized before exploration
+- exploration cannot transition directly into combat
+
+Remove or correct only genuinely obsolete assumptions.
+
+Do not perform unrelated cleanup.
+
+==================================================
+15. VALIDATION
+==================================================
+
+Required before reporting completion:
+
+- all unit tests pass
+- all E2E tests pass
+- TypeScript clean
+- production build clean
+
+The final E2E suite must demonstrate the actual intended loop.
+
+==================================================
+16. PRE-COMMIT
+==================================================
+
+DO NOT commit or push.
+
+First provide a pre-commit hotfix report containing:
+
+1. Root cause
+2. Exact regression introduced by M7
+3. Files modified
+4. Fix implemented
+5. Why the fix restores the original encounter path
+6. Normal exploration flow
+7. Practice flow
+8. Tests added/modified
+9. Final unit test count
+10. Final E2E count
+11. TypeScript result
+12. Production build result
+13. Any remaining limitations
+
+STOP after the report.
+
+==================================================
+SUCCESS CONDITION
+==================================================
+
+The following must work again:
+
+Launch RPG
+→ exploration
+→ move toward hostile
+→ encounter automatically triggers
+→ combat
+→ win
+→ automatically return to exploration
+→ continue moving
+
+No encounter picker.
+
+No manual encounter selection.
+
+No "New Encounter" button.
+
+No timer-based combat trigger.
+
+The world itself must be what causes the encounter.
+
+Fix the regression at its source and keep the architecture that M7 established.
