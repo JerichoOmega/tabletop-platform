@@ -23,8 +23,9 @@ const TILE = '[data-testid="board-tile"]';
 const LOCATION = '[data-testid="exploration-location"]';
 
 async function enterExploration(page: Page) {
+  // M7: exploration IS the launch surface — a normal session lands in the
+  // world with no click required.
   await page.goto("/?experience=rpg");
-  await page.getByRole("button", { name: "Explore World" }).click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
 }
 
@@ -103,27 +104,26 @@ test.describe("Wilderness battle — M5 exploration ↔ encounter loop", () => {
     await enterExploration(page);
     await walkIntoBattle(page);
 
+    // Seeds are fixed (combat seed 1337+n, world seed 20260817) and the
+    // scripted click sequence is deterministic, so this battle ALWAYS ends
+    // in victory. Requiring it keeps M7's primary acceptance criterion —
+    // automatic return — from silently degrading into the defeat branch.
     const result = await fightToResult(page);
-    const continueBtn = page.getByRole("button", {
-      name: result === "victory" ? "Continue Exploring" : "Awaken at Camp",
-    });
-    await expect(continueBtn).toBeVisible();
-    // The world-backed banner replaces "New Encounter" with the return action.
+    expect(result).toBe("victory");
+    // The world-backed banner never shows the dev-scaffolding "New Encounter".
     await expect(page.getByRole("button", { name: "New Encounter" })).toHaveCount(0);
-    await continueBtn.click();
 
-    // Back on the exploration surface.
-    await expect(page.getByRole("heading", { name: "Wilderness Exploration" })).toBeVisible();
+    // M7: victory returns to exploration AUTOMATICALLY — no click required.
+    await expect(
+      page.getByRole("heading", { name: "Wilderness Exploration" })
+    ).toBeVisible({ timeout: 8_000 });
     await expect(page.locator(LOCATION)).toBeVisible();
-
-    if (result === "victory") {
-      // Committed: the orc is dead in the world. Stepping onto its old tile
-      // must succeed (corpses don't block) and must NOT restart a battle.
-      await stepTo(page, 20, 8);
-      await expect(page.getByRole("heading", { name: "Wilderness Battle" })).toHaveCount(0);
-    } else {
-      // Defeat recovery: the party awakens at spawn with the world persisted.
-      await expect(page.locator(LOCATION)).toContainText("(8, 8)");
-    }
+    // Party resumes at the battle location (walked to wx=19), not respawned.
+    await expect(page.locator(LOCATION)).toContainText("(19, 8)");
+    // Committed: the orc is dead in the world. Stepping onto its old tile
+    // must succeed (corpses don't block) and must NOT restart a battle —
+    // and proves the player can immediately keep moving.
+    await stepTo(page, 20, 8);
+    await expect(page.getByRole("heading", { name: "Wilderness Battle" })).toHaveCount(0);
   });
 });

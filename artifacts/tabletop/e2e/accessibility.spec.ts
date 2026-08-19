@@ -19,13 +19,13 @@ import { test, expect } from "@playwright/test";
 // ---- shared setup helpers ---------------------------------------------------
 
 async function loadTrainingYard(page: import("@playwright/test").Page) {
-  await page.goto("/?experience=rpg");
+  await page.goto("/?practice&experience=rpg");
   await page.getByRole("button", { name: "Training Yard" }).click();
   await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 6_000 });
 }
 
 async function loadCrypt(page: import("@playwright/test").Page) {
-  await page.goto("/?experience=rpg");
+  await page.goto("/?practice&experience=rpg");
   await page.getByRole("button", { name: "Ruined Crypt" }).click();
   await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 6_000 });
 }
@@ -344,7 +344,7 @@ test.describe("Assisted mode — text input", () => {
 
 test.describe("Disabled button accessible state", () => {
   test("Attack is disabled after using action — aria-label includes reason", async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Ruined Crypt" }).click();
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 6_000 });
 

@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
  */
 test.describe("End Turn", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 5_000 });
   });

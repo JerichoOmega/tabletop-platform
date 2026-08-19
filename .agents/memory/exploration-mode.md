@@ -33,3 +33,8 @@ description: Design decisions for the exploration session layer and its boundari
 - One authoritative bounds contract: `engine/worldBounds.ts` inclusive rectangle; lives on WorldState (never renderer-only). Exploration extent defined ONLY by EXPLORE_WORLD_BOUNDS (W/H derived).
 - Layered enforcement: movement rejects edge crossings first (friendly reason), registry + endEncounter throw as invariant guards (atomic, no partial commits); snapshot tileQuery VOIDs out-of-world tiles; streaming/pin-set filter chunks entirely outside.
 - Known limitation (deliberately deferred): clampViewportOrigin assumes 0-based worlds — must be extended before rendering a negative-origin world. Do NOT change it until such a world exists.
+
+## M7 seamless loop (delta on top of merged task-agent work)
+- Exploration is the LAUNCH surface in production; `?practice` (or `?e2e`) keeps encounter-first entry for the combat E2E suites. Entry gated by `isPracticeEntry` + StrictMode ref guard around auto `startExploration()`.
+- Victory in a world-backed battle auto-returns to exploration after a 1.4s banner timer ("Continue Exploring" = immediate skip). Defeat stays click-through ("Awaken at Camp" → respawn at spawn). Commit path idempotent (preparedRef cleared once), so timer+button double-fire is safe.
+- Wilderness E2E asserts victory deterministically (fixed seeds 1337/20260817 + scripted clicks) — do not re-loosen to "either result" or the auto-return criterion silently degrades.

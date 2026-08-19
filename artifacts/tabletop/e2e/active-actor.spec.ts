@@ -16,7 +16,7 @@ import { test, expect } from "@playwright/test";
  */
 test.describe("Active actor", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     // Action buttons appearing proves the active PC was auto-selected.
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 5_000 });

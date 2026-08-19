@@ -44,7 +44,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Target preview — Attack mode", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Attack" })).toBeVisible({ timeout: 5_000 });
   });
@@ -170,7 +170,7 @@ test.describe("Target preview — Ability mode", () => {
 
 test.describe("Target preview — mode transitions", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Attack" })).toBeVisible({ timeout: 5_000 });
   });

@@ -279,6 +279,16 @@ const RESPONSIVE_CSS = `
 // the URL.  Test-only encounters are hidden from the picker in normal usage.
 const isE2E = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("e2e");
 
+// M7 entry model: EXPLORATION IS THE PRIMARY GAME STATE. A normal session
+// launches straight into the streaming world; the MapDef encounter surface
+// (picker + practice battles) remains available as developer/test tooling,
+// reachable via "Return to Encounter" or directly with ?practice (used by
+// the combat-focused E2E suites). ?e2e implies practice entry so the large
+// existing combat test surface keeps its deterministic encounter-first entry.
+const isPracticeEntry =
+  isE2E ||
+  (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("practice"));
+
 // ---------------------------------------------------------------------------
 // VIEWPORT SIZE — presentation constants (Phase D).
 // The tabletop is a fixed-size surface.  These values cap the viewport so it
@@ -320,6 +330,18 @@ export default function IntelligentTabletop() {
   const [sessionMode, setSessionMode] = useState<"encounter" | "exploration">("encounter");
   const explorationRef = useRef<ExplorationSession | null>(null);
   const [exploreVersion, setExploreVersion] = useState(0);
+
+  // M7: exploration-first launch. A normal (non-practice) session enters the
+  // world immediately — the encounter picker is never the player's entry
+  // surface. Ref-guarded so StrictMode's double-invoked mount effect cannot
+  // create two exploration sessions.
+  const autoExploredRef = useRef(false);
+  useEffect(() => {
+    if (isPracticeEntry || autoExploredRef.current) return;
+    autoExploredRef.current = true;
+    startExploration();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Phase 3 M5: WORLD-BACKED ENCOUNTER lifecycle state.
   // When the party bumps into a hostile during exploration, the session
@@ -1006,6 +1028,19 @@ export default function IntelligentTabletop() {
     if (!worldEncounter || encounterStatus === "ongoing") return;
     commitWorldEncounter(gameState);
   }, [worldEncounter, encounterStatus, gameState, commitWorldEncounter]);
+
+  // M7: VICTORY AUTOMATICALLY RETURNS TO EXPLORATION. The banner shows just
+  // long enough to read, then the table transitions back to the world — no
+  // click required. The "Continue Exploring" button remains as an immediate
+  // skip. Defeat stays click-through ("Awaken at Camp"): waking at camp is a
+  // deliberate player acknowledgement, documented as the M7 defeat decision.
+  useEffect(() => {
+    if (!(worldEncounter && sessionMode === "encounter" && encounterStatus === "victory")) return;
+    const t = window.setTimeout(() => returnToExplorationAfterBattle(), 1400);
+    return () => window.clearTimeout(t);
+    // returnToExplorationAfterBattle is stable within a render pass; the
+    // effect keys are the lifecycle facts that define "victory is showing".
+  }, [worldEncounter, sessionMode, encounterStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Returns the table to the exploration surface after a world-backed
   // encounter has ended. Defeat recovery: the party respawns at the

@@ -22,7 +22,7 @@ import { test, expect } from "@playwright/test";
 // ---- helpers ----------------------------------------------------------------
 
 async function loadTrainingYard(page: import("@playwright/test").Page) {
-  await page.goto("/?experience=rpg");
+  await page.goto("/?practice&experience=rpg");
   await page.getByRole("button", { name: "Training Yard" }).click();
   await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 6_000 });
 }
@@ -148,7 +148,7 @@ test.describe("Intent cards — tablet landscape (1024×768)", () => {
   test.use({ viewport: { width: 1024, height: 768 } });
 
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     // Switch to Assisted mode to expose the intent input.
     await page.getByRole("button", { name: "Assisted" }).click();

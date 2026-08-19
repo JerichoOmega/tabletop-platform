@@ -29,7 +29,7 @@ async function pageStyleText(page: import("@playwright/test").Page): Promise<str
 
 test.describe("Animation CSS — keyframes present in injected styles", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 5_000 });
   });
@@ -56,7 +56,7 @@ test.describe("Animation CSS — keyframes present in injected styles", () => {
 // ---------------------------------------------------------------------------
 
 test("reduced-motion rule covers animation-duration", async ({ page }) => {
-  await page.goto("/?experience=rpg");
+  await page.goto("/?practice&experience=rpg");
   const css = await pageStyleText(page);
   expect(css).toContain("prefers-reduced-motion");
   expect(css).toContain("animation-duration");
@@ -68,7 +68,7 @@ test("reduced-motion rule covers animation-duration", async ({ page }) => {
 
 test.describe("Animation class wiring — markup", () => {
   test("proposal card carries it-anim-card-in class when shown", async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 5_000 });
     await page.getByRole("button", { name: "Assisted", exact: true }).click();
@@ -112,7 +112,7 @@ test.describe("Animation class wiring — markup", () => {
 
 test.describe("Move — animation does not affect game correctness", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 5_000 });
   });
@@ -134,7 +134,7 @@ test.describe("Move — animation does not affect game correctness", () => {
 
 test.describe("Attack — animation does not affect game correctness", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 5_000 });
   });
@@ -154,7 +154,7 @@ test.describe("Attack — animation does not affect game correctness", () => {
 
 test.describe("Turn transition — acting pulse does not break state", () => {
   test("End Turn advances round counter correctly", async ({ page }) => {
-    await page.goto("/?experience=rpg");
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("button", { name: "Move" })).toBeVisible({ timeout: 5_000 });
 
