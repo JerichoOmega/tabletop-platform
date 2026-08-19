@@ -62,11 +62,20 @@ test.describe("Harmful abilities — Fire Bolt", () => {
     await expect(page.getByText(/casts Fire Bolt.*→/)).toBeVisible({ timeout: 3_000 });
   });
 
-  test("Fire Bolt button is disabled after the ability is used", async ({ page }) => {
+  test("Fire Bolt cannot be used again after it resolves the encounter", async ({ page }) => {
     await page.getByRole("button", { name: "Fire Bolt" }).click();
     await page.locator('[title="Target Dummy"]').click();
     await expect(page.getByText("↳ Click an enemy for Fire Bolt")).not.toBeVisible({ timeout: 3_000 });
-    await expect(page.getByRole("button", { name: "Fire Bolt" })).toBeDisabled();
+    // The dummy (1 HP) is the only enemy, so the kill ends the encounter.
+    // Under the terminal-turn guard the action bar unmounts entirely — the
+    // button must be gone (or, defensively, disabled if ever still rendered).
+    await expect(page.getByText("Victory!", { exact: false })).toBeVisible({ timeout: 3_000 });
+    const fireBolt = page.getByRole("button", { name: "Fire Bolt" });
+    if (await fireBolt.count()) {
+      await expect(fireBolt).toBeDisabled();
+    } else {
+      await expect(fireBolt).toHaveCount(0);
+    }
   });
 
   test("clicking Fire Bolt twice cancels targeting (toggle-off)", async ({ page }) => {

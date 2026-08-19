@@ -240,6 +240,24 @@ export function detectAdjacentHostiles(session: ExplorationSession): WorldEntity
 }
 
 /**
+ * M5 defeat recovery: revives the party at the exploration spawn with full HP.
+ *
+ * Called ONLY after WorldState.endEncounter() has committed a defeat back to
+ * the registry (party alive=false). This is an exploration-session operation,
+ * not a combat one — the authority boundary (endEncounter is the sole combat
+ * write path) is not violated because no encounter is active when it runs.
+ * World consequences of the lost battle (dead allies, surviving hostiles'
+ * positions/HP) are untouched: only the party avatar is restored.
+ */
+export function respawnPartyAtSpawn(session: ExplorationSession): void {
+  const registry = session.worldState.entities;
+  const party = getParty(session);
+  registry.setAlive(party.worldId, true);
+  registry.setHp(party.worldId, party.maxHp);
+  registry.move(party.worldId, EXPLORE_SPAWN.wx, EXPLORE_SPAWN.wy);
+}
+
+/**
  * The set of tiles the party can step to right now — Chebyshev-adjacent,
  * passable, unoccupied. Presentation helper for the reachable-tile highlight.
  */

@@ -41,15 +41,15 @@ import { getVisibleTiles, initViewport, updateViewportForActor } from "@/engine/
 // WorldState is imported for type-only use; the ref is null for all current
 // MapDef-backed encounters. The streaming infrastructure activates automatically
 // when a world-backed encounter populates worldStateRef.current.
-import type { WorldState } from "@/engine/world";
-import { worldEntityToCombatant } from "@/engine/world";
+import type { WorldState, PreparedEncounter, WorldEntity } from "@/engine/world";
+import { worldEntityToCombatant, buildEncounterFromEntities } from "@/engine/world";
 import { getChunksForViewport, prefetchViewportChunks, PREFETCH_MARGIN } from "@/engine/viewportStreaming";
 import { evictDistantChunks } from "@/engine/evictionPolicy";
 // Phase 3 M1: exploration session — party moves through the streaming world.
 import type { ExplorationSession } from "@/engine/exploration";
 import {
   createExplorationSession, explorationTileInfo, movePartyStep,
-  detectAdjacentHostiles, adjacentStepTargets, getParty,
+  detectAdjacentHostiles, adjacentStepTargets, getParty, respawnPartyAtSpawn,
   EXPLORE_WORLD_W, EXPLORE_WORLD_H,
 } from "@/engine/exploration";
 import { CHUNK_W, CHUNK_H } from "@/engine/chunk";
@@ -320,6 +320,23 @@ export default function IntelligentTabletop() {
   const [sessionMode, setSessionMode] = useState<"encounter" | "exploration">("encounter");
   const explorationRef = useRef<ExplorationSession | null>(null);
   const [exploreVersion, setExploreVersion] = useState(0);
+
+  // Phase 3 M5: WORLD-BACKED ENCOUNTER lifecycle state.
+  // When the party bumps into a hostile during exploration, the session
+  // transitions to a world-backed combat encounter:
+  //   beginEncounter() → buildEncounterFromEntities() → combat →
+  //   endEncounter() commit → back to exploration.
+  //
+  //   worldEncounter — true while the current gameState was built from world
+  //                    entities (the exploration session stays alive behind it).
+  //   preparedRef    — the PreparedEncounter (pin set) for the active world
+  //                    encounter. Cleared exactly once when endEncounter()
+  //                    commits — this is the "committed" guard.
+  //   startingEncounterRef — re-entrancy guard while beginEncounter() streams
+  //                    and pins chunks (async).
+  const [worldEncounter, setWorldEncounter] = useState(false);
+  const preparedRef = useRef<PreparedEncounter | null>(null);
+  const startingEncounterRef = useRef(false);
 
   const [gameState, setGameState] = useState(() => {
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);
@@ -621,8 +638,11 @@ export default function IntelligentTabletop() {
     const actor = next.combatants[next.turnOrder[next.turnIndex]];
     if (actor && actor.alive) {
       const { wx, wy } = actor;
-      const worldW = next.map.width;
-      const worldH = next.map.height;
+      // World-backed encounters use a synthetic 0×0 MapDef (the snapshot
+      // tileQuery is authoritative) — viewport clamping must use the
+      // exploration world's extent instead.
+      const worldW = worldEncounter ? EXPLORE_WORLD_W : next.map.width;
+      const worldH = worldEncounter ? EXPLORE_WORLD_H : next.map.height;
       setViewport(prev => updateViewportForActor(prev, wx, wy, worldW, worldH));
     }
   }
@@ -662,9 +682,8 @@ export default function IntelligentTabletop() {
         triggerAnim(session.partyWorldId, "it-anim-move", 380);
         const hostiles = detectAdjacentHostiles(session);
         if (hostiles.length > 0) {
-          // M1 contract only: surface a notice. Starting combat is M5 scope.
-          setBanner("A hostile creature is right beside you! (Encounters begin here in a future update.)");
-          setTimeout(() => setBanner(null), 3200);
+          // M5: adjacent hostiles start a world-backed encounter.
+          void startWorldEncounter(session, hostiles);
         }
       } else {
         setBanner(res.reason ?? "You cannot move there.");
@@ -913,6 +932,107 @@ export default function IntelligentTabletop() {
     setBanner(null);
   }
 
+  // ---------------------------------------------------------------------------
+  // Phase 3 M5 — exploration ↔ encounter transitions.
+  //
+  // startWorldEncounter: the party met adjacent hostiles during exploration.
+  // Pins the encounter chunks (beginEncounter), builds a GameState from the
+  // world entities, and switches the table to combat. The exploration session
+  // and WorldState stay alive behind the encounter — combat reads ONLY the
+  // immutable snapshot (never the live ChunkStore), per Decision 27.
+  // ---------------------------------------------------------------------------
+  async function startWorldEncounter(session: ExplorationSession, hostiles: WorldEntity[]) {
+    if (startingEncounterRef.current || preparedRef.current) return; // re-entrancy guard
+    startingEncounterRef.current = true;
+    try {
+      const ws = session.worldState;
+      const party = getParty(session);
+      seedRef.current += 1;
+      const prepared = await ws.beginEncounter([party, ...hostiles]);
+      // The session may have been torn down while chunks loaded (user clicked
+      // an encounter pill). Abandon silently — nothing has been committed.
+      if (explorationRef.current !== session) {
+        ws.endEncounter({ ...gameState, combatants: {} }, prepared.pinnedChunks);
+        return;
+      }
+      const fresh = buildEncounterFromEntities(
+        prepared, ws.worldId, seedRef.current, "wilderness", "Wilderness Battle",
+      );
+      const rng = mulberry32(seedRef.current + 9999);
+      rngRef.current = rng;
+      const next = resolveLeadingEnemyTurns(fresh, rng);
+      preparedRef.current = prepared;
+      setWorldEncounter(true);
+      setGameState(next);
+      setSessionMode("encounter");
+      // Viewport stays in world coordinates — center on the first actor.
+      const baseVp = initViewport(
+        { width: EXPLORE_WORLD_W, height: EXPLORE_WORLD_H } as GameState["map"],
+        VIEWPORT_TILE_W, VIEWPORT_TILE_H,
+      );
+      const firstActor = next.combatants[next.turnOrder[next.turnIndex]];
+      setViewport(
+        firstActor && firstActor.alive
+          ? updateViewportForActor(baseVp, firstActor.wx, firstActor.wy, EXPLORE_WORLD_W, EXPLORE_WORLD_H)
+          : baseVp,
+      );
+      setSelectedId(null);
+      setPendingAction(null);
+      setProposal(null);
+      setInfoResult(null);
+      setLastRoll(null);
+      setMode("traditional");
+      setBanner("A wilderness battle begins!");
+      setTimeout(() => setBanner(null), 2600);
+    } finally {
+      startingEncounterRef.current = false;
+    }
+  }
+
+  // Commits the active world-backed encounter's results to the WorldState via
+  // endEncounter() — the ONLY combat→world write path (Decision 20). Runs
+  // exactly once per encounter: preparedRef is cleared on commit.
+  const commitWorldEncounter = useCallback((finalState: GameState) => {
+    const prepared = preparedRef.current;
+    const session = explorationRef.current;
+    if (!prepared || !session) return;
+    preparedRef.current = null;
+    session.worldState.endEncounter(finalState, prepared.pinnedChunks);
+  }, []);
+
+  // Record the result the moment combat resolves — victory OR defeat — so the
+  // world reflects the outcome even before the player clicks "Continue".
+  useEffect(() => {
+    if (!worldEncounter || encounterStatus === "ongoing") return;
+    commitWorldEncounter(gameState);
+  }, [worldEncounter, encounterStatus, gameState, commitWorldEncounter]);
+
+  // Returns the table to the exploration surface after a world-backed
+  // encounter has ended. Defeat recovery: the party respawns at the
+  // exploration spawn with full HP (all other world consequences persist).
+  function returnToExplorationAfterBattle() {
+    const session = explorationRef.current;
+    if (!session) return;
+    commitWorldEncounter(gameState); // no-op if the effect already committed
+    const party = getParty(session);
+    if (!party.alive) respawnPartyAtSpawn(session);
+    setWorldEncounter(false);
+    setSessionMode("exploration");
+    setExploreVersion(v => v + 1);
+    const fresh = getParty(session);
+    const baseVp = initViewport(
+      { width: EXPLORE_WORLD_W, height: EXPLORE_WORLD_H } as GameState["map"],
+      VIEWPORT_TILE_W, VIEWPORT_TILE_H,
+    );
+    setViewport(updateViewportForActor(baseVp, fresh.wx, fresh.wy, EXPLORE_WORLD_W, EXPLORE_WORLD_H));
+    setSelectedId(null);
+    setPendingAction(null);
+    setProposal(null);
+    setInfoResult(null);
+    setLastRoll(null);
+    setBanner(null);
+  }
+
   // FIX 3: arrow wrapper prevents SyntheticEvent from being passed as encounterId.
   function newEncounter(encounterId?: string) {
     if (encounterId) encounterIdRef.current = encounterId;
@@ -946,6 +1066,9 @@ export default function IntelligentTabletop() {
     worldStateRef.current = null;
     // Phase 3 M1: starting an encounter always exits exploration.
     explorationRef.current = null;
+    // Phase 3 M5: abandon any world-backed encounter with its session.
+    preparedRef.current = null;
+    setWorldEncounter(false);
     setSessionMode("encounter");
   }
 
@@ -1068,7 +1191,10 @@ export default function IntelligentTabletop() {
 
       {/* Encounter switcher — test-only encounters are hidden unless ?e2e is in the URL */}
       <div className="it-encounter-switcher">
-        {/* Phase 3 M1: exploration session toggle */}
+        {/* Phase 3 M1: exploration session toggle.
+            Hidden during a world-backed encounter (M5): the battle must resolve
+            through the victory/defeat banner so results commit via endEncounter. */}
+        {!worldEncounter && (
         <button
           aria-pressed={sessionMode === "exploration"}
           onClick={() => (sessionMode === "exploration" ? exitExploration() : startExploration())}
@@ -1085,7 +1211,8 @@ export default function IntelligentTabletop() {
         >
           {sessionMode === "exploration" ? "Return to Encounter" : "Explore World"}
         </button>
-        {Object.values(isE2E ? ENCOUNTER_DEFS : getProductionEncounters()).map((enc) => (
+        )}
+        {!worldEncounter && Object.values(isE2E ? ENCOUNTER_DEFS : getProductionEncounters()).map((enc) => (
           <button
             key={enc.id}
             aria-pressed={gameState.encounterId === enc.id}
@@ -1117,10 +1244,18 @@ export default function IntelligentTabletop() {
       {sessionMode === "encounter" && encounterStatus !== "ongoing" && (
         <div role="alert" className="it-anim-banner-in" style={{ marginBottom: 10, padding: "12px 16px", background: encounterStatus === "victory" ? "#243b1e" : "#3b1e1e", border: `1px solid ${encounterStatus === "victory" ? "#4c6b3f" : "#8b2e2e"}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontFamily: "Cinzel, serif", fontSize: 15 }}>{encounterBanner}</span>
-          {/* FIX 3: arrow wrapper — prevents SyntheticEvent from becoming encounterId */}
+          {worldEncounter ? (
+            /* M5: world-backed battle — results are already committed via
+               endEncounter(); the way forward is back into the world. */
+            <button onClick={() => returnToExplorationAfterBattle()} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
+              {encounterStatus === "victory" ? "Continue Exploring" : "Awaken at Camp"}
+            </button>
+          ) : (
+          /* FIX 3: arrow wrapper — prevents SyntheticEvent from becoming encounterId */
           <button onClick={() => newEncounter()} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
             New Encounter
           </button>
+          )}
         </div>
       )}
 

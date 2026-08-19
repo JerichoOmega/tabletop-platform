@@ -22,6 +22,13 @@ description: Design decisions for the exploration session layer and its boundari
 - **E2E world inspection:** read-only `window.__worldDebug(cx,cy)` hook exists behind the existing `?e2e` gate (residency, geometry hash, held chunks, entity snapshots). The eviction E2E walks a hardcoded BFS-verified path to (58,58); a unit test anchors that path's passability so terrain drift fails fast instead of timing out the E2E.
 - Baseline after M2: 622 unit / 177 E2E.
 
+## Encounter loop (M5, complete)
+- **Explore → fight → commit loop:** adjacent hostiles trigger `WorldState.beginEncounter([party, ...hostiles])` → `buildEncounterFromEntities` → combat; results always commit via `endEncounter` (a component effect fires on terminal status, guarded by a preparedRef cleared exactly once — safe under strict-mode double invoke).
+- **World-backed encounters keep the exploration session alive behind them.** The exploration/encounter switchers must be hidden mid-battle so the only exit is the banner (commit path). Synthetic MapDef is 0×0 — viewport clamping must use the exploration world extent, never `map.width/height`, during a world encounter.
+- **Defeat recovery:** `respawnPartyAtSpawn` (exploration.ts) revives the party at spawn AFTER the defeat is committed; world consequences persist. Not a combat write path — no authority violation.
+- **Gotcha (E2E):** the step that triggers battle unmounts the exploration-location readout — poll for the "Wilderness Battle" heading instead of the location text. Row 8 is floor from wx=8..21 for the fixed seed.
+- **Gotcha:** the terminal-turn guard unmounts the action bar on victory — E2E expectations like "button disabled after use" become "button gone + Victory banner" when the ability kills the last enemy.
+
 ## WorldBounds (M4)
 - One authoritative bounds contract: `engine/worldBounds.ts` inclusive rectangle; lives on WorldState (never renderer-only). Exploration extent defined ONLY by EXPLORE_WORLD_BOUNDS (W/H derived).
 - Layered enforcement: movement rejects edge crossings first (friendly reason), registry + endEncounter throw as invariant guards (atomic, no partial commits); snapshot tileQuery VOIDs out-of-world tiles; streaming/pin-set filter chunks entirely outside.

@@ -14,11 +14,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   createExplorationSession, explorationTileInfo, movePartyStep,
-  detectAdjacentHostiles, adjacentStepTargets, getParty,
+  detectAdjacentHostiles, adjacentStepTargets, getParty, respawnPartyAtSpawn,
   EXPLORE_WORLD_W, EXPLORE_WORLD_H, EXPLORE_WORLD_SEED,
   EXPLORE_SPAWN, HOSTILE_SPAWN, PARTY_WORLD_ID, HOSTILE_WORLD_ID,
   type ExplorationSession,
 } from "@/engine/exploration";
+import { buildEncounterFromEntities } from "@/engine/world";
 import { CHUNK_W, CHUNK_H } from "@/engine/chunk";
 import { getVisibleTiles, initViewport, updateViewportForActor } from "@/engine/viewport";
 
@@ -242,5 +243,62 @@ describe("exploration session — encounter-trigger contract (M5 hook)", () => {
     session.worldState.entities.setAlive(HOSTILE_WORLD_ID, false);
     session.worldState.entities.move(PARTY_WORLD_ID, HOSTILE_SPAWN.wx - 1, HOSTILE_SPAWN.wy);
     expect(detectAdjacentHostiles(session)).toHaveLength(0);
+  });
+});
+
+describe("exploration ↔ encounter loop (M5)", () => {
+  it("explore → fight → endEncounter commits: dead hostile stays dead, survivor keeps position/HP", async () => {
+    const session = createExplorationSession();
+    session.worldState.entities.move(PARTY_WORLD_ID, HOSTILE_SPAWN.wx - 1, HOSTILE_SPAWN.wy);
+    const party = getParty(session);
+    const hostiles = detectAdjacentHostiles(session);
+    expect(hostiles).toHaveLength(1);
+
+    const prepared = await session.worldState.beginEncounter([party, ...hostiles]);
+    const state = buildEncounterFromEntities(prepared, session.worldState.worldId, 42);
+
+    // Simulate combat: the hostile dies; the party survives injured, one tile over.
+    state.combatants[HOSTILE_WORLD_ID].alive = false;
+    state.combatants[HOSTILE_WORLD_ID].hp = 0;
+    state.combatants[PARTY_WORLD_ID].hp = 12;
+    state.combatants[PARTY_WORLD_ID].wx = HOSTILE_SPAWN.wx - 2;
+
+    session.worldState.endEncounter(state, prepared.pinnedChunks);
+
+    const orc = session.worldState.entities.get(HOSTILE_WORLD_ID)!;
+    expect(orc.alive).toBe(false);
+    expect(orc.hp).toBe(0);
+    const survivor = getParty(session);
+    expect(survivor.alive).toBe(true);
+    expect(survivor.hp).toBe(12);
+    expect(survivor.wx).toBe(HOSTILE_SPAWN.wx - 2);
+    expect(survivor.wy).toBe(HOSTILE_SPAWN.wy);
+    // Dead hostile no longer triggers encounters.
+    expect(detectAdjacentHostiles(session)).toHaveLength(0);
+  });
+
+  it("respawnPartyAtSpawn revives a defeated party at spawn with full HP, leaving the world untouched", async () => {
+    const session = createExplorationSession();
+    session.worldState.entities.move(PARTY_WORLD_ID, HOSTILE_SPAWN.wx - 1, HOSTILE_SPAWN.wy);
+    const party = getParty(session);
+    const prepared = await session.worldState.beginEncounter([party, ...detectAdjacentHostiles(session)]);
+    const state = buildEncounterFromEntities(prepared, session.worldState.worldId, 42);
+
+    // Simulate defeat: the party falls; the hostile survives injured.
+    state.combatants[PARTY_WORLD_ID].alive = false;
+    state.combatants[PARTY_WORLD_ID].hp = 0;
+    state.combatants[HOSTILE_WORLD_ID].hp = 5;
+    session.worldState.endEncounter(state, prepared.pinnedChunks);
+    expect(getParty(session).alive).toBe(false);
+
+    respawnPartyAtSpawn(session);
+    const revived = getParty(session);
+    expect(revived.alive).toBe(true);
+    expect(revived.hp).toBe(revived.maxHp);
+    expect(revived.wx).toBe(EXPLORE_SPAWN.wx);
+    expect(revived.wy).toBe(EXPLORE_SPAWN.wy);
+    // The world consequences of the lost battle persist.
+    expect(session.worldState.entities.get(HOSTILE_WORLD_ID)!.hp).toBe(5);
+    expect(session.worldState.entities.get(HOSTILE_WORLD_ID)!.alive).toBe(true);
   });
 });
