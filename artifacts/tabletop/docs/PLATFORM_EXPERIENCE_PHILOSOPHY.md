@@ -229,3 +229,25 @@ of screens. Two rules are load-bearing and must not be regressed:
 The three interaction modes (Traditional / Assisted / Adventure) are a
 low-weight gameplay preference — discoverable during play, but never a
 destination or a navigation surface competing with the world.
+
+### 12.1 World interactions (M8) — a location is not automatically combat
+
+The RPG overworld contains multiple kinds of **world interactions**. Combat is
+one type of world interaction, not the definition of an encounter/location. A
+location exposes a generic `kind` and the RPG presentation runs the matching
+behavior; the world/registry stays free of RPG-specific rules beyond what is
+needed to expose the interaction. The first three examples:
+
+- **Combat** — Ruined Crypt / Training Yard: entering opens an in-world combat
+  delve; victory returns to exploration.
+- **Rest** — Wayside Camp: a peaceful, non-combat card restores the party to
+  full HP, then returns to the world. No combat, no sessionMode change.
+- **Discovery** — Old Shrine: a one-time deterministic blessing (`+max HP` and
+  full heal). The location is marked used for the session so the reward cannot
+  be farmed. No buff/progression system is implied.
+
+Locations remain presentation metadata (`EXPLORE_LOCATIONS`): never world
+entities, never seen by encounter detection, never altering movement/terrain.
+Every discovered marker is keyboard-focusable (`role="button"`, tab-focusable,
+Enter/Space activation) with an accessible name stating its name, kind, and
+range; the contextual side prompt is an additional path, not the only one.

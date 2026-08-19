@@ -91,6 +91,18 @@ export const HOSTILE_SPAWN = Object.freeze({ wx: 20, wy: 8 });
 // Crypt"). Entering it opens the corresponding MapDef encounter as an in-world
 // delve; resolving it returns the party to exploration at its world position.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WORLD INTERACTIONS (M8).
+//
+// The overworld contains multiple kinds of world interactions. COMBAT IS ONE
+// TYPE of interaction, not the definition of a location. A location may offer
+// combat (delve), rest (heal), or discovery (a one-time blessing). The world
+// system stays generic — it exposes the interaction kind and lets the RPG
+// presentation layer run the appropriate behavior. This is deliberately the
+// SMALLEST extensible model (no quest/buff/progression engine).
+// ---------------------------------------------------------------------------
+export type LocationKind = "combat" | "rest" | "discovery";
+
 export interface ExploreLocation {
   /** Stable identifier of the location. */
   readonly id: string;
@@ -99,25 +111,32 @@ export interface ExploreLocation {
   /** Authoritative world tile the location sits on. */
   readonly wx: number;
   readonly wy: number;
-  /** MapDef encounter entered when the party delves into this location. */
-  readonly encounterId: string;
-  /** Contextual verb shown when the party is adjacent, e.g. "Enter Ruined Crypt". */
+  /** The kind of world interaction this location offers. */
+  readonly kind: LocationKind;
+  /** Contextual verb shown when the party is adjacent, e.g. "Rest at Camp". */
   readonly prompt: string;
   /** Presentation glyph key. */
-  readonly icon: "crypt" | "yard";
+  readonly icon: "crypt" | "yard" | "camp" | "shrine";
+  /** MapDef encounter entered when delving a COMBAT location (combat only). */
+  readonly encounterId?: string;
 }
 
 /**
- * Discoverable world locations just off the M1 exploration corridor. Row 7 is
- * floor at these columns (verified), and sitting one tile off the row-8 walk
- * path means a location marker never intercepts a movement click while the
- * party is still discovered as it passes by. These turn the former "Ruined
- * Crypt" / "Training Yard" navigation tabs into places that exist in the world.
+ * Discoverable world locations just off the M1 exploration corridor. Row 6/7
+ * are floor at these columns (verified), and sitting off the row-8 walk path
+ * means a location marker never intercepts a movement click while the party is
+ * still discovered as it passes by. These prove the world-interaction model:
+ * a combat dungeon, a peaceful camp, and a discovery shrine coexist as places.
  */
 export const EXPLORE_LOCATIONS: readonly ExploreLocation[] = Object.freeze([
-  { id: "crypt",        name: "Ruined Crypt",  wx: 12, wy: 7, encounterId: "crypt",        prompt: "Enter Ruined Crypt",  icon: "crypt" },
-  { id: "trainingYard", name: "Training Yard", wx: 16, wy: 7, encounterId: "trainingYard", prompt: "Enter Training Yard", icon: "yard"  },
+  { id: "crypt",        name: "Ruined Crypt",  wx: 12, wy: 7, kind: "combat",    prompt: "Enter Ruined Crypt",  icon: "crypt",  encounterId: "crypt" },
+  { id: "trainingYard", name: "Training Yard", wx: 16, wy: 7, kind: "combat",    prompt: "Enter Training Yard", icon: "yard",   encounterId: "trainingYard" },
+  { id: "camp",         name: "Wayside Camp",  wx: 10, wy: 6, kind: "rest",      prompt: "Rest at Camp",        icon: "camp" },
+  { id: "shrine",       name: "Old Shrine",    wx: 14, wy: 6, kind: "discovery", prompt: "Investigate Shrine",  icon: "shrine" },
 ]);
+
+/** Maximum-HP granted by the Old Shrine's one-time blessing. */
+export const SHRINE_MAXHP_BONUS = 5;
 
 /**
  * Returns the location the party is currently able to interact with — the
@@ -310,6 +329,33 @@ export function respawnPartyAtSpawn(session: ExplorationSession): void {
   registry.setAlive(party.worldId, true);
   registry.setHp(party.worldId, party.maxHp);
   registry.move(party.worldId, EXPLORE_SPAWN.wx, EXPLORE_SPAWN.wy);
+}
+
+/**
+ * REST interaction (Camp): restores the party avatar to full HP. A world
+ * operation on the authoritative registry — never a combat operation, and it
+ * touches nothing but the party's current HP. Returns the restored HP total.
+ */
+export function restPartyAtCamp(session: ExplorationSession): number {
+  const registry = session.worldState.entities;
+  const party = getParty(session);
+  registry.setHp(party.worldId, party.maxHp);
+  return party.maxHp;
+}
+
+/**
+ * DISCOVERY interaction (Shrine): a small deterministic blessing — the party's
+ * maximum HP rises by SHRINE_MAXHP_BONUS and it is healed to the new maximum.
+ * Deliberately NOT a general buff system; it is a one-shot world consequence
+ * (the caller records "used" so it cannot be re-granted in a session). Returns
+ * the max-HP bonus applied.
+ */
+export function blessPartyAtShrine(session: ExplorationSession): number {
+  const registry = session.worldState.entities;
+  const party = getParty(session);
+  registry.setMaxHp(party.worldId, party.maxHp + SHRINE_MAXHP_BONUS);
+  registry.setHp(party.worldId, getParty(session).maxHp);
+  return SHRINE_MAXHP_BONUS;
 }
 
 /**

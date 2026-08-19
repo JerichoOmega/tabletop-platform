@@ -308,16 +308,61 @@ describe("exploration ↔ encounter loop (M5)", () => {
 // WORLD LOCATIONS — locations are world content, discovered by proximity.
 // ---------------------------------------------------------------------------
 describe("exploration — world locations (points of interest)", () => {
-  it("every location maps to a real production encounter", async () => {
+  it("every combat location maps to a real production encounter", async () => {
     const { EXPLORE_LOCATIONS } = await import("@/engine/exploration");
     const { ENCOUNTER_DEFS } = await import("@/engine/content");
     expect(EXPLORE_LOCATIONS.length).toBeGreaterThan(0);
     for (const loc of EXPLORE_LOCATIONS) {
-      expect(ENCOUNTER_DEFS[loc.encounterId]).toBeDefined();
-      // A production location must not point at a test-only fixture.
-      expect(ENCOUNTER_DEFS[loc.encounterId].testOnly ?? false).toBe(false);
       expect(loc.prompt.length).toBeGreaterThan(0);
+      if (loc.kind === "combat") {
+        expect(loc.encounterId).toBeTruthy();
+        const def = ENCOUNTER_DEFS[loc.encounterId!];
+        expect(def).toBeDefined();
+        // A production location must not point at a test-only fixture.
+        expect(def.testOnly ?? false).toBe(false);
+      } else {
+        // Non-combat interactions never carry an encounter.
+        expect(loc.encounterId).toBeUndefined();
+      }
     }
+  });
+
+  it("the world offers combat, rest, and discovery interaction kinds", async () => {
+    const { EXPLORE_LOCATIONS } = await import("@/engine/exploration");
+    const kinds = new Set(EXPLORE_LOCATIONS.map((l) => l.kind));
+    expect(kinds.has("combat")).toBe(true);
+    expect(kinds.has("rest")).toBe(true);
+    expect(kinds.has("discovery")).toBe(true);
+  });
+
+  it("Camp rest restores the party to full HP without touching the world", async () => {
+    const { restPartyAtCamp } = await import("@/engine/exploration");
+    const session = createExplorationSession();
+    await loadAllChunks(session);
+    const party = getParty(session);
+    session.worldState.entities.setHp(party.worldId, 7);
+    const before = session.worldState.entities.getAlive().length;
+
+    const restored = restPartyAtCamp(session);
+    expect(restored).toBe(party.maxHp);
+    expect(getParty(session).hp).toBe(party.maxHp);
+    // Rest is not combat: no entity added/removed, hostile untouched.
+    expect(session.worldState.entities.getAlive().length).toBe(before);
+    expect(session.worldState.entities.get(HOSTILE_WORLD_ID)!.alive).toBe(true);
+  });
+
+  it("Shrine blessing raises max HP by a fixed amount and heals to the new max", async () => {
+    const { blessPartyAtShrine, SHRINE_MAXHP_BONUS } = await import("@/engine/exploration");
+    const session = createExplorationSession();
+    await loadAllChunks(session);
+    const party = getParty(session);
+    const startMax = party.maxHp;
+    session.worldState.entities.setHp(party.worldId, 5);
+
+    const bonus = blessPartyAtShrine(session);
+    expect(bonus).toBe(SHRINE_MAXHP_BONUS);
+    expect(getParty(session).maxHp).toBe(startMax + SHRINE_MAXHP_BONUS);
+    expect(getParty(session).hp).toBe(startMax + SHRINE_MAXHP_BONUS);
   });
 
   it("locations are presentation metadata only — never registered as world entities", async () => {

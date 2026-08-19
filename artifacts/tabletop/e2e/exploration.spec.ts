@@ -96,7 +96,9 @@ test.describe("Exploration mode — M1", () => {
     await stepTo(page, 10, 8);
     await stepTo(page, 11, 8);
     // The same single party token exists — no duplicates, no resets.
-    const tokens = page.locator(`${TILE} [role="button"]`);
+    // Scope to combatant tokens: world-location markers are world content, not
+    // tokens, so they are excluded via the dedicated test id.
+    const tokens = page.locator('[data-testid="world-token"]');
     // Party + (hostile only if inside viewport; at origin shift 3..14 wx, hostile
     // at wx=20 is outside) → exactly 1 token.
     expect(await tokens.count()).toBe(1);

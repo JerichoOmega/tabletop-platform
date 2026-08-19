@@ -21,7 +21,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   Footprints, Sword, Sparkles, ScrollText, Dice5, ChevronRight, X, Check, Info,
-  Skull, Swords, DoorOpen,
+  Skull, Swords, DoorOpen, Tent, Gem, Heart,
 } from "lucide-react";
 
 import type { GameState, HealResult, DamageResult } from "@/engine/content";
@@ -51,6 +51,7 @@ import type { ExplorationSession, ExploreLocation } from "@/engine/exploration";
 import {
   createExplorationSession, explorationTileInfo, movePartyStep,
   detectAdjacentHostiles, adjacentStepTargets, getParty, respawnPartyAtSpawn,
+  restPartyAtCamp, blessPartyAtShrine,
   EXPLORE_WORLD_W, EXPLORE_WORLD_H, EXPLORE_LOCATIONS, nearbyLocation,
 } from "@/engine/exploration";
 import { CHUNK_W, CHUNK_H } from "@/engine/chunk";
@@ -317,6 +318,18 @@ const isPracticeEntry =
 const VIEWPORT_TILE_W = 12;
 const VIEWPORT_TILE_H = 10;
 
+// Presentation glyph for a world location marker/prompt. Maps the location's
+// icon key to a lucide glyph so combat/rest/discovery places read at a glance.
+function LocationGlyph({ icon, size, color }: { icon: ExploreLocation["icon"]; size: number; color: string }) {
+  switch (icon) {
+    case "crypt":  return <Skull size={size} color={color} />;
+    case "yard":   return <Swords size={size} color={color} />;
+    case "camp":   return <Tent size={size} color={color} />;
+    case "shrine": return <Gem size={size} color={color} />;
+    default:       return <DoorOpen size={size} color={color} />;
+  }
+}
+
 export default function IntelligentTabletop() {
   const seedRef        = useRef(1337);
   const encounterIdRef = useRef("crypt");
@@ -379,6 +392,16 @@ export default function IntelligentTabletop() {
   // presentation (banner + return control); null when not delving.
   const [locationDelve, setLocationDelve] = useState<string | null>(null);
   const locationDelveRef = useRef<ExploreLocation | null>(null);
+
+  // NON-COMBAT WORLD INTERACTIONS (M8). Rest (Camp) and discovery (Shrine)
+  // resolve as an atmospheric card laid on the table — the exploration session
+  // stays alive underneath (no combat, no sessionMode change). `interaction`
+  // holds the active card's content; `usedLocations` records one-shot
+  // discovery interactions so a shrine blessing cannot be farmed in a session.
+  const [interaction, setInteraction] = useState<{
+    loc: ExploreLocation; title: string; flavor: string; outcome: string; healed: boolean;
+  } | null>(null);
+  const [usedLocations, setUsedLocations] = useState<Set<string>>(() => new Set());
 
   const [gameState, setGameState] = useState(() => {
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);
@@ -950,6 +973,9 @@ export default function IntelligentTabletop() {
     setLastRoll(null);
     setBanner(null);
     setMode("traditional");
+    // A fresh adventure: clear any interaction card and one-shot discovery state.
+    setInteraction(null);
+    setUsedLocations(new Set());
   }
 
   // Phase 3 M1: leave exploration and return to the current encounter.
@@ -1105,9 +1131,11 @@ export default function IntelligentTabletop() {
   function enterLocation(loc: ExploreLocation) {
     const session = explorationRef.current;
     if (!session || sessionMode !== "exploration") return;
+    const encId = loc.encounterId;
+    if (!encId) return; // only combat locations delve into an encounter
     seedRef.current += 1;
-    encounterIdRef.current = loc.encounterId;
-    const fresh = buildEncounter(loc.encounterId, seedRef.current);
+    encounterIdRef.current = encId;
+    const fresh = buildEncounter(encId, seedRef.current);
     const rng = mulberry32(seedRef.current + 9999);
     rngRef.current = rng;
     const next = resolveLeadingEnemyTurns(fresh, rng);
@@ -1170,6 +1198,61 @@ export default function IntelligentTabletop() {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationDelve, sessionMode, worldEncounter, encounterStatus]);
+
+  // ---------------------------------------------------------------------------
+  // WORLD INTERACTION DISPATCH (M8).
+  //
+  // A single entry point routes a discovered location to its interaction kind:
+  //   combat    → in-world MapDef delve (existing enterLocation).
+  //   rest      → heal the party, show an atmospheric camp card (no combat).
+  //   discovery → grant a one-time deterministic blessing, show a shrine card.
+  // The world model exposes the KIND; the RPG behavior lives here. Rest and
+  // discovery never touch combat, sessionMode, or the encounter lifecycle.
+  // ---------------------------------------------------------------------------
+  function interactLocation(loc: ExploreLocation) {
+    const session = explorationRef.current;
+    if (sessionMode !== "exploration" || !session) return;
+
+    if (loc.kind === "combat") { enterLocation(loc); return; }
+
+    if (loc.kind === "rest") {
+      const restored = restPartyAtCamp(session);
+      setExploreVersion(v => v + 1);
+      setInteraction({
+        loc,
+        title: "Rest at Camp",
+        flavor: "The party makes camp beneath the old oaks. Embers crackle, wounds are bound, and weary spirits lift before the road calls again.",
+        outcome: `The party is fully rested — HP restored to ${restored}.`,
+        healed: true,
+      });
+      return;
+    }
+
+    // discovery
+    if (usedLocations.has(loc.id)) {
+      setInteraction({
+        loc,
+        title: loc.name,
+        flavor: "The shrine stands silent, its glow long since spent for your company.",
+        outcome: "Its blessing has already been given. The party moves on.",
+        healed: false,
+      });
+      return;
+    }
+    const bonus = blessPartyAtShrine(session);
+    setUsedLocations(prev => new Set(prev).add(loc.id));
+    setExploreVersion(v => v + 1);
+    const party = getParty(session);
+    setInteraction({
+      loc,
+      title: "Investigate Shrine",
+      flavor: "The party lays hands upon the weathered stone. Warm light answers, threading fresh vigor into tired limbs.",
+      outcome: `Blessing of Vigor — maximum HP +${bonus}. The party is renewed (${party.hp}/${party.maxHp} HP).`,
+      healed: true,
+    });
+  }
+
+  function closeInteraction() { setInteraction(null); }
 
   // FIX 3: arrow wrapper prevents SyntheticEvent from being passed as encounterId.
   function newEncounter(encounterId?: string) {
@@ -1462,7 +1545,7 @@ export default function IntelligentTabletop() {
               {nearbyLoc && (
                 <button
                   data-testid="enter-location"
-                  onClick={() => enterLocation(nearbyLoc)}
+                  onClick={() => interactLocation(nearbyLoc)}
                   className="it-anim-card-in"
                   style={{
                     width: "100%",
@@ -1480,12 +1563,12 @@ export default function IntelligentTabletop() {
                   }}
                 >
                   <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "50%", background: "rgba(201,162,39,0.16)", border: "1px solid #6b5a34", flexShrink: 0 }}>
-                    {nearbyLoc.icon === "crypt" ? <Skull size={16} color="#c9a227" /> : <Swords size={16} color="#c9a227" />}
+                    <LocationGlyph icon={nearbyLoc.icon} size={16} color="#c9a227" />
                   </span>
                   <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
-                    <span style={{ fontFamily: "'EB Garamond', serif", fontStyle: "italic", fontSize: 10.5, color: "#a68a50", letterSpacing: 0.3 }}>You stand before the {nearbyLoc.name}</span>
+                    <span style={{ fontFamily: "'EB Garamond', serif", fontStyle: "italic", fontSize: 10.5, color: "#a68a50", letterSpacing: 0.3 }}>You come upon the {nearbyLoc.name}</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "Cinzel, serif", fontSize: 13.5, color: "#f0e4c6" }}>
-                      <DoorOpen size={14} color="#c9a227" /> {nearbyLoc.prompt}
+                      <ChevronRight size={14} color="#c9a227" /> {nearbyLoc.prompt}
                     </span>
                   </span>
                 </button>
@@ -1683,6 +1766,82 @@ export default function IntelligentTabletop() {
             <div style={{ position: "absolute", bottom: 8, left: 8, width: 18, height: 18, border: "2px solid #c9a227", borderRight: "none", borderTop: "none", opacity: 0.7 }} />
             <div style={{ position: "absolute", bottom: 8, right: 8, width: 18, height: 18, border: "2px solid #c9a227", borderLeft: "none", borderTop: "none", opacity: 0.7 }} />
 
+            {/* WORLD INTERACTION CARD (M8) — an atmospheric tabletop card laid
+                over the table for rest/discovery. Not a browser modal: the
+                world stays beneath it and a single control returns to play. */}
+            {sessionMode === "exploration" && interaction && (
+              <div
+                data-testid="interaction-overlay"
+                role="dialog"
+                aria-modal="false"
+                aria-label={interaction.title}
+                className="it-anim-card-in"
+                style={{
+                  position: "absolute",
+                  inset: 8,
+                  zIndex: 5,
+                  borderRadius: 8,
+                  background: "rgba(16,11,6,0.86)",
+                  backdropFilter: "blur(3px)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 18,
+                }}
+              >
+                <div style={{
+                  width: "min(360px, 92%)",
+                  background: "linear-gradient(180deg, #efe2c0, #e2d0a6)",
+                  border: "2px solid #c9a227",
+                  borderRadius: 12,
+                  boxShadow: "0 14px 40px rgba(0,0,0,0.6)",
+                  padding: "20px 20px 18px",
+                  textAlign: "center",
+                  color: "#2c1e12",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: "50%", background: "#2c1e12", border: "2px solid #c9a227" }}>
+                      <LocationGlyph icon={interaction.loc.icon} size={26} color="#e8c24a" />
+                    </span>
+                  </div>
+                  <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 19, letterSpacing: 0.5, marginBottom: 2 }}>
+                    {interaction.loc.name}
+                  </div>
+                  <div style={{ fontFamily: "'EB Garamond', serif", fontStyle: "italic", fontSize: 12.5, color: "#6b5638", marginBottom: 12 }}>
+                    {interaction.title}
+                  </div>
+                  <p style={{ fontFamily: "'EB Garamond', serif", fontSize: 14, lineHeight: 1.55, margin: "0 0 14px" }}>
+                    {interaction.flavor}
+                  </p>
+                  <div
+                    role="alert"
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                      fontFamily: "Cinzel, serif", fontSize: 13.5,
+                      background: interaction.healed ? "rgba(76,107,63,0.18)" : "rgba(90,67,38,0.14)",
+                      border: `1px solid ${interaction.healed ? "#4c6b3f" : "#9c8149"}`,
+                      borderRadius: 8, padding: "9px 12px", marginBottom: 16, color: "#2c1e12",
+                    }}
+                  >
+                    {interaction.healed && <Heart size={15} color="#4c6b3f" />}
+                    <span>{interaction.outcome}</span>
+                  </div>
+                  <button
+                    data-testid="return-from-interaction"
+                    onClick={closeInteraction}
+                    style={{
+                      fontFamily: "Cinzel, serif", fontSize: 13,
+                      background: "#2c1e12", color: "#f0e4c6",
+                      border: "1px solid #c9a227", borderRadius: 8,
+                      padding: "9px 18px", cursor: "pointer",
+                    }}
+                  >
+                    Return to the World
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Phase B: grid dimensions driven by viewport (not map) so a future
                 non-zero viewport origin simply changes tileW/tileH without
                 touching any other rendering code. */}
@@ -1739,19 +1898,35 @@ export default function IntelligentTabletop() {
                       {pillar && (
                         <div style={{ position: "absolute", inset: 5, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%, #7a6a52, #382c1c)", boxShadow: "0 3px 6px rgba(0,0,0,0.5)" }} />
                       )}
-                      {/* WORLD LOCATION MARKER — a place drawn on the table, not a
-                          navigation control. Decorative (role="img"); the
-                          accessible, keyboard-operable action is the "Enter …"
-                          button in the exploration panel. Mouse users may also
-                          click the marker directly when the party is adjacent. */}
+                      {/* WORLD LOCATION MARKER — a place drawn on the table.
+                          Keyboard-accessible (role="button", focusable): Tab to
+                          it, hear its name/type/range, and activate with Enter/
+                          Space when in range. Mouse/touch: click when adjacent.
+                          The side "…" prompt is an additional path, not the only
+                          one. */}
                       {loc && !tok && (
                         <div
                           data-testid="location-marker"
                           data-location-id={loc.id}
-                          role="img"
-                          aria-label={`${loc.name}, a location in the world${isNearbyLoc ? " — the party is beside it" : ""}`}
-                          title={loc.name}
-                          onClick={isNearbyLoc ? (e) => { e.stopPropagation(); enterLocation(loc); } : undefined}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={
+                            `${loc.name}, ${loc.kind} location` +
+                            (isNearbyLoc ? ` — in range, activate to ${loc.prompt.toLowerCase()}` : " — out of range, move the party closer")
+                          }
+                          title={isNearbyLoc ? loc.prompt : `${loc.name} (move closer)`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isNearbyLoc) interactLocation(loc);
+                            else { setBanner(`Move closer to the ${loc.name} to interact.`); setTimeout(() => setBanner(null), 1800); }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (isNearbyLoc) interactLocation(loc);
+                            else { setBanner(`Move closer to the ${loc.name} to interact.`); setTimeout(() => setBanner(null), 1800); }
+                          }}
                           className={isNearbyLoc ? "it-loc-pulse" : ""}
                           style={{
                             position: "absolute",
@@ -1765,16 +1940,19 @@ export default function IntelligentTabletop() {
                             boxShadow: isNearbyLoc
                               ? "0 0 0 3px rgba(232,194,74,0.35), 0 2px 6px rgba(0,0,0,0.5)"
                               : "0 2px 5px rgba(0,0,0,0.5)",
-                            cursor: isNearbyLoc ? "pointer" : "default",
+                            cursor: "pointer",
                           }}
                         >
-                          {loc.icon === "crypt"
-                            ? <Skull size={Math.round(cellPx * 0.42)} color={isNearbyLoc ? "#f0d873" : "#b79a58"} />
-                            : <Swords size={Math.round(cellPx * 0.42)} color={isNearbyLoc ? "#f0d873" : "#b79a58"} />}
+                          <LocationGlyph
+                            icon={loc.icon}
+                            size={Math.round(cellPx * 0.42)}
+                            color={isNearbyLoc ? "#f0d873" : "#b79a58"}
+                          />
                         </div>
                       )}
                       {tok && (
                         <div
+                          data-testid="world-token"
                           onPointerEnter={() => handleTokenPointerEnter(tok.id)}
                           onPointerLeave={handleTokenPointerLeave}
                           onClick={(e) => {

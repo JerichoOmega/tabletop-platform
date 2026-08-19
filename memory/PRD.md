@@ -37,8 +37,22 @@ Encounter → Combat → back to Exploration. **The world is the navigation syst
   available in exploration + combat; chosen mode carries into wilderness battle.
 - Exploration presentation reworded world-first; world/table is dominant.
 
-## Validation (2026-08-19)
-- Unit: 701 passed (vitest). E2E: 195 passed (Playwright). TypeScript: 0 errors.
+## Implemented (M8 — World Interactions) — 2026-08-19
+- Locations now carry a generic `kind`: `combat` | `rest` | `discovery`
+  (`ExploreLocation` in `engine/exploration.ts`). A location is NOT auto-combat.
+- Wayside Camp (rest): non-combat atmospheric card → full heal → return.
+- Old Shrine (discovery): one-time deterministic Blessing of Vigor (+5 max HP +
+  full heal), marked used per session (`usedLocations` state) — no farming.
+- Rest/discovery render as a tabletop card overlay (`data-testid="interaction-overlay"`,
+  `return-from-interaction`) over the board — no modal, no combat, no sessionMode change.
+- Markers are keyboard-accessible: `role="button"`, focusable, Enter/Space, range-aware
+  aria-labels. Token vs marker disambiguated via `data-testid="world-token"`.
+- New generic engine helper `WorldEntityRegistry.setMaxHp` (mirrors `setHp`);
+  `restPartyAtCamp` / `blessPartyAtShrine` in exploration.ts. Combat lifecycle,
+  encounter detection, endEncounter, RNG, streaming, world bounds untouched.
+
+## Validation (2026-08-19, latest)
+- Unit: 704 passed (vitest). E2E: 199 passed (Playwright). TypeScript: 0 errors.
   Production build: clean (vite).
 
 ## Backlog / next

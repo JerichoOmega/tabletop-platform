@@ -211,6 +211,22 @@ export class WorldEntityRegistry {
   }
 
   /**
+   * Updates an entity's maximum hit points. Generic world operation (no
+   * RPG-specific rules) used by non-combat world interactions such as a
+   * shrine blessing. Does not change current HP — callers heal separately.
+   * @throws If the entity does not exist.
+   */
+  setMaxHp(worldId: string, maxHp: number): void {
+    const entity = this.entities.get(worldId);
+    if (!entity) {
+      throw new Error(
+        `WorldEntityRegistry.setMaxHp: entity "${worldId}" is not registered.`,
+      );
+    }
+    entity.maxHp = maxHp;
+  }
+
+  /**
    * Updates an entity's alive state.
    * Dead entities are preserved (alive=false), never deleted.
    * @throws If the entity does not exist.
