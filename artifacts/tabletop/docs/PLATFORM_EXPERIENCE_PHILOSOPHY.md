@@ -204,3 +204,28 @@ Constraints going forward:
 - The engine layer stays untouched by platform work.
 - Do not build fake multiplayer, fake progression, fake title data, or
   placeholder catalogs ahead of real implementation milestones.
+
+## 12. RPG player-facing navigation (world-first)
+
+The RPG Experience is played as ONE continuous tabletop adventure, not a set
+of screens. Two rules are load-bearing and must not be regressed:
+
+- **Locations and encounters are world content, not top-level RPG
+  navigation.** A place (Ruined Crypt, Training Yard, Camp, ruins, a quest
+  objective, an enemy) exists *inside* the world. The player discovers,
+  approaches, and enters it through gameplay — via a highlighted world marker
+  and a contextual proximity prompt ("Enter Ruined Crypt"). Locations must NOT
+  be exposed as a permanent navigation tab row. "Exploration" is the current
+  gameplay state, never a destination alongside those places.
+- **Developer/test encounter selection is separate from normal player
+  navigation.** The direct encounter/exploration switcher (the practice
+  picker, test-only fixtures, "Explore World" / "Return to Encounter") is a
+  development and manual-testing tool. It lives behind the practice/dev
+  pathway (`?practice`, and `?e2e` for the combat test suites) and is never
+  rendered for normal players. Normal entry launches straight into
+  exploration; a wilderness enemy or an entered location starts combat, and
+  victory returns to exploration automatically.
+
+The three interaction modes (Traditional / Assisted / Adventure) are a
+low-weight gameplay preference — discoverable during play, but never a
+destination or a navigation surface competing with the world.

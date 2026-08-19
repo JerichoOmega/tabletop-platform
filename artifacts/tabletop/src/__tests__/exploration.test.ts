@@ -302,3 +302,59 @@ describe("exploration ↔ encounter loop (M5)", () => {
     expect(session.worldState.entities.get(HOSTILE_WORLD_ID)!.alive).toBe(true);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// WORLD LOCATIONS — locations are world content, discovered by proximity.
+// ---------------------------------------------------------------------------
+describe("exploration — world locations (points of interest)", () => {
+  it("every location maps to a real production encounter", async () => {
+    const { EXPLORE_LOCATIONS } = await import("@/engine/exploration");
+    const { ENCOUNTER_DEFS } = await import("@/engine/content");
+    expect(EXPLORE_LOCATIONS.length).toBeGreaterThan(0);
+    for (const loc of EXPLORE_LOCATIONS) {
+      expect(ENCOUNTER_DEFS[loc.encounterId]).toBeDefined();
+      // A production location must not point at a test-only fixture.
+      expect(ENCOUNTER_DEFS[loc.encounterId].testOnly ?? false).toBe(false);
+      expect(loc.prompt.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("locations are presentation metadata only — never registered as world entities", async () => {
+    const { EXPLORE_LOCATIONS } = await import("@/engine/exploration");
+    const session = createExplorationSession();
+    await loadAllChunks(session);
+    for (const loc of EXPLORE_LOCATIONS) {
+      expect(session.worldState.entities.get(loc.id)).toBeUndefined();
+    }
+    // Only the party and the wandering hostile are real entities.
+    expect(session.worldState.entities.getAlive().length).toBe(2);
+  });
+
+  it("nearbyLocation returns a place only within Chebyshev distance 1", async () => {
+    const { EXPLORE_LOCATIONS, nearbyLocation } = await import("@/engine/exploration");
+    const session = createExplorationSession();
+    await loadAllChunks(session);
+    const crypt = EXPLORE_LOCATIONS.find((l) => l.id === "crypt")!;
+
+    // At spawn (8, 8) the crypt (12, 8) is far away — no interaction offered.
+    expect(nearbyLocation(session)).toBeNull();
+
+    // Standing beside the crypt reveals it.
+    session.worldState.entities.move(PARTY_WORLD_ID, crypt.wx - 1, crypt.wy);
+    expect(nearbyLocation(session)?.id).toBe("crypt");
+
+    // Standing on it also counts as "here".
+    session.worldState.entities.move(PARTY_WORLD_ID, crypt.wx, crypt.wy);
+    expect(nearbyLocation(session)?.id).toBe("crypt");
+  });
+
+  it("location tiles sit on floor terrain reachable from the corridor", async () => {
+    const { EXPLORE_LOCATIONS } = await import("@/engine/exploration");
+    const session = createExplorationSession();
+    await loadAllChunks(session);
+    for (const loc of EXPLORE_LOCATIONS) {
+      expect(explorationTileInfo(session, loc.wx, loc.wy).passable).toBe(true);
+    }
+  });
+});

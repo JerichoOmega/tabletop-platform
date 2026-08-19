@@ -77,6 +77,61 @@ export const EXPLORE_SPAWN = Object.freeze({ wx: 8, wy: 8 });
 /** Hostile spawn — floor tile east of the party for EXPLORE_WORLD_SEED. */
 export const HOSTILE_SPAWN = Object.freeze({ wx: 20, wy: 8 });
 
+// ---------------------------------------------------------------------------
+// WORLD LOCATIONS (points of interest).
+//
+// PHILOSOPHY: locations and encounters are WORLD CONTENT, not top-level RPG
+// navigation. A location is a physical place discovered by moving the party
+// through the world — never a permanent navigation tab. These are PRESENTATION
+// metadata ONLY: they are never registered in the WorldEntityRegistry, never
+// participate in encounter detection, and never alter movement or terrain.
+//
+// The presentation layer highlights a location's map position and, when the
+// party is Chebyshev-adjacent, offers a contextual prompt ("Enter Ruined
+// Crypt"). Entering it opens the corresponding MapDef encounter as an in-world
+// delve; resolving it returns the party to exploration at its world position.
+// ---------------------------------------------------------------------------
+export interface ExploreLocation {
+  /** Stable identifier of the location. */
+  readonly id: string;
+  /** Player-facing name of the place. */
+  readonly name: string;
+  /** Authoritative world tile the location sits on. */
+  readonly wx: number;
+  readonly wy: number;
+  /** MapDef encounter entered when the party delves into this location. */
+  readonly encounterId: string;
+  /** Contextual verb shown when the party is adjacent, e.g. "Enter Ruined Crypt". */
+  readonly prompt: string;
+  /** Presentation glyph key. */
+  readonly icon: "crypt" | "yard";
+}
+
+/**
+ * Discoverable world locations just off the M1 exploration corridor. Row 7 is
+ * floor at these columns (verified), and sitting one tile off the row-8 walk
+ * path means a location marker never intercepts a movement click while the
+ * party is still discovered as it passes by. These turn the former "Ruined
+ * Crypt" / "Training Yard" navigation tabs into places that exist in the world.
+ */
+export const EXPLORE_LOCATIONS: readonly ExploreLocation[] = Object.freeze([
+  { id: "crypt",        name: "Ruined Crypt",  wx: 12, wy: 7, encounterId: "crypt",        prompt: "Enter Ruined Crypt",  icon: "crypt" },
+  { id: "trainingYard", name: "Training Yard", wx: 16, wy: 7, encounterId: "trainingYard", prompt: "Enter Training Yard", icon: "yard"  },
+]);
+
+/**
+ * Returns the location the party is currently able to interact with — the
+ * first location within Chebyshev distance 1 of the party (including the tile
+ * the party stands on), or null. Pure read over authoritative world position.
+ */
+export function nearbyLocation(session: ExplorationSession): ExploreLocation | null {
+  const party = getParty(session);
+  for (const loc of EXPLORE_LOCATIONS) {
+    if (Math.max(Math.abs(loc.wx - party.wx), Math.abs(loc.wy - party.wy)) <= 1) return loc;
+  }
+  return null;
+}
+
 const VOID_TILE = Object.freeze<TileInfo>({
   passable: false, blocksLOS: true, providesCover: false, type: "void",
 });

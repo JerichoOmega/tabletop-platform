@@ -21,6 +21,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   Footprints, Sword, Sparkles, ScrollText, Dice5, ChevronRight, X, Check, Info,
+  Skull, Swords, DoorOpen,
 } from "lucide-react";
 
 import type { GameState, HealResult, DamageResult } from "@/engine/content";
@@ -46,11 +47,11 @@ import { worldEntityToCombatant, buildEncounterFromEntities } from "@/engine/wor
 import { getChunksForViewport, prefetchViewportChunks, PREFETCH_MARGIN } from "@/engine/viewportStreaming";
 import { evictDistantChunks } from "@/engine/evictionPolicy";
 // Phase 3 M1: exploration session — party moves through the streaming world.
-import type { ExplorationSession } from "@/engine/exploration";
+import type { ExplorationSession, ExploreLocation } from "@/engine/exploration";
 import {
   createExplorationSession, explorationTileInfo, movePartyStep,
   detectAdjacentHostiles, adjacentStepTargets, getParty, respawnPartyAtSpawn,
-  EXPLORE_WORLD_W, EXPLORE_WORLD_H,
+  EXPLORE_WORLD_W, EXPLORE_WORLD_H, EXPLORE_LOCATIONS, nearbyLocation,
 } from "@/engine/exploration";
 import { CHUNK_W, CHUNK_H } from "@/engine/chunk";
 import type { Step, RevalidationCheck, ProposedAction } from "@/intent/parser";
@@ -273,6 +274,17 @@ const RESPONSIVE_CSS = `
     animation: it-banner-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
     animation-fill-mode: both;
   }
+  /* World-location marker attention pulse — draws the eye to a discoverable
+     place the party is beside. Suppressed under prefers-reduced-motion by the
+     rule below (animation-duration collapses to 0.01ms). */
+  @keyframes it-loc-pulse {
+    0%   { box-shadow: 0 0 0 2px rgba(232,194,74,0.55), 0 2px 6px rgba(0,0,0,0.5); }
+    50%  { box-shadow: 0 0 0 6px rgba(232,194,74,0.12), 0 2px 6px rgba(0,0,0,0.5); }
+    100% { box-shadow: 0 0 0 2px rgba(232,194,74,0.55), 0 2px 6px rgba(0,0,0,0.5); }
+  }
+  .it-loc-pulse {
+    animation: it-loc-pulse 1.8s ease-in-out infinite;
+  }
 `;
 
 // True when running under Playwright or any other harness that appends ?e2e to
@@ -359,6 +371,14 @@ export default function IntelligentTabletop() {
   const [worldEncounter, setWorldEncounter] = useState(false);
   const preparedRef = useRef<PreparedEncounter | null>(null);
   const startingEncounterRef = useRef(false);
+
+  // LOCATION DELVE: the party entered a discoverable world location (e.g. the
+  // Ruined Crypt) from exploration. The exploration session stays alive behind
+  // a MapDef-backed encounter; resolving it returns the party to exploration at
+  // its world position. `locationDelve` holds the active location's name for
+  // presentation (banner + return control); null when not delving.
+  const [locationDelve, setLocationDelve] = useState<string | null>(null);
+  const locationDelveRef = useRef<ExploreLocation | null>(null);
 
   const [gameState, setGameState] = useState(() => {
     const fresh = buildEncounter(encounterIdRef.current, seedRef.current);
@@ -1003,7 +1023,8 @@ export default function IntelligentTabletop() {
       setProposal(null);
       setInfoResult(null);
       setLastRoll(null);
-      setMode("traditional");
+      // Keep the player's chosen interaction mode (Traditional/Assisted/
+      // Adventure) — it is a persistent preference, not a per-encounter reset.
       setBanner("A wilderness battle begins!");
       setTimeout(() => setBanner(null), 2600);
     } finally {
@@ -1068,6 +1089,88 @@ export default function IntelligentTabletop() {
     setBanner(null);
   }
 
+  // ---------------------------------------------------------------------------
+  // LOCATION DELVE — entering a discoverable world location from exploration.
+  //
+  // A location is world CONTENT, not navigation: the party discovers it by
+  // moving through the world and enters via a contextual prompt. Entering opens
+  // the location's MapDef encounter as a focused in-world delve. The exploration
+  // session is preserved (explorationRef stays set); only the streaming
+  // WorldState ref is parked so the overworld does not stream behind the MapDef
+  // battlefield. Resolving the delve returns the party to exploration at its
+  // unchanged world position — mirroring the wilderness victory-return feel.
+  // No world entity is touched, so a delve never mutates authoritative world
+  // state (it reuses the existing MapDef combat pipeline verbatim).
+  // ---------------------------------------------------------------------------
+  function enterLocation(loc: ExploreLocation) {
+    const session = explorationRef.current;
+    if (!session || sessionMode !== "exploration") return;
+    seedRef.current += 1;
+    encounterIdRef.current = loc.encounterId;
+    const fresh = buildEncounter(loc.encounterId, seedRef.current);
+    const rng = mulberry32(seedRef.current + 9999);
+    rngRef.current = rng;
+    const next = resolveLeadingEnemyTurns(fresh, rng);
+    locationDelveRef.current = loc;
+    setLocationDelve(loc.name);
+    // Park the overworld stream; the delve renders a MapDef battlefield.
+    worldStateRef.current = null;
+    setWorldEncounter(false);
+    setGameState(next);
+    setSessionMode("encounter");
+    const baseVp = initViewport(next.map, VIEWPORT_TILE_W, VIEWPORT_TILE_H);
+    const firstActor = next.combatants[next.turnOrder[next.turnIndex]];
+    setViewport(
+      firstActor && firstActor.alive
+        ? updateViewportForActor(baseVp, firstActor.wx, firstActor.wy, next.map.width, next.map.height)
+        : baseVp,
+    );
+    setSelectedId(null);
+    setPendingAction(null);
+    setProposal(null);
+    setInfoResult(null);
+    setLastRoll(null);
+    setBanner(`You enter the ${loc.name}.`);
+    setTimeout(() => setBanner(null), 2400);
+  }
+
+  // Returns the table to exploration after a location delve ends. The party's
+  // world position is authoritative in the still-live session and is unchanged
+  // by the delve, so the world simply resumes where it left off.
+  function returnFromLocation() {
+    const session = explorationRef.current;
+    if (!session) return;
+    locationDelveRef.current = null;
+    setLocationDelve(null);
+    // Re-arm the overworld stream.
+    worldStateRef.current = session.worldState;
+    setSessionMode("exploration");
+    setWorldEncounter(false);
+    setExploreVersion(v => v + 1);
+    const party = getParty(session);
+    const baseVp = initViewport(
+      { width: EXPLORE_WORLD_W, height: EXPLORE_WORLD_H } as GameState["map"],
+      VIEWPORT_TILE_W, VIEWPORT_TILE_H,
+    );
+    setViewport(updateViewportForActor(baseVp, party.wx, party.wy, EXPLORE_WORLD_W, EXPLORE_WORLD_H));
+    setSelectedId(null);
+    setPendingAction(null);
+    setProposal(null);
+    setInfoResult(null);
+    setLastRoll(null);
+    setBanner(null);
+  }
+
+  // A location-delve victory returns to exploration automatically, matching the
+  // wilderness-battle feel. Defeat stays click-through ("Leave …") so the loss
+  // is acknowledged. Keyed on the lifecycle facts of an active delve.
+  useEffect(() => {
+    if (!(locationDelve && sessionMode === "encounter" && !worldEncounter && encounterStatus === "victory")) return;
+    const t = window.setTimeout(() => returnFromLocation(), 1400);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationDelve, sessionMode, worldEncounter, encounterStatus]);
+
   // FIX 3: arrow wrapper prevents SyntheticEvent from being passed as encounterId.
   function newEncounter(encounterId?: string) {
     if (encounterId) encounterIdRef.current = encounterId;
@@ -1104,6 +1207,9 @@ export default function IntelligentTabletop() {
     // Phase 3 M5: abandon any world-backed encounter with its session.
     preparedRef.current = null;
     setWorldEncounter(false);
+    // A practice-picker encounter is never a world location delve.
+    locationDelveRef.current = null;
+    setLocationDelve(null);
     setSessionMode("encounter");
   }
 
@@ -1160,6 +1266,23 @@ export default function IntelligentTabletop() {
     return m;
   }, [gameState, sessionMode, exploreVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // World locations keyed by tile — presentation only. Populated exclusively in
+  // exploration so the delve battlefield never renders overworld markers.
+  const locByTile = useMemo(() => {
+    const m: Record<string, ExploreLocation> = {};
+    if (sessionMode !== "exploration") return m;
+    for (const loc of EXPLORE_LOCATIONS) m[key(loc.wx, loc.wy)] = loc;
+    return m;
+  }, [sessionMode]);
+
+  // The location the party can currently act on (Chebyshev-adjacent). Drives
+  // the contextual "Enter …" prompt. null unless the party is beside a place.
+  const nearbyLoc = useMemo(() => {
+    const session = explorationRef.current;
+    if (sessionMode !== "exploration" || !session) return null;
+    return nearbyLocation(session);
+  }, [sessionMode, exploreVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---------------------------------------------------------------------------
   // RENDER
   // ---------------------------------------------------------------------------
@@ -1193,39 +1316,61 @@ export default function IntelligentTabletop() {
             )}
           </div>
         </div>
-        {sessionMode === "encounter" && (
-        <div style={{ display: "flex", gap: 6, background: "#241a12", border: "1px solid #5a4326", borderRadius: 10, padding: 4 }}>
-          {[
-            { id: "traditional" as const, label: "Traditional" },
-            { id: "assisted"    as const, label: "Assisted"    },
-            { id: "adventure"   as const, label: "Adventure"   },
-          ].map((m) => (
-            <button
-              key={m.id}
-              aria-pressed={mode === m.id}
-              onClick={() => { setMode(m.id); setPendingAction(null); setProposal(null); setInfoResult(null); }}
-              style={{
-                fontFamily: "Cinzel, serif",
-                fontSize: 11.5,
-                letterSpacing: 0.5,
-                padding: "7px 14px",
-                borderRadius: 7,
-                border: "none",
-                cursor: "pointer",
-                background: mode === m.id ? "#c9a227" : "transparent",
-                color: mode === m.id ? "#241a12" : "#c9bd9e",
-                transition: "all .15s ease",
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
+        {/* INTERACTION MODE — a low-weight gameplay preference, never a
+            destination. Traditional / Assisted / Adventure stay available and
+            discoverable during exploration and combat, but they never compete
+            with the world for attention. */}
+        <div
+          data-testid="interaction-mode"
+          role="group"
+          aria-label="How you want to play"
+          style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
+        >
+          <span aria-hidden="true" style={{ fontFamily: "'EB Garamond', serif", fontStyle: "italic", fontSize: 11, letterSpacing: 0.3, color: "#7d6b47" }}>
+            How you play
+          </span>
+          <div style={{ display: "flex", gap: 2, background: "rgba(28,20,12,0.6)", border: "1px solid #3f3120", borderRadius: 8, padding: 3 }}>
+            {[
+              { id: "traditional" as const, label: "Traditional" },
+              { id: "assisted"    as const, label: "Assisted"    },
+              { id: "adventure"   as const, label: "Adventure"   },
+            ].map((m) => (
+              <button
+                key={m.id}
+                aria-pressed={mode === m.id}
+                onClick={() => { setMode(m.id); setPendingAction(null); setProposal(null); setInfoResult(null); }}
+                style={{
+                  fontFamily: "'EB Garamond', serif",
+                  fontSize: 11,
+                  letterSpacing: 0.3,
+                  padding: "5px 11px",
+                  borderRadius: 6,
+                  border: "none",
+                  cursor: "pointer",
+                  background: mode === m.id ? "#3a2c19" : "transparent",
+                  color: mode === m.id ? "#e0cb93" : "#8a795a",
+                  boxShadow: mode === m.id ? "inset 0 0 0 1px #6b5a34" : "none",
+                  transition: "background-color .15s ease, color .15s ease",
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
-        )}
       </div>
 
-      {/* Encounter switcher — test-only encounters are hidden unless ?e2e is in the URL */}
-      <div className="it-encounter-switcher">
+      {/* DEVELOPER / TEST ENCOUNTER SWITCHER.
+          Locations and encounters are world content, not player navigation, so
+          this direct-selection row is NOT part of the normal adventure. It is
+          gated behind the practice/dev pathway (?practice, or ?e2e for the
+          combat E2E suites) and never rendered for normal players. Test-only
+          encounters additionally require ?e2e. */}
+      {isPracticeEntry && (
+      <div className="it-encounter-switcher" data-testid="dev-encounter-switcher">
+        <span aria-hidden="true" style={{ fontFamily: "'EB Garamond', serif", fontStyle: "italic", fontSize: 10.5, letterSpacing: 0.4, color: "#6b5a3a", alignSelf: "center", marginRight: 2 }}>
+          Practice ·
+        </span>
         {/* Phase 3 M1: exploration session toggle.
             Hidden during a world-backed encounter (M5): the battle must resolve
             through the victory/defeat banner so results commit via endEncounter. */}
@@ -1267,6 +1412,7 @@ export default function IntelligentTabletop() {
           </button>
         ))}
       </div>
+      )}
 
       {/* Transient banner — role="alert" causes screen readers to announce immediately */}
       {banner && (
@@ -1285,6 +1431,13 @@ export default function IntelligentTabletop() {
             <button onClick={() => returnToExplorationAfterBattle()} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
               {encounterStatus === "victory" ? "Continue Exploring" : "Awaken at Camp"}
             </button>
+          ) : locationDelve ? (
+            /* Location delve — a place discovered in the world. Victory returns
+               to exploration automatically; the button is the immediate skip /
+               the acknowledgement on defeat. */
+            <button data-testid="leave-location" onClick={() => returnFromLocation()} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
+              {encounterStatus === "victory" ? "Return to Wilderness" : `Leave ${locationDelve}`}
+            </button>
           ) : (
           /* FIX 3: arrow wrapper — prevents SyntheticEvent from becoming encounterId */
           <button onClick={() => newEncounter()} style={{ fontFamily: "Cinzel, serif", fontSize: 12, background: "#c9a227", color: "#241a12", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
@@ -1301,13 +1454,49 @@ export default function IntelligentTabletop() {
             /* Phase 3 M1: exploration panel — combat controls are hidden;
                world position is authoritative in the WorldEntityRegistry. */
             <div data-testid="exploration-panel">
-              <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>EXPLORATION</div>
+              <div role="heading" aria-level={2} style={{ fontFamily: "Cinzel, serif", fontSize: 12, color: "#a89468", marginBottom: 8, letterSpacing: 1 }}>THE WORLD</div>
+
+              {/* Contextual location prompt — the discovery interaction. Appears
+                  only when the party is beside a place, turning locations into
+                  world content rather than a permanent navigation tab. */}
+              {nearbyLoc && (
+                <button
+                  data-testid="enter-location"
+                  onClick={() => enterLocation(nearbyLoc)}
+                  className="it-anim-card-in"
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 10,
+                    padding: "11px 13px",
+                    borderRadius: 9,
+                    border: "1px solid #c9a227",
+                    background: "linear-gradient(180deg, #3a2c18, #2a1f12)",
+                    color: "#e8dcc0",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "50%", background: "rgba(201,162,39,0.16)", border: "1px solid #6b5a34", flexShrink: 0 }}>
+                    {nearbyLoc.icon === "crypt" ? <Skull size={16} color="#c9a227" /> : <Swords size={16} color="#c9a227" />}
+                  </span>
+                  <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
+                    <span style={{ fontFamily: "'EB Garamond', serif", fontStyle: "italic", fontSize: 10.5, color: "#a68a50", letterSpacing: 0.3 }}>You stand before the {nearbyLoc.name}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: "Cinzel, serif", fontSize: 13.5, color: "#f0e4c6" }}>
+                      <DoorOpen size={14} color="#c9a227" /> {nearbyLoc.prompt}
+                    </span>
+                  </span>
+                </button>
+              )}
+
               <div style={{ background: "#241a12", border: "1px solid #5a4326", borderRadius: 8, padding: 12, fontSize: 13, lineHeight: 1.6 }}>
                 <div style={{ color: "#c9bd9e" }}>
-                  The party travels the open world. Click a highlighted tile beside the party to take a step; the table follows as you move.
+                  The party travels the open world. Tap a highlighted tile beside the party to take a step; the table follows as you move.
                 </div>
                 <div style={{ marginTop: 8, color: "#8a795a", fontSize: 12 }}>
-                  Unmapped land appears dark until it is charted. Encounters with hostile creatures will begin here in a future update.
+                  Unmapped land stays dark until it is charted. Approach a place to discover it, or wander into a hostile creature to begin a battle.
                 </div>
               </div>
             </div>
@@ -1515,6 +1704,8 @@ export default function IntelligentTabletop() {
                   const pillar  = tile.tileInfo.type === "pillar";
                   // Use world coords for all lookups — never viewport-relative vx/vy.
                   const tok     = tokensByTile[key(tile.wx, tile.wy)];
+                  const loc     = locByTile[key(tile.wx, tile.wy)];
+                  const isNearbyLoc = !!(loc && nearbyLoc && nearbyLoc.id === loc.id);
                   const isReach = reachSet.has(key(tile.wx, tile.wy));
                   // Phase F: loading placeholder — purely presentational.
                   // True when the tile's chunk is LOADING in the live ChunkStore.
@@ -1547,6 +1738,40 @@ export default function IntelligentTabletop() {
                     >
                       {pillar && (
                         <div style={{ position: "absolute", inset: 5, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%, #7a6a52, #382c1c)", boxShadow: "0 3px 6px rgba(0,0,0,0.5)" }} />
+                      )}
+                      {/* WORLD LOCATION MARKER — a place drawn on the table, not a
+                          navigation control. Decorative (role="img"); the
+                          accessible, keyboard-operable action is the "Enter …"
+                          button in the exploration panel. Mouse users may also
+                          click the marker directly when the party is adjacent. */}
+                      {loc && !tok && (
+                        <div
+                          data-testid="location-marker"
+                          data-location-id={loc.id}
+                          role="img"
+                          aria-label={`${loc.name}, a location in the world${isNearbyLoc ? " — the party is beside it" : ""}`}
+                          title={loc.name}
+                          onClick={isNearbyLoc ? (e) => { e.stopPropagation(); enterLocation(loc); } : undefined}
+                          className={isNearbyLoc ? "it-loc-pulse" : ""}
+                          style={{
+                            position: "absolute",
+                            inset: 6,
+                            borderRadius: 6,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: "radial-gradient(circle at 35% 28%, #4a3a22, #241a10)",
+                            border: `2px solid ${isNearbyLoc ? "#e8c24a" : "#7a6236"}`,
+                            boxShadow: isNearbyLoc
+                              ? "0 0 0 3px rgba(232,194,74,0.35), 0 2px 6px rgba(0,0,0,0.5)"
+                              : "0 2px 5px rgba(0,0,0,0.5)",
+                            cursor: isNearbyLoc ? "pointer" : "default",
+                          }}
+                        >
+                          {loc.icon === "crypt"
+                            ? <Skull size={Math.round(cellPx * 0.42)} color={isNearbyLoc ? "#f0d873" : "#b79a58"} />
+                            : <Swords size={Math.round(cellPx * 0.42)} color={isNearbyLoc ? "#f0d873" : "#b79a58"} />}
+                        </div>
                       )}
                       {tok && (
                         <div

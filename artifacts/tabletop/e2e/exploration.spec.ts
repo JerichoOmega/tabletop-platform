@@ -109,21 +109,47 @@ test.describe("Exploration mode — M1", () => {
     await expect(page.getByRole("heading", { name: "INITIATIVE", exact: true })).toHaveCount(0);
   });
 
-  test("returning to the encounter restores combat and it still works", async ({ page }) => {
+  test("normal play exposes no developer encounter navigation", async ({ page }) => {
+    // The old location-nav tab row (Return to Encounter / Ruined Crypt /
+    // Training Yard) must NOT appear for normal players — locations are world
+    // content, not navigation.
+    await expect(page.locator('[data-testid="dev-encounter-switcher"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Return to Encounter" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Explore World" })).toHaveCount(0);
+    // The interaction-mode preference stays available (low-weight, not a tab).
+    await expect(page.locator('[data-testid="interaction-mode"]')).toBeVisible();
+    await expect(page.getByRole("button", { name: "Traditional" })).toBeVisible();
+  });
+});
+
+/**
+ * Developer / test encounter selection is SEPARATE from normal player
+ * navigation. It lives behind the practice/dev pathway (?practice, or ?e2e
+ * for the combat suites) and must keep working there — direct encounter and
+ * exploration selection is a testing tool, not part of the adventure.
+ */
+test.describe("Practice mode — developer encounter switcher (separate pathway)", () => {
+  test("the dev switcher is available under ?practice and round-trips exploration", async ({ page }) => {
+    await page.goto("/?practice&experience=rpg");
+    await expect(page.locator('[data-testid="dev-encounter-switcher"]')).toBeVisible();
+
+    // Enter the world via the dev toggle, step once, then return to combat.
+    await page.getByRole("button", { name: "Explore World" }).click();
+    await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
     await stepTo(page, 9, 8);
     await page.getByRole("button", { name: "Return to Encounter" }).click();
-    // Encounter surface restored.
     await expect(page.getByRole("heading", { name: "Wilderness Exploration" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "INITIATIVE", exact: true })).toBeVisible();
+
     // Combat regression: Move mode still works end-to-end.
     await expect(page.getByRole("button", { name: "Move", exact: true })).toBeVisible({ timeout: 8_000 });
     await page.getByRole("button", { name: "Move", exact: true }).click();
-    // Reachable tiles get cursor:pointer (isReach) — combat targeting is live.
     const reachable = page.locator(`${TILE}[style*="cursor: pointer"]`);
     await expect(reachable.first()).toBeVisible();
   });
 
-  test("switching encounters from exploration exits the session", async ({ page }) => {
+  test("selecting an encounter from the dev switcher loads that encounter", async ({ page }) => {
+    await page.goto("/?practice&experience=rpg");
     await page.getByRole("button", { name: "Training Yard" }).click();
     await expect(page.getByRole("heading", { name: "Wilderness Exploration" })).toHaveCount(0);
     await expect(page.locator(LOCATION)).toHaveCount(0);
