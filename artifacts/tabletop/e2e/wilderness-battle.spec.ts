@@ -23,9 +23,12 @@ const TILE = '[data-testid="board-tile"]';
 const LOCATION = '[data-testid="exploration-location"]';
 
 async function enterExploration(page: Page) {
-  // M7: exploration IS the launch surface — a normal session lands in the
-  // world with no click required.
-  await page.goto("/?experience=rpg");
+  // Mission launch is briefing → exploration; the world remains the primary
+  // play surface after the player acknowledges the brief.
+  // The M5 loop remains covered as isolated developer tooling; the actual
+  // player-facing mission loop is covered by mission.spec.ts.
+  await page.goto("/?practice&experience=rpg");
+  await page.getByRole("button", { name: "Explore World" }).click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
 }
 

@@ -1,0 +1,495 @@
+Implement the next RPG vertical-slice milestone for Intelligent Tabletop.
+
+IMPORTANT:
+This is NOT a broad content expansion.
+This is NOT a systems rewrite.
+This is NOT an opportunity to redesign the existing exploration, encounter, combat, chunk, registry, or platform architecture.
+
+The goal is to turn the currently working exploration → encounter → combat loop into the first complete, finishable RPG mission loop.
+
+CURRENT VERIFIED STATE
+
+The current github/main already has:
+
+- World/chunk streaming
+- Chunk prefetch
+- Chunk eviction with hysteresis
+- Entity survival across eviction
+- Deterministic chunk regeneration
+- Parser migrated off runtime map.pillars
+- Exploration mode
+- World-backed exploration
+- Hostile detection
+- World-backed encounter creation
+- RPG combat
+- Deterministic combat victory
+- Automatic return to exploration after victory
+- Platform Experience Contract
+- Generic Experience registry
+- Platform shell lifecycle/error boundary
+- RPG registered as an Experience
+- Real shell-entry E2E coverage
+
+Recent commits include:
+
+- b476513 — chunk eviction/entity survival
+- 59abd64 — parser migration
+- 35825e2 — Experience Contract/platform boundary
+- 14e33d8 — RPG combat victory termination
+- b64a1d6 — real shell exploration/encounter regression coverage
+
+Current validation baseline is approximately:
+- 697 unit tests
+- 190 E2E tests
+- TypeScript clean
+- Production build clean
+
+The current RPG exploration session intentionally has only one demo hostile. Do NOT interpret the absence of additional enemies after killing it as a trigger bug.
+
+PRODUCT TARGET
+
+The RPG is a streamlined tabletop adventure experience.
+
+The standard RPG session target is approximately 60 minutes.
+
+The game is intentionally NOT D&D.
+
+The player should have meaningful freedom inside a bounded mission.
+
+Core principle:
+
+"Players can change what happens, but cannot endlessly expand what the game is."
+
+The mission should be designed as a finite episode with a reliable ending.
+
+ARCHITECTURAL PRINCIPLE
+
+Use:
+
+Mission Contract + Escalation Graph
+
+rather than an unrestricted scene chain.
+
+The mission must have:
+
+- One primary objective
+- A finite exploration scope
+- Meaningful player choices
+- Bounded optional content
+- One major complication
+- A clear climax
+- A deterministic closure state
+
+Valid mission outcomes:
+
+1. SUCCESS
+2. SUCCESS_AT_COST
+3. PARTIAL_SUCCESS
+4. FAILURE
+5. RETREAT
+
+Do not implement all five outcomes as elaborate separate story branches yet.
+
+The architecture only needs to support the outcome model and one demonstrably working mission.
+
+MISSION VERTICAL SLICE
+
+Create ONE complete RPG mission.
+
+Keep it deliberately small.
+
+Example structure:
+
+MISSION:
+"The Ruined Watchtower"
+
+PRIMARY OBJECTIVE:
+Reach the ruined watchtower and recover the signal beacon.
+
+OPTIONAL OBJECTIVE:
+Rescue a trapped scout OR recover a secondary piece of intelligence.
+
+APPROACH:
+The player can approach through at least two meaningful methods, such as:
+- direct route
+- alternate/safer route
+
+ESCALATION:
+Something changes once the party reaches the watchtower.
+
+CLIMAX:
+A major encounter or objective-driven combat occurs.
+
+RESOLUTION:
+The beacon is recovered, lost, or the party retreats.
+
+The exact fiction is up to the existing project's content style, but do not introduce a large lore system or new campaign universe.
+
+REQUIREMENTS
+
+1. MISSION CONTRACT
+
+Create a structured mission definition containing, at minimum:
+
+- mission id
+- title
+- description
+- primary objective
+- optional objective
+- starting state
+- success condition
+- failure condition
+- retreat condition
+- escalation states
+- completion/outcome mapping
+
+The Mission Contract must be data-driven.
+
+Do NOT hardcode the mission into PlatformShell or generic platform code.
+
+2. MISSION STATE
+
+Introduce the minimum state necessary to track:
+
+- current mission
+- primary objective progress
+- optional objective progress
+- escalation state
+- mission outcome
+- completion status
+
+Do not build a generalized quest-management system.
+
+Do not build an MMO-style quest database.
+
+Keep this specific enough to prove the architecture but generic enough that another mission can be added later.
+
+3. MISSION LIFECYCLE
+
+Implement:
+
+MISSION_BRIEFING
+→ EXPLORATION
+→ ESCALATION
+→ CLIMAX
+→ RESOLUTION
+→ RETURN
+
+The lifecycle should be deterministic.
+
+The player must never be left in an ambiguous state where combat ends but the mission has no next state.
+
+4. EXPLORATION INTEGRATION
+
+Use the existing exploration system.
+
+Do NOT replace it.
+
+Add the minimum mission-specific hooks necessary to allow exploration to affect mission state.
+
+Examples:
+
+- entering a location advances the primary objective
+- interacting with the beacon changes objective state
+- rescuing the scout completes optional progress
+- choosing an alternate route changes an escalation flag
+
+5. COMBAT INTEGRATION
+
+Use the existing encounter/combat system.
+
+Do NOT create a second combat path.
+
+The mission should launch the existing world-backed encounter system.
+
+On combat victory:
+
+- update mission state
+- determine whether the mission continues or resolves
+- return to exploration when appropriate
+- trigger mission resolution when the primary objective is satisfied
+
+Combat defeat/retreat must not leave the mission in a dead state.
+
+6. ESCALATION
+
+Implement ONE meaningful escalation.
+
+Example:
+
+The player reaches the watchtower.
+
+The beacon cannot simply be collected.
+
+The environment changes or enemies arrive.
+
+The mission enters CLIMAX.
+
+Keep this simple.
+
+Do not implement procedural storytelling.
+
+Do not let AI invent escalation state.
+
+7. RESOLUTION
+
+Implement an explicit mission resolution screen/state.
+
+It should communicate:
+
+- outcome
+- primary objective result
+- optional objective result
+- important consequence
+- reward/progression placeholder if necessary
+
+The mission must end cleanly.
+
+The player must be able to return to the platform/session shell.
+
+8. CAMPAIGN STATE
+
+Do NOT build the complete campaign system yet.
+
+However, introduce the minimum persistent result needed to prove that a mission can leave a consequence.
+
+For example:
+
+{
+  missionId,
+  outcome,
+  primaryObjectiveComplete,
+  optionalObjectiveComplete,
+  consequenceFlags
+}
+
+This should be stored through the existing state architecture if one exists.
+
+Do not create a second persistence system.
+
+9. SESSION CLOSURE
+
+A completed mission must be able to reach:
+
+RESOLUTION → RETURN TO PLATFORM
+
+without requiring:
+
+- page reload
+- manual state reset
+- debug mode
+- direct URL manipulation
+
+The player should be able to start the RPG again afterward.
+
+10. BOUNDED FREEDOM
+
+Do NOT create a menu-only mission.
+
+The player must still be able to use the existing movement/exploration/action systems.
+
+However, do not allow mission scope to expand dynamically.
+
+The mission owns a finite set of valid objectives and transitions.
+
+Natural-language AI is NOT required for this milestone.
+
+11. UI
+
+Keep UI minimal and consistent with the existing RPG.
+
+Add only what is necessary:
+
+- Mission briefing
+- Objective display
+- Escalation/climax indication
+- Mission resolution
+
+Do not redesign the RPG UI.
+
+Do not build a full journal, quest log, inventory redesign, dialogue system, or campaign map.
+
+12. CONTENT LIMITS
+
+This vertical slice should contain approximately:
+
+- 1 mission
+- 1 primary objective
+- 1 optional objective
+- 1 meaningful route/approach decision
+- 1 escalation
+- 1 major encounter
+- 1 resolution
+- existing RPG player/combat systems
+
+Do NOT add:
+
+- additional classes
+- large enemy catalogs
+- procedural generation
+- AI DM
+- human DM mode
+- multiplayer
+- creator tools
+- campaign branching trees
+- crafting
+- shops
+- extensive inventory
+- large dialogue systems
+- Ages of Empire
+- discovery/catalog systems
+
+13. TESTING
+
+Add tests for:
+
+UNIT:
+
+- mission definition validation
+- mission state transitions
+- objective progression
+- optional objective progression
+- escalation transition
+- victory → mission progression
+- defeat/retreat → valid mission state
+- resolution outcome calculation
+- mission reset/restart
+
+E2E:
+
+Test the actual player-facing flow:
+
+1. Enter RPG through the real platform shell.
+2. Start the mission.
+3. Read/acknowledge briefing.
+4. Explore.
+5. Make the route/approach choice.
+6. Trigger the mission escalation.
+7. Enter the major encounter.
+8. Win combat.
+9. Complete the primary objective.
+10. Reach resolution.
+11. Verify outcome/consequence.
+12. Return to platform.
+13. Re-enter RPG.
+14. Verify the previous session does not leave stale active mission state.
+
+Do NOT weaken existing tests.
+
+14. REGRESSION REQUIREMENTS
+
+Preserve all existing behavior:
+
+- exploration movement
+- hostile detection
+- encounter creation
+- combat
+- combat victory termination
+- chunk streaming
+- chunk eviction
+- entity survival
+- parser tileQuery behavior
+- Experience registration
+- platform shell lifecycle
+- crash containment
+
+Run the full suite.
+
+15. ARCHITECTURE REQUIREMENTS
+
+Before implementation, inspect the existing architecture.
+
+Reuse existing:
+
+- WorldState
+- exploration session
+- encounter system
+- combat lifecycle
+- Experience registry
+- platform context
+- existing persistence/state mechanisms
+
+Do NOT introduce duplicate sources of truth.
+
+Do NOT put mission logic in:
+- PlatformShell
+- generic Experience registry
+- generic platform context
+- chunk engine
+- combat engine unless a truly generic hook is required
+
+Mission logic should remain RPG-owned.
+
+16. IMPLEMENTATION DISCIPLINE
+
+Work incrementally.
+
+Before making changes:
+
+- inspect existing files
+- identify the smallest correct integration points
+- explain the proposed file changes
+
+Then implement.
+
+Do not silently expand scope.
+
+If an architectural conflict is discovered, STOP and report it instead of inventing a parallel architecture.
+
+17. COMPLETION GATE
+
+The milestone is complete only if:
+
+- A player can start the mission normally.
+- The mission briefing appears.
+- The player can explore.
+- At least one meaningful approach choice affects mission state.
+- The primary objective progresses.
+- The escalation occurs.
+- The existing combat system is used.
+- Combat victory advances mission state.
+- The primary objective can be completed.
+- Mission resolution occurs.
+- A concrete outcome is recorded.
+- The player returns cleanly to the platform.
+- The RPG can be started again afterward.
+- No stale mission state contaminates the next session.
+- All tests pass.
+- TypeScript passes.
+- Production build passes.
+
+18. STOP CONDITION
+
+When the completion gate is satisfied:
+
+STOP.
+
+Do NOT continue into:
+
+- more missions
+- campaign systems
+- AI DM
+- additional enemies
+- additional classes
+- multiplayer
+- Ages of Empire
+- discovery
+- creator tools
+- broad refactoring
+
+Report:
+
+- files changed
+- architecture decisions
+- mission lifecycle
+- player-facing flow
+- tests added
+- total unit/E2E counts
+- typecheck
+- production build
+- known limitations
+- proposed commit message
+
+DO NOT COMMIT OR PUSH.
+
+Wait for approval before committing.

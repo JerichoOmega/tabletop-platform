@@ -55,10 +55,17 @@ import {
   EXPLORE_WORLD_W, EXPLORE_WORLD_H, EXPLORE_LOCATIONS, nearbyLocation,
 } from "@/engine/exploration";
 import { CHUNK_W, CHUNK_H } from "@/engine/chunk";
+import {
+  WATCHTOWER_MISSION, createMissionState, chooseMissionApproach,
+  advanceMissionAtWatchtower, beginMissionClimax, resolveMissionVictory,
+  recoverFromMissionDefeat, retreatFromMission, returnFromMission, type MissionApproach,
+  type MissionState,
+} from "@/engine/mission";
 import type { Step, RevalidationCheck, ProposedAction } from "@/intent/parser";
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
 import { FONT_IMPORT, ClassIcon, CharacterPanel, actionBtnStyle } from "@/ui/primitives";
 import { resolveAsset } from "@/assets/registry";
+import { usePlatformContext } from "@/platform/experiences/platformContext";
 
 // ---------------------------------------------------------------------------
 // LOCAL TYPES — owned by the React layer; engine types are imported above.
@@ -356,17 +363,17 @@ export default function IntelligentTabletop() {
   const explorationRef = useRef<ExplorationSession | null>(null);
   const [exploreVersion, setExploreVersion] = useState(0);
 
-  // M7: exploration-first launch. A normal (non-practice) session enters the
-  // world immediately — the encounter picker is never the player's entry
-  // surface. Ref-guarded so StrictMode's double-invoked mount effect cannot
-  // create two exploration sessions.
-  const autoExploredRef = useRef(false);
-  useEffect(() => {
-    if (isPracticeEntry || autoExploredRef.current) return;
-    autoExploredRef.current = true;
-    startExploration();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // The mission is RPG-owned state. It is immutable between transitions and
+  // mirrored in a ref so movement/async encounter handlers always read the
+  // latest state without making WorldState a second source of truth.
+  const [missionState, setMissionState] = useState<MissionState>(() => createMissionState());
+  const missionStateRef = useRef(missionState);
+  const platform = usePlatformContext();
+
+  function applyMissionState(next: MissionState): void {
+    missionStateRef.current = next;
+    setMissionState(next);
+  }
 
   // Phase 3 M5: WORLD-BACKED ENCOUNTER lifecycle state.
   // When the party bumps into a hostile during exploration, the session
@@ -745,10 +752,16 @@ export default function IntelligentTabletop() {
         setExploreVersion(v => v + 1);
         setViewport(prev => updateViewportForActor(prev, party.wx, party.wy, EXPLORE_WORLD_W, EXPLORE_WORLD_H));
         triggerAnim(session.partyWorldId, "it-anim-move", 380);
+        let nextMission = advanceMissionAtWatchtower(missionStateRef.current, party.wx, party.wy);
         const hostiles = detectAdjacentHostiles(session);
         if (hostiles.length > 0) {
-          // M5: adjacent hostiles start a world-backed encounter.
+          // The authored watchtower escalation leads directly into the
+          // existing world-backed climax encounter.
+          nextMission = beginMissionClimax(nextMission);
+          if (nextMission !== missionStateRef.current) applyMissionState(nextMission);
           void startWorldEncounter(session, hostiles);
+        } else if (nextMission !== missionStateRef.current) {
+          applyMissionState(nextMission);
         }
       } else {
         setBanner(res.reason ?? "You cannot move there.");
@@ -978,6 +991,20 @@ export default function IntelligentTabletop() {
     setUsedLocations(new Set());
   }
 
+  function startMission(approach: MissionApproach) {
+    applyMissionState(chooseMissionApproach(missionStateRef.current, approach));
+    startExploration();
+  }
+
+  function retreatMission() {
+    applyMissionState(retreatFromMission(missionStateRef.current));
+  }
+
+  function returnMissionToPlatform() {
+    applyMissionState(returnFromMission(missionStateRef.current));
+    platform?.requestExit();
+  }
+
   // Phase 3 M1: leave exploration and return to the current encounter.
   // Releases the WorldState (prefetch path goes dormant again) and restores
   // the encounter viewport from the authoritative GameState.
@@ -1075,6 +1102,18 @@ export default function IntelligentTabletop() {
     if (!worldEncounter || encounterStatus === "ongoing") return;
     commitWorldEncounter(gameState);
   }, [worldEncounter, encounterStatus, gameState, commitWorldEncounter]);
+
+  // Mission resolution is derived from the same terminal combat result that
+  // commits WorldState. Defeat returns to exploration for a retry; victory
+  // completes the beacon objective and leaves a concrete outcome record.
+  useEffect(() => {
+    if (!worldEncounter || encounterStatus === "ongoing") return;
+    const current = missionStateRef.current;
+    const next = encounterStatus === "victory"
+      ? resolveMissionVictory(current)
+      : recoverFromMissionDefeat(current);
+    if (next !== current) applyMissionState(next);
+  }, [worldEncounter, encounterStatus]);
 
   // M7: VICTORY AUTOMATICALLY RETURNS TO EXPLORATION. The banner shows just
   // long enough to read, then the table transitions back to the world — no
@@ -1366,6 +1405,90 @@ export default function IntelligentTabletop() {
     return nearbyLocation(session);
   }, [sessionMode, exploreVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (!isPracticeEntry && missionState.phase === "MISSION_BRIEFING") {
+    return (
+      <div
+        className="it-root"
+        data-testid="mission-briefing"
+        style={{
+          fontFamily: "'EB Garamond', serif",
+          minHeight: "100vh",
+          background: "radial-gradient(900px 600px at 50% 0%, #302315 0%, #17100a 65%, #0d0906 100%)",
+          color: "#e8dcc0",
+          padding: 18,
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        <style>{FONT_IMPORT}</style>
+        <div
+          style={{
+            width: "min(680px, 100%)",
+            background: "#241a12",
+            border: "1px solid #80652c",
+            borderRadius: 12,
+            padding: "clamp(24px, 5vw, 48px)",
+            boxShadow: "0 18px 70px rgba(0,0,0,.45)",
+          }}
+        >
+          <div style={{ color: "#c9a227", fontFamily: "Cinzel, serif", fontSize: 11, letterSpacing: 2, textTransform: "uppercase" }}>
+            Mission briefing
+          </div>
+          <h1 style={{ margin: "10px 0 12px", fontFamily: "Cinzel, serif", fontWeight: 500, fontSize: "clamp(25px, 5vw, 38px)", color: "#f0e4c7" }}>
+            {WATCHTOWER_MISSION.title}
+          </h1>
+          <p style={{ color: "#c9bd9e", lineHeight: 1.65, fontSize: 17, margin: "0 0 26px" }}>
+            {WATCHTOWER_MISSION.description}
+          </p>
+          <div style={{ borderTop: "1px solid #4d3821", borderBottom: "1px solid #4d3821", padding: "16px 0", marginBottom: 24 }}>
+            <div style={{ color: "#d9b661", fontFamily: "Cinzel, serif", fontSize: 13, letterSpacing: .6 }}>
+              PRIMARY OBJECTIVE
+            </div>
+            <div style={{ marginTop: 5, fontSize: 15 }}>{WATCHTOWER_MISSION.primaryObjective.title}</div>
+            <div style={{ marginTop: 3, color: "#9f8d68", fontSize: 13 }}>{WATCHTOWER_MISSION.primaryObjective.description}</div>
+          </div>
+          <div style={{ color: "#d9b661", fontFamily: "Cinzel, serif", fontSize: 13, letterSpacing: .6, marginBottom: 10 }}>
+            CHOOSE YOUR APPROACH
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            {WATCHTOWER_MISSION.approachChoices.map((choice) => (
+              <button
+                key={choice.id}
+                type="button"
+                data-testid={`mission-approach-${choice.id}`}
+                onClick={() => startMission(choice.id)}
+                style={{
+                  textAlign: "left",
+                  font: "inherit",
+                  color: "#e8dcc0",
+                  background: "#302216",
+                  border: "1px solid #6a5128",
+                  borderRadius: 8,
+                  padding: 14,
+                  cursor: "pointer",
+                }}
+              >
+                <strong style={{ display: "block", color: "#e3c875", fontFamily: "Cinzel, serif", fontWeight: 500 }}>
+                  {choice.title}
+                </strong>
+                <span style={{ display: "block", marginTop: 6, color: "#b5a47e", fontSize: 13, lineHeight: 1.45 }}>
+                  {choice.description}
+                </span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={returnMissionToPlatform}
+            style={{ marginTop: 22, background: "transparent", border: 0, color: "#9f8d68", cursor: "pointer", font: "inherit", fontSize: 13 }}
+          >
+            Return to platform
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // RENDER
   // ---------------------------------------------------------------------------
@@ -1382,6 +1505,53 @@ export default function IntelligentTabletop() {
     >
       <style>{FONT_IMPORT}</style>
       <style>{RESPONSIVE_CSS}</style>
+
+      {missionState.phase === "RESOLUTION" && sessionMode === "exploration" && (
+        <div
+          data-testid="mission-resolution"
+          role="dialog"
+          aria-labelledby="mission-resolution-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 20,
+            display: "grid",
+            placeItems: "center",
+            padding: 18,
+            background: "rgba(10, 7, 4, .78)",
+          }}
+        >
+          <div style={{ width: "min(600px, 100%)", background: "#241a12", border: "1px solid #80652c", borderRadius: 12, padding: "clamp(24px, 5vw, 42px)", boxShadow: "0 20px 90px rgba(0,0,0,.6)" }}>
+            <div style={{ color: "#c9a227", fontFamily: "Cinzel, serif", fontSize: 11, letterSpacing: 2 }}>
+              Mission resolved
+            </div>
+            <h2 id="mission-resolution-title" style={{ margin: "10px 0 14px", color: "#f0e4c7", fontFamily: "Cinzel, serif", fontWeight: 500 }}>
+              {missionState.outcome?.replaceAll("_", " ")}
+            </h2>
+            <p data-testid="mission-outcome" style={{ color: "#d6c8a7", fontSize: 17, margin: "0 0 18px" }}>
+              {missionState.outcome === "SUCCESS"
+                ? "The signal beacon burns again. The watchtower can call for aid."
+                : missionState.outcome === "SUCCESS_AT_COST"
+                  ? "The beacon is recovered, but the exposed approach cost the party dearly."
+                  : "The party leaves the watchtower behind. The mission ends without the beacon."
+              }
+            </p>
+            <div style={{ borderTop: "1px solid #4d3821", paddingTop: 14, color: "#b5a47e", fontSize: 14, lineHeight: 1.7 }}>
+              <div><strong style={{ color: "#e3c875" }}>Primary:</strong> {missionState.primaryObjectiveProgress === "complete" ? "Beacon recovered" : "Beacon not recovered"}</div>
+              <div><strong style={{ color: "#e3c875" }}>Optional:</strong> {missionState.optionalObjectiveProgress === "complete" ? "Safer ridge approach taken" : "Direct approach taken"}</div>
+              <div><strong style={{ color: "#e3c875" }}>Consequence:</strong> {missionState.consequenceFlags.includes("beacon-recovered-at-cost") ? "The beacon is active, but the route was exposed." : missionState.consequenceFlags.includes("beacon-recovered") ? "The restored beacon sends a clear signal." : "The party retreats; the beacon remains dark."}</div>
+            </div>
+            <button
+              type="button"
+              data-testid="mission-return-platform"
+              onClick={returnMissionToPlatform}
+              style={{ marginTop: 26, background: "#c9a227", color: "#241a12", border: 0, borderRadius: 6, padding: "9px 15px", cursor: "pointer", font: "inherit", fontFamily: "Cinzel, serif", fontSize: 12 }}
+            >
+              Return to platform
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
@@ -1447,8 +1617,7 @@ export default function IntelligentTabletop() {
           Locations and encounters are world content, not player navigation, so
           this direct-selection row is NOT part of the normal adventure. It is
           gated behind the practice/dev pathway (?practice, or ?e2e for the
-          combat E2E suites) and never rendered for normal players. Test-only
-          encounters additionally require ?e2e. */}
+          combat E2E suites) and never rendered for normal players. */}
       {isPracticeEntry && (
       <div className="it-encounter-switcher" data-testid="dev-encounter-switcher">
         <span aria-hidden="true" style={{ fontFamily: "'EB Garamond', serif", fontStyle: "italic", fontSize: 10.5, letterSpacing: 0.4, color: "#6b5a3a", alignSelf: "center", marginRight: 2 }}>
@@ -1579,8 +1748,41 @@ export default function IntelligentTabletop() {
                   The party travels the open world. Tap a highlighted tile beside the party to take a step; the table follows as you move.
                 </div>
                 <div style={{ marginTop: 8, color: "#8a795a", fontSize: 12 }}>
-                  Unmapped land stays dark until it is charted. Approach a place to discover it, or wander into a hostile creature to begin a battle.
+                  {missionState.phase === "ESCALATION"
+                    ? `${missionState.currentMission.escalationStates.find((s) => s.id === missionState.escalationState)?.description ?? "The mission is escalating."}`
+                    : missionState.phase === "CLIMAX"
+                      ? "The beacon is guarded. Defeat its guardian to recover the signal."
+                      : "Unmapped land stays dark until it is charted. Approach a place to discover it, or wander into a hostile creature to begin a battle."
+                  }
                 </div>
+                {!isPracticeEntry && missionState.phase !== "RESOLUTION" && (
+                  <div
+                    data-testid="mission-objectives"
+                    style={{ marginTop: 14, borderTop: "1px solid #4d3821", paddingTop: 12, fontSize: 12.5 }}
+                  >
+                    <div style={{ color: "#d9b661", fontFamily: "Cinzel, serif", fontSize: 11, letterSpacing: 1 }}>
+                      {missionState.currentMission.title.toUpperCase()}
+                    </div>
+                    <div style={{ marginTop: 7, color: "#e0d3b5" }}>
+                      {missionState.primaryObjectiveProgress === "complete" ? "✓" : "○"}{" "}
+                      {missionState.currentMission.primaryObjective.title}
+                    </div>
+                    <div style={{ marginTop: 5, color: "#a89468" }}>
+                      {missionState.optionalObjectiveProgress === "complete" ? "✓" : "○"}{" "}
+                      {missionState.currentMission.optionalObjective.title}
+                    </div>
+                    {missionState.phase !== "MISSION_BRIEFING" && (
+                      <button
+                        type="button"
+                        data-testid="mission-retreat"
+                        onClick={retreatMission}
+                        style={{ marginTop: 12, background: "transparent", border: "1px solid #5a4326", borderRadius: 5, color: "#aa9270", padding: "5px 9px", cursor: "pointer", font: "inherit", fontSize: 11.5 }}
+                      >
+                        Retreat to Camp
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ) : (

@@ -38,3 +38,8 @@ description: Design decisions for the exploration session layer and its boundari
 - Exploration is the LAUNCH surface in production; `?practice` (or `?e2e`) keeps encounter-first entry for the combat E2E suites. Entry gated by `isPracticeEntry` + StrictMode ref guard around auto `startExploration()`.
 - Victory in a world-backed battle auto-returns to exploration after a 1.4s banner timer ("Continue Exploring" = immediate skip). Defeat stays click-through ("Awaken at Camp" → respawn at spawn). Commit path idempotent (preparedRef cleared once), so timer+button double-fire is safe.
 - Wilderness E2E asserts victory deterministically (fixed seeds 1337/20260817 + scripted clicks) — do not re-loosen to "either result" or the auto-return criterion silently degrades.
+
+## Mission vertical slice
+- Mission state is RPG-owned and pure-transition driven; the first authored episode uses the existing watchtower-area hostile as its climax, with route choice mapping to SUCCESS vs SUCCESS_AT_COST.
+  **Why:** the bounded mission proves briefing → exploration → escalation → existing world combat → resolution without a second quest or combat system.
+  **How to apply:** keep future mission work data-driven and finite; PlatformShell remains unaware of objectives, escalation, and outcomes.

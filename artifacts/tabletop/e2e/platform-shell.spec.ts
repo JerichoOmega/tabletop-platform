@@ -32,8 +32,9 @@ test.describe("Platform shell", () => {
   test("enters the RPG Experience from Play and exits back to the shell", async ({ page }) => {
     await page.goto("/");
     await page.getByTestId("experience-enter-rpg").click();
-    // RPG mounts (existing behavior: opens into the current encounter).
-    await expect(page.locator('[data-testid="board-tile"]').first()).toBeVisible();
+    // RPG mounts into its mission briefing; the tabletop board is shown after
+    // the player chooses an approach.
+    await expect(page.getByTestId("mission-briefing")).toBeVisible();
     await expect(page.getByTestId("platform-active-experience")).toHaveText("Tabletop RPG");
     expect(page.url()).toContain("experience=rpg");
     // Exit restores the platform surface.
@@ -45,7 +46,7 @@ test.describe("Platform shell", () => {
 
   test("deep link ?experience=rpg mounts the RPG directly", async ({ page }) => {
     await page.goto("/?experience=rpg");
-    await expect(page.locator('[data-testid="board-tile"]').first()).toBeVisible();
+    await expect(page.getByTestId("mission-briefing")).toBeVisible();
   });
 
   test("an unknown experience ID degrades safely to the Play surface", async ({ page }) => {

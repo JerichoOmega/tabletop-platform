@@ -21,9 +21,12 @@ const TILE = '[data-testid="board-tile"]';
 const LOCATION = '[data-testid="exploration-location"]';
 
 async function enterExploration(page: Page) {
-  // M7: exploration IS the launch surface — a normal session lands in the
-  // world with no click required.
-  await page.goto("/?experience=rpg");
+  // Mission launch is briefing → exploration; the world remains the primary
+  // play surface after the player acknowledges the brief.
+  // This suite exercises the legacy exploration surface independently of the
+  // mission slice; practice mode keeps that developer tooling available.
+  await page.goto("/?practice&experience=rpg");
+  await page.getByRole("button", { name: "Explore World" }).click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
 }
 

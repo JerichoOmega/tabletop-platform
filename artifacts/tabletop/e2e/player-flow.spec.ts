@@ -56,15 +56,18 @@ async function fightToVictory(page: Page) {
 test("two full cycles: shell entry → battle → win → auto-return → exit → re-enter → battle again", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("experience-enter-rpg").click();
+  await page.getByTestId("mission-approach-direct").click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
   await walkIntoBattle(page);
   await fightToVictory(page);
   await expect(page.getByRole("heading", { name: "Wilderness Exploration" })).toBeVisible({ timeout: 8_000 });
-  // keep exploring, then leave to the shell and come back
-  await stepTo(page, 20, 8);
-  await page.getByTestId("platform-exit").click();
+  // A mission victory now resolves the authored episode before leaving.
+  await expect(page.getByTestId("mission-resolution")).toBeVisible();
+  await page.getByTestId("mission-return-platform").click();
+  // Leave the completed episode to the shell and come back
   await expect(page.getByTestId("platform-shell")).toBeVisible();
   await page.getByTestId("experience-enter-rpg").click();
+  await page.getByTestId("mission-approach-direct").click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
   // fresh session: orc is back — trigger must fire again
   await walkIntoBattle(page);
@@ -73,6 +76,7 @@ test("two full cycles: shell entry → battle → win → auto-return → exit �
 test("clicking the hostile token itself while adjacent does not dead-end the loop", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("experience-enter-rpg").click();
+  await page.getByTestId("mission-approach-direct").click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
   for (let wx = 9; wx <= 17; wx++) await stepTo(page, wx, 8);
   // party at (17,8), orc at (20,8): click the orc token directly (natural gesture)
