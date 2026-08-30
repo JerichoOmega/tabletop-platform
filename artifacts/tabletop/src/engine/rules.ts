@@ -18,6 +18,13 @@
 
 import { ABILITY_DEFS, EFFECT_HANDLERS, rollDie } from "./content";
 import type { Combatant, GameState, MapDef, TileQueryFn, AbilityDef, EffectResult, EffectHandler } from "./content";
+import {
+  consumeItem,
+  getEffectiveArmorClass,
+  getEffectiveMoveMax,
+  getEquipmentDefinition,
+} from "./equipment";
+import type { ConsumableDefinition } from "./equipment";
 
 // ---------------------------------------------------------------------------
 // VALIDATION CODE — stable machine-readable codes for all validate* results.
@@ -44,6 +51,10 @@ export type ValidationCode =
   | "ABILITY_UNKNOWN"
   | "ABILITY_NOT_LEARNED"
   | "NO_EFFECT_HANDLER"
+  // Equipment checks
+  | "ITEM_UNKNOWN"
+  | "ITEM_NOT_CONSUMABLE"
+  | "ITEM_NOT_OWNED"
   // Success
   | "OK";
 
@@ -84,7 +95,17 @@ export interface ExecutionResult {
   events: string[];
   ok: boolean;
   code?: ValidationCode;
-  result?: AttackResult | EffectResult;
+  result?: AttackResult | EffectResult | ConsumableResult;
+}
+
+export interface ConsumableResult {
+  type: "consumable";
+  itemId: string;
+  itemName: string;
+  amount: number;
+  healed: number;
+  targetName: string;
+  targetHp: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +343,31 @@ export function validateAbility(
   return { valid: true, code: "OK", distance: dist };
 }
 
+export function validateConsumable(
+  state: GameState,
+  actorId: string,
+  itemId: string,
+): ValidationResult {
+  const actor = state.combatants[actorId];
+  const item = getEquipmentDefinition(itemId);
+  if (!actor) return { valid: false, code: "ACTOR_UNKNOWN", reason: "Unknown actor." };
+  if (!item) return { valid: false, code: "ITEM_UNKNOWN", reason: `Unknown item: "${itemId}".` };
+  if (item.category !== "consumable") {
+    return { valid: false, code: "ITEM_NOT_CONSUMABLE", reason: `${item.name} cannot be consumed.` };
+  }
+  if (!actor.alive) return { valid: false, code: "ACTOR_DEAD", reason: `${actor.name} is down.` };
+  if (state.turnOrder[state.turnIndex] !== actorId) {
+    return { valid: false, code: "NOT_YOUR_TURN", reason: `It is not ${actor.name}'s turn.` };
+  }
+  if (actor.actionUsed) {
+    return { valid: false, code: "ACTION_USED", reason: `${actor.name} has already acted this turn.` };
+  }
+  if ((actor.equipment.consumables[itemId] ?? 0) <= 0) {
+    return { valid: false, code: "ITEM_NOT_OWNED", reason: `No ${item.name} remains.` };
+  }
+  return { valid: true, code: "OK" };
+}
+
 // ---------------------------------------------------------------------------
 // EXECUTION — the ONLY functions permitted to produce new game state.
 // ---------------------------------------------------------------------------
@@ -345,7 +391,17 @@ export function validateAbility(
 export function cloneState(state: GameState): GameState {
   const cloned: Record<string, Combatant> = {};
   for (const [id, c] of Object.entries(state.combatants)) {
-    cloned[id] = { ...c, weapon: { ...c.weapon }, abilities: [...c.abilities] };
+    cloned[id] = {
+      ...c,
+      weapon: { ...c.weapon },
+      abilities: [...c.abilities],
+      equipment: {
+        ...c.equipment,
+        consumables: { ...c.equipment.consumables },
+        missionItemIds: [...c.equipment.missionItemIds],
+        spentAccessoryIds: [...c.equipment.spentAccessoryIds],
+      },
+    };
   }
   return {
     ...state,
@@ -390,7 +446,12 @@ export function executeAttack(
 
   const d20 = rollDie(20, rng);
   const atkTotal    = d20 + actor.atkMod;
-  const effectiveAc = target.ac + (v.cover ? 2 : 0);
+  const effectiveAc = getEffectiveArmorClass(
+    target.ac,
+    target.equipment,
+    target.hp,
+    target.maxHp,
+  ) + (v.cover ? 2 : 0);
   const coverNote   = v.cover ? ` (target has cover, AC ${target.ac}+2=${effectiveAc})` : "";
   const events: string[] = [
     `${actor.name} attacks ${target.name} with ${actor.weapon.name}. Attack Roll: ${d20} + ${actor.atkMod} = ${atkTotal} vs AC ${effectiveAc}${coverNote}.`,
@@ -449,6 +510,53 @@ export function executeAbility(
   return { state: next, events: log, ok: true, result };
 }
 
+/**
+ * Uses one consumable as the actor's action. The fixed effect comes from the
+ * canonical item definition; the rules engine applies the HP cap and quantity
+ * transition.
+ */
+export function executeConsumable(
+  state: GameState,
+  actorId: string,
+  itemId: string,
+): ExecutionResult {
+  const validation = validateConsumable(state, actorId, itemId);
+  if (!validation.valid) {
+    return { state, events: [validation.reason ?? validation.code], ok: false, code: validation.code };
+  }
+  const item = getEquipmentDefinition(itemId) as ConsumableDefinition;
+  const next = cloneState(state);
+  const actor = next.combatants[actorId];
+  const transition = consumeItem(actor.equipment, itemId);
+  if (!transition.ok) {
+    return { state, events: [transition.reason ?? transition.code], ok: false, code: "ITEM_NOT_OWNED" };
+  }
+  actor.equipment = transition.loadout;
+  actor.actionUsed = true;
+  const before = actor.hp;
+  actor.hp = Math.min(actor.maxHp, actor.hp + item.effect.amount);
+  const healed = actor.hp - before;
+  const events = [
+    `${actor.name} uses ${item.name}.`,
+    `${actor.name} restores ${item.effect.amount} HP and is now at ${actor.hp}/${actor.maxHp}${healed < item.effect.amount ? " (capped at max)" : ""}.`,
+  ];
+  next.log.push(...events);
+  return {
+    state: next,
+    events,
+    ok: true,
+    result: {
+      type: "consumable",
+      itemId,
+      itemName: item.name,
+      amount: item.effect.amount,
+      healed,
+      targetName: actor.name,
+      targetHp: actor.hp,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // TURN MANAGEMENT + ENCOUNTER STATUS
 // ---------------------------------------------------------------------------
@@ -476,7 +584,7 @@ export function endTurn(state: GameState): GameState {
   const wrapped = idx === 0 && next.turnIndex !== 0;
   next.turnIndex = idx;
   const nextActor = next.combatants[next.turnOrder[idx]];
-  nextActor.moveRemaining = nextActor.moveMax;
+  nextActor.moveRemaining = getEffectiveMoveMax(nextActor.moveMax, nextActor.equipment);
   nextActor.actionUsed   = false;
   if (wrapped) next.log.push(`— Round ${next.round} —`);
   next.log.push(`${nextActor.name}'s turn.`);

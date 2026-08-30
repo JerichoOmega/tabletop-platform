@@ -16,6 +16,7 @@ import {
   COMBATANT_DEFS,
   ENCOUNTER_DEFS,
 } from "./content";
+import { EQUIPMENT_DEFS, validateEquipmentLoadout } from "./equipment";
 import { isBlocked } from "./rules";
 
 // ---------------------------------------------------------------------------
@@ -29,7 +30,8 @@ export type ContentValidationKind =
   | "INVALID_SPAWN_COORD"
   | "DUPLICATE_INSTANCE_ID"
   | "INVALID_STAT"
-  | "EMPTY_ENCOUNTER_SIDE";
+  | "EMPTY_ENCOUNTER_SIDE"
+  | "INVALID_EQUIPMENT_REF";
 
 export interface ContentValidationError {
   kind: ContentValidationKind;
@@ -50,6 +52,22 @@ function validateCombatantDefs(errors: ContentValidationError[]): void {
         kind: "UNKNOWN_WEAPON_REF",
         entity: defId,
         message: `COMBATANT_DEFS["${defId}"].weaponId = "${def.weaponId}" does not exist in WEAPON_DEFS.`,
+      });
+    }
+
+    const equipmentErrors = validateEquipmentLoadout({
+      weaponId: def.weaponId,
+      armorId: def.equipment?.armorId ?? null,
+      accessoryId: def.equipment?.accessoryId ?? null,
+      consumables: def.equipment?.consumables ?? {},
+      missionItemIds: def.equipment?.missionItemIds ?? [],
+      spentAccessoryIds: def.equipment?.spentAccessoryIds ?? [],
+    });
+    for (const equipmentError of equipmentErrors) {
+      errors.push({
+        kind: "INVALID_EQUIPMENT_REF",
+        entity: defId,
+        message: `COMBATANT_DEFS["${defId}"] has invalid equipment: ${equipmentError}.`,
       });
     }
 
@@ -84,6 +102,34 @@ function validateCombatantDefs(errors: ContentValidationError[]): void {
         kind: "INVALID_STAT",
         entity: defId,
         message: `COMBATANT_DEFS["${defId}"].moveMax = ${def.moveMax} must be ≥ 0.`,
+      });
+    }
+  }
+}
+
+function validateEquipmentDefs(errors: ContentValidationError[]): void {
+  const ids = new Set<string>();
+  for (const [key, item] of Object.entries(EQUIPMENT_DEFS)) {
+    if (ids.has(item.id)) {
+      errors.push({
+        kind: "INVALID_EQUIPMENT_REF",
+        entity: key,
+        message: `EQUIPMENT_DEFS contains duplicate item id "${item.id}".`,
+      });
+    }
+    ids.add(item.id);
+    if (!item.id.trim() || !item.name.trim() || !item.description.trim()) {
+      errors.push({
+        kind: "INVALID_EQUIPMENT_REF",
+        entity: key,
+        message: "Equipment items require id, name, and description.",
+      });
+    }
+    if (item.category === "consumable" && (!Number.isInteger(item.maxQuantity) || item.maxQuantity <= 0)) {
+      errors.push({
+        kind: "INVALID_EQUIPMENT_REF",
+        entity: key,
+        message: `Consumable "${item.id}" must declare a positive integer maxQuantity.`,
       });
     }
   }
@@ -227,6 +273,8 @@ function validateEncounterDefs(errors: ContentValidationError[]): void {
  *
  * Checks performed:
  *   - COMBATANT_DEFS: weapon and ability references resolve; stats are sane
+ *     and equipment references resolve
+ *   - EQUIPMENT_DEFS: IDs, required text, and consumable quantity caps are valid
  *   - WEAPON_DEFS: ranges and dice are positive
  *   - ABILITY_DEFS: ranges and dice are positive
  *   - ENCOUNTER_DEFS: map reference resolves; has players + enemies;
@@ -236,6 +284,7 @@ function validateEncounterDefs(errors: ContentValidationError[]): void {
  */
 export function validateAllContent(): ContentValidationError[] {
   const errors: ContentValidationError[] = [];
+  validateEquipmentDefs(errors);
   validateCombatantDefs(errors);
   validateWeaponDefs(errors);
   validateAbilityDefs(errors);

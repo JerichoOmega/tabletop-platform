@@ -30,6 +30,8 @@
 // ---------------------------------------------------------------------------
 
 import type { Combatant, GameState, MapDef } from "./content";
+import { createEquipmentLoadout } from "./equipment";
+import type { EquipmentLoadout } from "./equipment";
 import { createCombatantInstance, rollInitiative, mulberry32 } from "./content";
 import {
   ChunkStore,
@@ -346,7 +348,7 @@ export function computePinSet(
  *
  * @throws If entity.defId is not found in COMBATANT_DEFS.
  */
-export function worldEntityToCombatant(entity: WorldEntity): Combatant {
+export function worldEntityToCombatant(entity: WorldEntity, equipment?: EquipmentLoadout): Combatant {
   // createCombatantInstance looks up COMBATANT_DEFS[defId] and populates
   // all stat fields (ac, atkMod, dexMod, moveMax, weapon, etc.).
   // It sets hp=maxHp and alive=true — we override these below.
@@ -365,6 +367,10 @@ export function worldEntityToCombatant(entity: WorldEntity): Combatant {
     worldId: entity.worldId, // persistent FK — never undefined for world-backed entities
     hp: entity.hp,
     alive: entity.alive,
+    // Clone the RPG snapshot at the world→combat boundary. World entities
+    // stay generic, and combat must not retain a mutable reference to the
+    // exploration session's loadout.
+    equipment: equipment ? createEquipmentLoadout(equipment) : base.equipment,
   };
 }
 
@@ -417,6 +423,9 @@ export function buildEncounterFromEntities(
   seed: number,
   encounterId = "world-encounter",
   encounterName = "World Encounter",
+  options: {
+    readonly equipmentByWorldId?: Readonly<Record<string, EquipmentLoadout>>;
+  } = {},
 ): GameState {
   const { snapshot, participants } = prepared;
 
@@ -427,7 +436,7 @@ export function buildEncounterFromEntities(
   // Convert WorldEntity → Combatant. Each retains its worldId.
   const combatants: Record<string, Combatant> = {};
   for (const entity of participants) {
-    const combatant = worldEntityToCombatant(entity);
+    const combatant = worldEntityToCombatant(entity, options.equipmentByWorldId?.[entity.worldId]);
     combatants[combatant.id] = combatant;
   }
 

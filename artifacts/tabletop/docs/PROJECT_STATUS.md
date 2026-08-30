@@ -1,17 +1,60 @@
 # Intelligent Tabletop — Project Status
 
-_Last updated: Phase 3 Milestone M1 complete — exploration mode + world-backed session (streaming world now live in gameplay)_
+_Last updated: Streamlined RPG equipment and consumables foundation complete (working tree; not committed)_
 
 ## Baseline (latest committed state)
 
 | Metric | Value |
 |---|---|
 | Commit | Phase 3 M1 — exploration mode + world-backed session |
-| Unit tests | 513 passing |
-| E2E tests | 176 passing |
+| Unit tests | 710 passing before this equipment work; 724 passing in current working tree |
+| E2E tests | 192 passing before this equipment work; 193 passing in current working tree |
 | TypeScript | Clean (0 errors, `--noEmit`) |
 | Build | Vite production build clean |
 | Visual assets | 45 total (44 production assets + 1 foundational environment asset) |
+
+---
+
+## Streamlined RPG equipment foundation
+
+The RPG Experience now has a small, authoritative equipment model without
+introducing a second persistence system or a full inventory UI.
+
+### Canonical rules
+
+- `EQUIPMENT_DEFS` is the single item registry for weapons, armor, accessories,
+  consumables, and mission items. The legacy weapon shape is a compatibility
+  projection only; combat reads canonical weapon stats through the existing
+  combatant snapshot.
+- A combatant carries one weapon, one armor item, one accessory, bounded
+  consumable quantities, mission-item IDs, and spent-accessory IDs. There is no
+  unequipped equipment backpack in this foundation; authored equipable
+  acquisitions immediately replace the item in that slot.
+- Consumable quantities are integer, non-negative, and validated against each
+  definition's cap. Healing Potion has a maximum quantity of 3 and restores a
+  fixed 6 HP.
+- `executeConsumable` is the authoritative tactical-use path: it validates the
+  acting turn, ownership, item category, and action availability; consumes one
+  item; uses an action; and caps healing at maximum HP.
+- Armor contributes a readable AC bonus. Accessories are conditional passives;
+  the initial Watchful Charm grants +2 AC below half HP. The movement helper is
+  available for authored armor tradeoffs, while the initial armor set has no
+  movement penalty.
+- Acquisition is authored by `AcquisitionSource` on each item. There is no
+  procedural loot or random stat generation.
+- World-backed encounters receive the RPG party loadout through an explicit
+  conversion option. `WorldEntity` remains generic, and the loadout survives
+  exploration → combat → exploration through the RPG session boundary.
+
+### Explicit non-goals
+
+Crafting, durability, weight, randomized stat soup, a large inventory or
+shop screen, procedural loot generation, new persistence architecture, and
+platform-wide equipment state are intentionally out of scope.
+
+The compact in-combat presentation shows weapon, armor, accessory, movement,
+effective AC, and Healing Potion quantity. The full rules foundation is unit
+tested; the player-facing contract has one focused Playwright acceptance test.
 
 ---
 

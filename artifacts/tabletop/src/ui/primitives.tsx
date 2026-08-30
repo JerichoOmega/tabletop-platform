@@ -7,6 +7,7 @@
 import React from "react";
 import { Sword, Wand2, Shield, Footprints } from "lucide-react";
 import { resolveAsset } from "@/assets/registry";
+import { getEffectiveArmorClass, getEffectiveMoveMax, getEquipmentDefinition } from "@/engine/equipment";
 
 export const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap');`;
 
@@ -79,8 +80,19 @@ export function CharacterPanel({ c, isCurrent, isSelected, onSelect }) {
           <Footprints size={10} style={{ verticalAlign: -1, marginRight: 3 }} />
           {c.moveRemaining}/{c.moveMax}
         </span>
-        <span>AC {c.ac}</span>
+        <span>AC {getEffectiveArmorClass(c.ac, c.equipment, c.hp, c.maxHp)}</span>
         <span>{c.actionUsed ? "Action used" : "Action ready"}</span>
+      </div>
+      <div aria-hidden="true" style={{ marginTop: 5, fontSize: 10.5, color: "#9f8d68", lineHeight: 1.35 }}>
+        <div>Weapon: {getEquipmentDefinition(c.equipment.weaponId)?.name ?? c.weapon.name}</div>
+        <div>
+          Armor: {c.equipment.armorId ? getEquipmentDefinition(c.equipment.armorId)?.name : "None"}
+          {" · "}Accessory: {c.equipment.accessoryId ? getEquipmentDefinition(c.equipment.accessoryId)?.name : "None"}
+        </div>
+        <div>
+          Consumables: Healing Potion ×{c.equipment.consumables.healingPotion ?? 0}
+          {" · "}Move {c.moveRemaining}/{getEffectiveMoveMax(c.moveMax, c.equipment)}
+        </div>
       </div>
     </button>
   );

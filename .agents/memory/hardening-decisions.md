@@ -97,6 +97,13 @@ During an active encounter, `GameState` is the sole writer for combat-participan
 
 **Why:** The old spec implied `WorldState.activeEncounterState: GameState | null` (nesting), which creates a dual-write synchronization hazard. Parallel structures with a single commit boundary avoids this.
 
+### RPG equipment authority boundary
+RPG equipment is an Experience-owned loadout snapshot. The world layer may pass a loadout into world-to-combat conversion, but that boundary must clone it; `WorldEntity` stays generic and combat mutations stay in `GameState`.
+
+**Why:** Sharing the exploration loadout reference with a combatant creates an accidental second writer and can leak combat-only changes into a later session.
+
+**How to apply:** Keep equipment definitions and transitions in the RPG engine, validate consumables/effects in rules execution, and pass only cloned snapshots through world encounters. Do not add RPG fields to persistent world entities or platform state.
+
 ## Parser geometry (Phase 3 M3)
 - **Parser cover/pillar reasoning reads only state.tileQuery, never MapDef.pillars.** Nearest-pillar tie-break contract: Chebyshev distance, then lowest wy, then lowest wx (legacy array-order ties were an authoring accident that cannot exist for chunk geometry).
   **Why:** tileQuery is the single authoritative geometry for MapDef and world-backed encounters; array-order tie semantics are unreproducible from generated chunks.

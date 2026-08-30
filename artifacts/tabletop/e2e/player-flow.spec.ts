@@ -41,6 +41,16 @@ async function fightToVictory(page: Page) {
     if (await page.getByText("Defeat.", { exact: false }).isVisible()) throw new Error("defeat");
     const attackBtn = page.getByRole("button", { name: "Attack" });
     if (await attackBtn.isVisible()) {
+      const acting = page.getByRole("button", { name: /ACTING/ }).first();
+      const actingText = await acting.innerText();
+      const hp = Number(actingText.match(/HP (\d+)\//)?.[1] ?? 99);
+      const potion = page.getByRole("button", { name: /Use Healing Potion/ });
+      if (hp <= 8 && await potion.isVisible() && await potion.isEnabled()) {
+        await potion.click();
+        const endTurnAfterPotion = page.getByRole("button", { name: "End Turn" });
+        if (await endTurnAfterPotion.isVisible()) await endTurnAfterPotion.click();
+        continue;
+      }
       await attackBtn.click();
       const orc = page.locator('[title="Orc"]');
       if (await orc.isVisible()) await orc.click();

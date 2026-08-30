@@ -21,21 +21,23 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   Footprints, Sword, Sparkles, ScrollText, Dice5, ChevronRight, X, Check, Info,
-  Skull, Swords, DoorOpen, Tent, Gem, Heart,
+  Skull, Swords, DoorOpen, Tent, Gem, Heart, FlaskConical,
 } from "lucide-react";
 
 import type { GameState, HealResult, DamageResult } from "@/engine/content";
 import { ENCOUNTER_DEFS, ABILITY_DEFS, buildEncounter, mulberry32, getProductionEncounters } from "@/engine/content";
 import type { Rng } from "@/engine/content";
-import type { AttackResult, ValidationResult, ValidationCode } from "@/engine/rules";
+import type { AttackResult, ValidationResult, ValidationCode, ConsumableResult } from "@/engine/rules";
 import {
   resolveLeadingEnemyTurns, endTurn,
-  executeMove, executeAttack, executeAbility,
+  executeMove, executeAttack, executeAbility, executeConsumable,
   validateAttack, validateAbility,
   checkEncounterStatus,
   reachableTiles, occupiedSet,
   key,
 } from "@/engine/rules";
+import type { EquipmentLoadout } from "@/engine/equipment";
+import { getEquipmentDefinition } from "@/engine/equipment";
 import type { ViewportState, VisibleTile } from "@/engine/viewport";
 import { getVisibleTiles, initViewport, updateViewportForActor } from "@/engine/viewport";
 // Phase F: viewport streaming — chunk prefetch + loading presentation.
@@ -75,7 +77,8 @@ type AttackRoll  = { kind: "attack";  actor: string; targetName: string }  & Att
 type AbilityRoll =
   | ({ kind: "ability"; actor: string; abilityName: string } & HealResult)
   | ({ kind: "ability"; actor: string; abilityName: string } & DamageResult);
-type LastRoll = AttackRoll | AbilityRoll | null;
+type ConsumableRoll = ({ kind: "consumable"; actor: string } & ConsumableResult);
+type LastRoll = AttackRoll | AbilityRoll | ConsumableRoll | null;
 
 interface ProposalState {
   steps:   Step[];
@@ -368,6 +371,10 @@ export default function IntelligentTabletop() {
   // latest state without making WorldState a second source of truth.
   const [missionState, setMissionState] = useState<MissionState>(() => createMissionState());
   const missionStateRef = useRef(missionState);
+  // RPG-owned session loadout for the exploration party. WorldState remains
+  // responsible for identity/position/HP; equipment crosses world encounters
+  // through this explicit RPG boundary rather than being added to WorldEntity.
+  const partyEquipmentRef = useRef<EquipmentLoadout | null>(null);
   const platform = usePlatformContext();
 
   function applyMissionState(next: MissionState): void {
@@ -664,6 +671,8 @@ export default function IntelligentTabletop() {
   const pendingAbilityId = typeof pendingAction === "string" && pendingAction.startsWith("ability:")
     ? pendingAction.slice(8) : null;
   const pendingAbility   = pendingAbilityId ? ABILITY_DEFS[pendingAbilityId] : null;
+  const healingPotion = getEquipmentDefinition("healingPotion");
+  const healingPotionQuantity = selected?.equipment.consumables.healingPotion ?? 0;
   // Harmful abilities (enemy-targeting) use the same red ring as attacks.
   // Beneficial abilities (ally/self-targeting) use a distinct blue ring.
   const abilityIsHarmful = pendingAbility?.targeting === "enemy";
@@ -831,6 +840,20 @@ export default function IntelligentTabletop() {
     afterPlayerAction(res.state);
   }
 
+  function handleConsumable(itemId: string) {
+    if (mode !== "traditional" || !selected || !isPlayerTurn || selected.id !== currentActorId) return;
+    const res = executeConsumable(gameState, selected.id, itemId);
+    if (!res.ok) {
+      setBanner(res.events[0]);
+      setTimeout(() => setBanner(null), 2800);
+      return;
+    }
+    setPendingAction(null);
+    const result = res.result as ConsumableResult;
+    setLastRoll({ kind: "consumable", actor: selected.name, ...result });
+    afterPlayerAction(res.state);
+  }
+
   function handleEndTurn() {
     const next = doEndTurnAndMaybeAI(gameState);
     setPendingAction(null);
@@ -969,6 +992,8 @@ export default function IntelligentTabletop() {
     const session = createExplorationSession();
     explorationRef.current = session;
     worldStateRef.current = session.worldState;
+    const partyCombatant = Object.values(gameState.combatants).find((c) => c.type === "pc");
+    partyEquipmentRef.current = partyCombatant?.equipment ?? null;
     const party = getParty(session);
     const baseVp = initViewport(
       { width: EXPLORE_WORLD_W, height: EXPLORE_WORLD_H } as GameState["map"],
@@ -1052,6 +1077,7 @@ export default function IntelligentTabletop() {
       }
       const fresh = buildEncounterFromEntities(
         prepared, ws.worldId, seedRef.current, "wilderness", "Wilderness Battle",
+        { equipmentByWorldId: partyEquipmentRef.current ? { [party.worldId]: partyEquipmentRef.current } : undefined },
       );
       const rng = mulberry32(seedRef.current + 9999);
       rngRef.current = rng;
@@ -1092,6 +1118,9 @@ export default function IntelligentTabletop() {
     const prepared = preparedRef.current;
     const session = explorationRef.current;
     if (!prepared || !session) return;
+    const party = getParty(session);
+    const partyCombatant = finalState.combatants[party.worldId];
+    if (partyCombatant) partyEquipmentRef.current = partyCombatant.equipment;
     preparedRef.current = null;
     session.worldState.endEncounter(finalState, prepared.pinnedChunks);
   }, []);
@@ -1320,6 +1349,7 @@ export default function IntelligentTabletop() {
     setLastRoll(null);
     setBanner(null);
     setMode("traditional");
+    partyEquipmentRef.current = null;
     // Phase F: release any active WorldState. MapDef encounters never own one;
     // if an exploration session was active, this releases it and cancels any
     // in-flight prefetch (the useEffect cleanup runs on next render).
@@ -1865,6 +1895,20 @@ export default function IntelligentTabletop() {
                   })}
                 </div>
               )}
+              {healingPotion && (
+                <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <button
+                    type="button"
+                    data-testid="use-consumable-healing-potion"
+                    onClick={() => handleConsumable(healingPotion.id)}
+                    disabled={selected.actionUsed || healingPotionQuantity === 0}
+                    title={selected.actionUsed ? "Action already used this turn" : healingPotion.description}
+                    style={{ ...actionBtnStyle(false), opacity: selected.actionUsed || healingPotionQuantity === 0 ? 0.38 : 1 }}
+                  >
+                    <FlaskConical size={13} /> Use {healingPotion.name} ({healingPotionQuantity})
+                  </button>
+                </div>
+              )}
               {/* Targeting status strip — color-coded and paired with text (blueprint §15) */}
               {pendingAction && (
                 <div style={{
@@ -2272,6 +2316,16 @@ export default function IntelligentTabletop() {
               <Sparkles size={20} color="#8fb56f" />
               <div style={{ fontSize: 13 }}>
                 <b style={{ fontFamily: "Cinzel, serif", fontWeight: 500 }}>{lastRoll.actor}</b> uses {lastRoll.abilityName} on {lastRoll.targetName}: roll {lastRoll.roll}
+                {" "}→ <b>+{lastRoll.healed}</b> HP{lastRoll.healed < lastRoll.amount ? " (capped at max)" : ""}
+              </div>
+            </div>
+          )}
+          {/* Last roll readout — consumable */}
+          {lastRoll && lastRoll.kind === "consumable" && (
+            <div data-testid="consumable-result" style={{ marginTop: 14, background: "#1e2e1a", border: "1px solid #4c6b3f", borderRadius: 10, padding: "10px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+              <FlaskConical size={20} color="#8fb56f" />
+              <div style={{ fontSize: 13 }}>
+                <b style={{ fontFamily: "Cinzel, serif", fontWeight: 500 }}>{lastRoll.actor}</b> uses {lastRoll.itemName}
                 {" "}→ <b>+{lastRoll.healed}</b> HP{lastRoll.healed < lastRoll.amount ? " (capped at max)" : ""}
               </div>
             </div>

@@ -4,8 +4,15 @@
 // This is the "world data" layer. Nothing here is rules logic. Content
 // designers edit this file; the engine and intent parser only ever READ it.
 //
-// Dependency: none (standalone module).
+// Dependency: equipment.ts (canonical item registry and weapon projection).
 // ---------------------------------------------------------------------------
+
+import {
+  createEquipmentLoadout,
+  getEffectiveMoveMax,
+  WEAPON_DEFS as CANONICAL_WEAPON_DEFS,
+} from "./equipment";
+import type { EquipmentLoadout, EquipmentLoadoutSeed } from "./equipment";
 
 // ---------------------------------------------------------------------------
 // SHARED TYPES — exported for use by rules.ts, intent/parser.ts, and the UI.
@@ -43,6 +50,8 @@ export interface Combatant {
   abilities: string[];
   alive: boolean;
   actionUsed: boolean;
+  /** RPG-owned equipment snapshot used by authoritative combat rules. */
+  equipment: EquipmentLoadout;
 }
 
 export interface MapDef {
@@ -188,6 +197,7 @@ interface CombatantDef {
   dexMod: number;
   moveMax: number;
   weaponId: string;
+  equipment?: Omit<EquipmentLoadoutSeed, "weaponId">;
   abilities?: string[];
   /**
    * Stable logical ID into the asset registry (e.g. "character.fighter").
@@ -375,12 +385,7 @@ export function rollDie(sides: number, rng: () => number): number {
 // ---------------------------------------------------------------------------
 // WEAPON DEFINITIONS
 // ---------------------------------------------------------------------------
-export const WEAPON_DEFS: Record<string, WeaponDef> = {
-  longbow:   { id: "longbow",   name: "Longbow",    range: 6, dmgDie: 8,  dmgMod: 2 },
-  forceBolt: { id: "forceBolt", name: "Force Bolt", range: 6, dmgDie: 6,  dmgMod: 3 },
-  rustyShiv: { id: "rustyShiv", name: "Rusty Shiv", range: 1, dmgDie: 6,  dmgMod: 1 },
-  warAxe:    { id: "warAxe",    name: "War Axe",    range: 1, dmgDie: 10, dmgMod: 3 },
-};
+export const WEAPON_DEFS: Record<string, WeaponDef> = CANONICAL_WEAPON_DEFS;
 
 // ---------------------------------------------------------------------------
 // COMBATANT DEFINITIONS — templates; never mutated. Runtime instances are
@@ -391,6 +396,11 @@ export const COMBATANT_DEFS: Record<string, CombatantDef> = {
     id: "fighter", name: "Aldric", cls: "Fighter", type: "pc",
     icon: "sword", maxHp: 20, ac: 15, atkMod: 5, dexMod: 1, moveMax: 5,
     weaponId: "longbow",
+    equipment: {
+      armorId: "wardenMail",
+      accessoryId: "watchfulCharm",
+      consumables: { healingPotion: 2 },
+    },
     // Logical asset ID — resolved by the registry at render time, never by the engine.
     visualAssetId: "character.fighter",
   },
@@ -398,6 +408,11 @@ export const COMBATANT_DEFS: Record<string, CombatantDef> = {
     id: "wizard", name: "Sable", cls: "Wizard", type: "pc",
     icon: "wand", maxHp: 14, ac: 12, atkMod: 4, dexMod: 2, moveMax: 4,
     weaponId: "forceBolt",
+    equipment: {
+      armorId: "trailLeathers",
+      accessoryId: "watchfulCharm",
+      consumables: { healingPotion: 1 },
+    },
     abilities: ["healingTouch", "fireBolt"],
     visualAssetId: "character.wizard",
   },
@@ -634,7 +649,11 @@ export function createCombatantInstance(
 ): Combatant {
   const def = COMBATANT_DEFS[defId];
   if (!def) throw new Error(`Unknown combatant definition: "${defId}"`);
-  const weaponDef = WEAPON_DEFS[def.weaponId];
+  const equipment = createEquipmentLoadout({
+    weaponId: def.weaponId,
+    ...def.equipment,
+  });
+  const weaponDef = WEAPON_DEFS[equipment.weaponId];
   if (!weaponDef) throw new Error(`Unknown weapon "${def.weaponId}" referenced by "${defId}"`);
   for (const abilityId of def.abilities ?? []) {
     if (!ABILITY_DEFS[abilityId]) {
@@ -656,11 +675,12 @@ export function createCombatantInstance(
     atkMod: def.atkMod,
     dexMod: def.dexMod,
     moveMax: def.moveMax,
-    moveRemaining: def.moveMax,
+    moveRemaining: getEffectiveMoveMax(def.moveMax, equipment),
     weapon: { name: weaponDef.name, range: weaponDef.range, dmgDie: weaponDef.dmgDie, dmgMod: weaponDef.dmgMod },
     abilities: def.abilities ?? [],
     alive: true,
     actionUsed: false,
+    equipment,
   };
 }
 
