@@ -15,8 +15,8 @@ async function stepTo(page: Page, wx: number, wy: number) {
     .toContain(`(${wx}, ${wy})`);
 }
 
-async function walkIntoWatchtowerBattle(page: Page) {
-  for (let wx = 9; wx <= 18; wx++) await stepTo(page, wx, 8);
+async function walkIntoWatchtowerBattle(page: Page, firstStep = 9) {
+  for (let wx = firstStep; wx <= 18; wx++) await stepTo(page, wx, 8);
   await expect
     .poll(
       async () => {
@@ -67,19 +67,34 @@ test("completes The Ruined Watchtower from the real platform shell", async ({ pa
   await expect(page.getByTestId("mission-briefing")).toBeVisible();
   await expect(page.getByRole("heading", { name: "The Ruined Watchtower" })).toBeVisible();
 
-  // The ridge choice is meaningful: it completes the optional objective and
-  // therefore maps the same primary victory to SUCCESS instead of cost.
+  // The ridge choice is a longer, covered route with a real optional cache.
   await page.getByTestId("mission-approach-ridge").click();
   await expect(page.getByRole("heading", { name: "Wilderness Exploration" })).toBeVisible();
-  await expect(page.getByTestId("mission-objectives")).toContainText("safer ridge");
+  await expect(page.getByTestId("mission-route-state")).toContainText("long / covered");
 
-  await walkIntoWatchtowerBattle(page);
+  // Take the ridge detour and interact with the cache instead of completing it
+  // merely by selecting the approach.
+  await stepTo(page, 9, 8);
+  await stepTo(page, 10, 8);
+  await stepTo(page, 11, 8);
+  await stepTo(page, 11, 7);
+  await expect(page.getByTestId("enter-location")).toContainText("Open Ranger Cache");
+  await page.getByTestId("enter-location").click();
+  await expect(page.getByTestId("interaction-overlay")).toContainText("Healing Potion +1");
+  await expect(page.getByTestId("interaction-overlay")).toContainText("Tactical advantage secured");
+  await page.getByTestId("return-from-interaction").click();
+  await expect(page.getByTestId("mission-objectives")).toContainText("Open the ranger supply cache");
+  await expect(page.getByTestId("mission-route-state")).toContainText("long / covered");
+
+  await stepTo(page, 12, 8);
+  await walkIntoWatchtowerBattle(page, 13);
   await fightToVictory(page);
 
   // The existing M7 automatic victory return now feeds mission resolution.
   await expect(page.getByRole("heading", { name: "Wilderness Exploration" })).toBeVisible({ timeout: 8_000 });
   await expect(page.getByTestId("mission-resolution")).toBeVisible({ timeout: 8_000 });
   await expect(page.getByTestId("mission-outcome")).toContainText("beacon burns again");
+  await expect(page.getByTestId("mission-outcome")).toContainText("tactical opening");
   await expect(page.getByTestId("mission-return-platform")).toBeVisible();
 
   // Resolution → platform return → fresh RPG entry has no stale mission.
@@ -88,6 +103,24 @@ test("completes The Ruined Watchtower from the real platform shell", async ({ pa
   await page.getByTestId("experience-enter-rpg").click();
   await expect(page.getByTestId("mission-briefing")).toBeVisible();
   await expect(page.getByTestId("mission-resolution")).toHaveCount(0);
+});
+
+test("direct road is shorter, exposed, and resolves at cost", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("experience-enter-rpg").click();
+  await expect(page.getByTestId("mission-briefing")).toBeVisible();
+  await page.getByTestId("mission-approach-direct").click();
+
+  await expect(page.locator(LOCATION)).toContainText("(17, 8)");
+  await expect(page.getByTestId("mission-route-state")).toContainText("short / exposed");
+
+  // The direct road starts close to the tower approach, so the same hostile
+  // pressure arrives after two steps instead of the ridge detour and cache.
+  await walkIntoWatchtowerBattle(page, 18);
+  await fightToVictory(page);
+  await expect(page.getByTestId("mission-resolution")).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByTestId("mission-outcome")).toContainText("exposed approach cost");
+  await expect(page.getByRole("heading", { name: "SUCCESS AT COST" })).toBeVisible();
 });
 
 test("allows an active mission to retreat with an explicit outcome", async ({ page }) => {

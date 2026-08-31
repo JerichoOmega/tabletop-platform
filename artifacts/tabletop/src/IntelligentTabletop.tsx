@@ -37,7 +37,7 @@ import {
   key,
 } from "@/engine/rules";
 import type { EquipmentLoadout } from "@/engine/equipment";
-import { getEquipmentDefinition } from "@/engine/equipment";
+import { acquireItem, getEquipmentDefinition } from "@/engine/equipment";
 import type { ViewportState, VisibleTile } from "@/engine/viewport";
 import { getVisibleTiles, initViewport, updateViewportForActor } from "@/engine/viewport";
 // Phase F: viewport streaming — chunk prefetch + loading presentation.
@@ -59,9 +59,9 @@ import {
 import { CHUNK_W, CHUNK_H } from "@/engine/chunk";
 import {
   WATCHTOWER_MISSION, createMissionState, chooseMissionApproach,
-  advanceMissionAtWatchtower, beginMissionClimax, resolveMissionVictory,
+  advanceMissionAtWatchtower, beginMissionClimax, completeRidgeOpportunity, resolveMissionVictory,
   recoverFromMissionDefeat, retreatFromMission, returnFromMission, type MissionApproach,
-  type MissionState,
+  RIDGE_CACHE_LOCATION, type MissionState,
 } from "@/engine/mission";
 import type { Step, RevalidationCheck, ProposedAction } from "@/intent/parser";
 import { parseIntent, revalidateProposal, executeProposalSteps, exampleTargetPhrase } from "@/intent/parser";
@@ -989,7 +989,13 @@ export default function IntelligentTabletop() {
   // (activating the previously dormant worldStateRef prefetch path), centers
   // the viewport on the party, and switches the table surface.
   function startExploration() {
-    const session = createExplorationSession();
+    const routeProfile = missionStateRef.current.approach
+      ? missionStateRef.current.currentMission.routeProfiles[missionStateRef.current.approach]
+      : undefined;
+    const session = createExplorationSession(routeProfile ? {
+      partySpawn: routeProfile.partySpawn,
+      hostileSpawn: routeProfile.hostileSpawn,
+    } : undefined);
     explorationRef.current = session;
     worldStateRef.current = session.worldState;
     const partyCombatant = Object.values(gameState.combatants).find((c) => c.type === "pc");
@@ -1277,10 +1283,47 @@ export default function IntelligentTabletop() {
   // The world model exposes the KIND; the RPG behavior lives here. Rest and
   // discovery never touch combat, sessionMode, or the encounter lifecycle.
   // ---------------------------------------------------------------------------
+  function interactRidgeCache() {
+    const session = explorationRef.current;
+    const current = missionStateRef.current;
+    if (
+      sessionMode !== "exploration" ||
+      !session ||
+      current.approach !== "ridge" ||
+      current.optionalObjectiveProgress !== "in_progress"
+    ) return;
+
+    const loadout = partyEquipmentRef.current;
+    if (!loadout) {
+      setBanner("The ranger cache cannot be opened without an active party loadout.");
+      setTimeout(() => setBanner(null), 2400);
+      return;
+    }
+    const reward = acquireItem(loadout, "healingPotion", "exploration");
+    if (!reward.ok) {
+      setBanner(`The cache could not be opened: ${reward.reason ?? "the reward is unavailable."}`);
+      setTimeout(() => setBanner(null), 2400);
+      return;
+    }
+    partyEquipmentRef.current = reward.loadout;
+    applyMissionState(completeRidgeOpportunity(current));
+    setInteraction({
+      loc: RIDGE_CACHE_LOCATION,
+      title: "Open Ranger Cache",
+      flavor: "Inside the abandoned cache, a sealed potion and a weathered patrol map reveal a safer angle on the watchtower.",
+      outcome: "Healing Potion +1. Tactical advantage secured for the watchtower climax.",
+      healed: false,
+    });
+  }
+
   function interactLocation(loc: ExploreLocation) {
     const session = explorationRef.current;
     if (sessionMode !== "exploration" || !session) return;
 
+    if (loc.id === RIDGE_CACHE_LOCATION.id) {
+      interactRidgeCache();
+      return;
+    }
     if (loc.kind === "combat") { enterLocation(loc); return; }
 
     if (loc.kind === "rest") {
@@ -1424,16 +1467,34 @@ export default function IntelligentTabletop() {
     const m: Record<string, ExploreLocation> = {};
     if (sessionMode !== "exploration") return m;
     for (const loc of EXPLORE_LOCATIONS) m[key(loc.wx, loc.wy)] = loc;
+    if (
+      missionState.approach === "ridge" &&
+      missionState.optionalObjectiveProgress === "in_progress"
+    ) {
+      m[key(RIDGE_CACHE_LOCATION.wx, RIDGE_CACHE_LOCATION.wy)] = RIDGE_CACHE_LOCATION;
+    }
     return m;
-  }, [sessionMode]);
+  }, [sessionMode, missionState.approach, missionState.optionalObjectiveProgress]);
 
   // The location the party can currently act on (Chebyshev-adjacent). Drives
   // the contextual "Enter …" prompt. null unless the party is beside a place.
   const nearbyLoc = useMemo(() => {
     const session = explorationRef.current;
     if (sessionMode !== "exploration" || !session) return null;
+    if (
+      missionState.approach === "ridge" &&
+      missionState.optionalObjectiveProgress === "in_progress"
+    ) {
+      const party = getParty(session);
+      if (
+        Math.max(
+          Math.abs(RIDGE_CACHE_LOCATION.wx - party.wx),
+          Math.abs(RIDGE_CACHE_LOCATION.wy - party.wy),
+        ) <= 1
+      ) return RIDGE_CACHE_LOCATION;
+    }
     return nearbyLocation(session);
-  }, [sessionMode, exploreVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionMode, exploreVersion, missionState.approach, missionState.optionalObjectiveProgress]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isPracticeEntry && missionState.phase === "MISSION_BRIEFING") {
     return (
@@ -1560,7 +1621,9 @@ export default function IntelligentTabletop() {
             </h2>
             <p data-testid="mission-outcome" style={{ color: "#d6c8a7", fontSize: 17, margin: "0 0 18px" }}>
               {missionState.outcome === "SUCCESS"
-                ? "The signal beacon burns again. The watchtower can call for aid."
+                ? missionState.tacticalAdvantage
+                  ? "The signal beacon burns again. The ranger map gave the party a clean tactical opening."
+                  : "The signal beacon burns again. The watchtower can call for aid."
                 : missionState.outcome === "SUCCESS_AT_COST"
                   ? "The beacon is recovered, but the exposed approach cost the party dearly."
                   : "The party leaves the watchtower behind. The mission ends without the beacon."
@@ -1568,8 +1631,8 @@ export default function IntelligentTabletop() {
             </p>
             <div style={{ borderTop: "1px solid #4d3821", paddingTop: 14, color: "#b5a47e", fontSize: 14, lineHeight: 1.7 }}>
               <div><strong style={{ color: "#e3c875" }}>Primary:</strong> {missionState.primaryObjectiveProgress === "complete" ? "Beacon recovered" : "Beacon not recovered"}</div>
-              <div><strong style={{ color: "#e3c875" }}>Optional:</strong> {missionState.optionalObjectiveProgress === "complete" ? "Safer ridge approach taken" : "Direct approach taken"}</div>
-              <div><strong style={{ color: "#e3c875" }}>Consequence:</strong> {missionState.consequenceFlags.includes("beacon-recovered-at-cost") ? "The beacon is active, but the route was exposed." : missionState.consequenceFlags.includes("beacon-recovered") ? "The restored beacon sends a clear signal." : "The party retreats; the beacon remains dark."}</div>
+              <div><strong style={{ color: "#e3c875" }}>Optional:</strong> {missionState.optionalObjectiveProgress === "complete" ? "Ranger cache opened" : missionState.approach === "ridge" ? "Ranger cache left unopened" : "Unavailable on the direct road"}</div>
+              <div><strong style={{ color: "#e3c875" }}>Consequence:</strong> {missionState.tacticalAdvantage ? "The cache supplied a healing potion and a tactical opening." : missionState.consequenceFlags.includes("beacon-recovered-at-cost") ? "The beacon is active, but the route was exposed." : missionState.consequenceFlags.includes("beacon-recovered") ? "The restored beacon sends a clear signal." : "The party retreats; the beacon remains dark."}</div>
             </div>
             <button
               type="button"
@@ -1778,7 +1841,13 @@ export default function IntelligentTabletop() {
                   The party travels the open world. Tap a highlighted tile beside the party to take a step; the table follows as you move.
                 </div>
                 <div style={{ marginTop: 8, color: "#8a795a", fontSize: 12 }}>
-                  {missionState.phase === "ESCALATION"
+                  {missionState.approach === "direct"
+                    ? "Direct road · short and exposed. Hostile pressure is close; reach the tower before it closes in."
+                    : missionState.approach === "ridge" && missionState.optionalObjectiveProgress === "in_progress"
+                      ? "Safer ridge · longer and covered. Find the abandoned ranger cache before closing on the tower."
+                      : missionState.approach === "ridge" && missionState.tacticalAdvantage
+                        ? "Safer ridge · tactical opening secured. The cache has revealed a safer angle on the guardian."
+                        : missionState.phase === "ESCALATION"
                     ? `${missionState.currentMission.escalationStates.find((s) => s.id === missionState.escalationState)?.description ?? "The mission is escalating."}`
                     : missionState.phase === "CLIMAX"
                       ? "The beacon is guarded. Defeat its guardian to recover the signal."
@@ -1793,13 +1862,21 @@ export default function IntelligentTabletop() {
                     <div style={{ color: "#d9b661", fontFamily: "Cinzel, serif", fontSize: 11, letterSpacing: 1 }}>
                       {missionState.currentMission.title.toUpperCase()}
                     </div>
+                    <div
+                      data-testid="mission-route-state"
+                      style={{ marginTop: 7, color: "#e0d3b5" }}
+                    >
+                      Route: {missionState.approach === "direct" ? "Direct road · short / exposed" : "Safer ridge · long / covered"}
+                    </div>
                     <div style={{ marginTop: 7, color: "#e0d3b5" }}>
                       {missionState.primaryObjectiveProgress === "complete" ? "✓" : "○"}{" "}
                       {missionState.currentMission.primaryObjective.title}
                     </div>
                     <div style={{ marginTop: 5, color: "#a89468" }}>
                       {missionState.optionalObjectiveProgress === "complete" ? "✓" : "○"}{" "}
-                      {missionState.currentMission.optionalObjective.title}
+                      {missionState.approach === "direct"
+                        ? "No optional cache on the direct road"
+                        : missionState.currentMission.optionalObjective.title}
                     </div>
                     {missionState.phase !== "MISSION_BRIEFING" && (
                       <button

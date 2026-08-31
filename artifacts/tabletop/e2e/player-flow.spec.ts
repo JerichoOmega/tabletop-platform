@@ -1,7 +1,7 @@
 // M7 regression guard: the REAL player flow — entry through the platform
-// shell (Play → RPG card, no ?experience deep link), exploration-first
-// launch, world-triggered combat, deterministic victory, automatic return,
-// and a second full cycle after exiting to the shell and re-entering.
+// shell (Play → RPG card), direct-route launch, world-triggered combat,
+// deterministic victory, automatic return, and a second full cycle after
+// exiting to the shell and re-entering.
 // Added while investigating a "encounters no longer trigger" report; this
 // suite proves the trigger path end-to-end from the true entry surface.
 import { test, expect, type Page } from "@playwright/test";
@@ -22,7 +22,9 @@ async function stepTo(page: Page, wx: number, wy: number) {
 }
 
 async function walkIntoBattle(page: Page) {
-  for (let wx = 9; wx <= 18; wx++) await stepTo(page, wx, 8);
+  // The direct route starts at (17, 8), so its exposed pressure arrives after
+  // only two moves rather than using the ridge route's (8, 8) spawn.
+  await stepTo(page, 18, 8);
   await expect
     .poll(
       async () => {
@@ -88,8 +90,8 @@ test("clicking the hostile token itself while adjacent does not dead-end the loo
   await page.getByTestId("experience-enter-rpg").click();
   await page.getByTestId("mission-approach-direct").click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
-  for (let wx = 9; wx <= 17; wx++) await stepTo(page, wx, 8);
-  // party at (17,8), orc at (20,8): click the orc token directly (natural gesture)
+  // party starts at (17,8), orc at (20,8): click the visible orc token
+  // directly (natural gesture) before completing the short approach.
   const orcTok = page.locator('[title="Orc"]');
   if (await orcTok.count()) await orcTok.click();
   // then finish the approach on tiles — battle must still trigger

@@ -8,3 +8,4 @@
 - [Exploration mode (M1)](exploration-mode.md) — sessionMode encounter/exploration; live chunk reads allowed ONLY in exploration/presentation layer; fixed world seed; 513 unit / 176 E2E
 - [Presentation & camera direction](presentation-camera.md) — locked design direction: shared tabletop camera, zoom = transition not mode, rules engine never sees animation; doc at artifacts/tabletop/docs/PRESENTATION_CAMERA_DIRECTION.md
 - [Platform philosophy](platform-philosophy.md) — locked: multi-game platform, RPG is one Experience; Play/Browse/Library/Create/Profile nav, Experience Cards, persistent profile, earned titles; nothing implemented yet
+- [Mission route consequences](mission-route-consequences.md) — authored route profiles drive traversal, optional interactions, rewards, and climax outcomes without a new quest system

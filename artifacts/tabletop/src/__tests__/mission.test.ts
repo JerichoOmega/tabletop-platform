@@ -3,6 +3,7 @@ import {
   WATCHTOWER_MISSION,
   advanceMissionAtWatchtower,
   beginMissionClimax,
+  completeRidgeOpportunity,
   chooseMissionApproach,
   createMissionState,
   recoverFromMissionDefeat,
@@ -42,20 +43,40 @@ describe("watchtower mission transitions", () => {
     expect(state.completed).toBe(false);
   });
 
-  it("starts exploration and records the direct approach", () => {
+  it("starts the direct route as short and exposed", () => {
     const state = chooseMissionApproach(createMissionState(), "direct");
     expect(state.phase).toBe("EXPLORATION");
     expect(state.approach).toBe("direct");
+    expect(state.routeLength).toBe("short");
+    expect(state.exposure).toBe("exposed");
     expect(state.primaryObjectiveProgress).toBe("in_progress");
-    expect(state.optionalObjectiveProgress).toBe("in_progress");
+    expect(state.optionalObjectiveProgress).toBe("not_started");
+    expect(state.tacticalAdvantage).toBe(false);
     expect(state.consequenceFlags).toContain("direct-approach");
+    expect(state.consequenceFlags).toContain("exposed-approach");
   });
 
-  it("completes the optional objective for the safer ridge approach", () => {
+  it("starts the ridge route as long and covered with an open opportunity", () => {
     const state = chooseMissionApproach(createMissionState(), "ridge");
     expect(state.approach).toBe("ridge");
-    expect(state.optionalObjectiveProgress).toBe("complete");
+    expect(state.routeLength).toBe("long");
+    expect(state.exposure).toBe("covered");
+    expect(state.optionalObjectiveProgress).toBe("in_progress");
+    expect(state.tacticalAdvantage).toBe(false);
     expect(state.consequenceFlags).toContain("ridge-approach");
+  });
+
+  it("keeps the ridge opportunity unavailable on the direct route", () => {
+    const state = chooseMissionApproach(createMissionState(), "direct");
+    expect(completeRidgeOpportunity(state)).toBe(state);
+  });
+
+  it("turns the ridge cache into a tangible tactical advantage", () => {
+    const state = chooseMissionApproach(createMissionState(), "ridge");
+    const completed = completeRidgeOpportunity(state);
+    expect(completed.optionalObjectiveProgress).toBe("complete");
+    expect(completed.tacticalAdvantage).toBe(true);
+    expect(completed.consequenceFlags).toContain("ridge-cache-advantage");
   });
 
   it("does not allow a second route choice after the briefing", () => {
@@ -71,7 +92,7 @@ describe("watchtower mission transitions", () => {
     expect(escalated.escalationState).toBe("watchtower-approach");
   });
 
-  it("moves escalation into the one existing world-backed climax", () => {
+  it("shows the direct route's exposed climax state", () => {
     const state = advanceMissionAtWatchtower(
       chooseMissionApproach(createMissionState(), "direct"),
       19,
@@ -79,13 +100,26 @@ describe("watchtower mission transitions", () => {
     );
     const climax = beginMissionClimax(state);
     expect(climax.phase).toBe("CLIMAX");
-    expect(climax.escalationState).toBe("beacon-guarded");
+    expect(climax.escalationState).toBe("beacon-guarded-exposed");
+    expect(climax.consequenceFlags).toContain("exposed-climax");
+  });
+
+  it("shows a tactical opening at the ridge climax after the cache is opened", () => {
+    const state = advanceMissionAtWatchtower(
+      completeRidgeOpportunity(chooseMissionApproach(createMissionState(), "ridge")),
+      19,
+      8,
+    );
+    const climax = beginMissionClimax(state);
+    expect(climax.phase).toBe("CLIMAX");
+    expect(climax.escalationState).toBe("beacon-guarded-with-advantage");
+    expect(climax.consequenceFlags).toContain("tactical-climax");
   });
 
   it("maps ridge victory to SUCCESS and completes the primary objective", () => {
     const state = beginMissionClimax(
       advanceMissionAtWatchtower(
-        chooseMissionApproach(createMissionState(), "ridge"),
+        completeRidgeOpportunity(chooseMissionApproach(createMissionState(), "ridge")),
         19,
         8,
       ),
@@ -135,10 +169,16 @@ describe("watchtower mission transitions", () => {
   });
 
   it("resets a completed mission without carrying stale outcome state", () => {
-    const state = retreatFromMission(chooseMissionApproach(createMissionState(), "ridge"));
+    const state = retreatFromMission(
+      completeRidgeOpportunity(chooseMissionApproach(createMissionState(), "ridge")),
+    );
     const reset = resetMission(state);
     expect(reset.phase).toBe("MISSION_BRIEFING");
     expect(reset.approach).toBeNull();
+    expect(reset.routeLength).toBeNull();
+    expect(reset.exposure).toBeNull();
+    expect(reset.optionalObjectiveProgress).toBe("not_started");
+    expect(reset.tacticalAdvantage).toBe(false);
     expect(reset.outcome).toBeNull();
     expect(reset.completed).toBe(false);
   });

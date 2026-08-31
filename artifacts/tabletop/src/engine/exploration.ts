@@ -167,6 +167,13 @@ export interface ExplorationSession {
   readonly partyWorldId: string;
 }
 
+export interface ExplorationSessionOptions {
+  /** Optional route-authored starting position for the party. */
+  readonly partySpawn?: { readonly wx: number; readonly wy: number };
+  /** Optional route-authored position for the demo hostile. */
+  readonly hostileSpawn?: { readonly wx: number; readonly wy: number };
+}
+
 /**
  * Creates the M1 exploration session: a WorldState for the fixed exploration
  * world, with the party avatar and one demo hostile registered.
@@ -175,15 +182,17 @@ export interface ExplorationSession {
  * prefetch path (getChunksForViewport → ensureResident). Callers must
  * tolerate an initial window where tiles are unmapped.
  */
-export function createExplorationSession(): ExplorationSession {
+export function createExplorationSession(options?: ExplorationSessionOptions): ExplorationSession {
   const worldState = new WorldState(
     EXPLORE_WORLD_ID, EXPLORE_WORLD_SEED, undefined, EXPLORE_WORLD_BOUNDS,
   );
+  const partySpawn = options?.partySpawn ?? EXPLORE_SPAWN;
+  const hostileSpawn = options?.hostileSpawn ?? HOSTILE_SPAWN;
   worldState.entities.register({
     worldId: PARTY_WORLD_ID,
     defId: "fighter",
-    wx: EXPLORE_SPAWN.wx,
-    wy: EXPLORE_SPAWN.wy,
+    wx: partySpawn.wx,
+    wy: partySpawn.wy,
     hp: 30,
     maxHp: 30,
     alive: true,
@@ -192,8 +201,8 @@ export function createExplorationSession(): ExplorationSession {
   worldState.entities.register({
     worldId: HOSTILE_WORLD_ID,
     defId: "orc",
-    wx: HOSTILE_SPAWN.wx,
-    wy: HOSTILE_SPAWN.wy,
+    wx: hostileSpawn.wx,
+    wy: hostileSpawn.wy,
     hp: 15,
     maxHp: 15,
     alive: true,

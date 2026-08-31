@@ -19,6 +19,10 @@ const OVERLAY = '[data-testid="interaction-overlay"]';
 
 async function enterExploration(page: Page) {
   await page.goto("/?experience=rpg");
+  await expect(page.getByTestId("mission-briefing")).toBeVisible({ timeout: 8_000 });
+  // Use the longer route so this world-content suite starts at the authored
+  // exploration spawn instead of the direct route's near-tower position.
+  await page.getByTestId("mission-approach-ridge").click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
 }
 

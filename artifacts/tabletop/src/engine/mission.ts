@@ -23,6 +23,26 @@ export type MissionOutcome =
 
 export type MissionApproach = "direct" | "ridge";
 export type ObjectiveProgress = "not_started" | "in_progress" | "complete";
+export type MissionRouteLength = "short" | "long";
+export type MissionExposure = "exposed" | "covered";
+
+export interface MissionRouteProfile {
+  readonly routeLength: MissionRouteLength;
+  readonly exposure: MissionExposure;
+  readonly partySpawn: { readonly wx: number; readonly wy: number };
+  readonly hostileSpawn: { readonly wx: number; readonly wy: number };
+}
+
+/** The one authored optional interaction on the safer route. */
+export const RIDGE_CACHE_LOCATION = Object.freeze({
+  id: "ridge-supply-cache",
+  name: "Abandoned Ranger Cache",
+  kind: "discovery" as const,
+  prompt: "Open Ranger Cache",
+  icon: "camp" as const,
+  wx: 12,
+  wy: 6,
+});
 
 export interface MissionObjective {
   readonly id: string;
@@ -68,8 +88,10 @@ export interface MissionDefinition {
   readonly escalationStates: readonly MissionEscalationState[];
   readonly completionOutcomeMapping: Readonly<Record<"optional_complete" | "optional_incomplete", MissionOutcome>>;
   readonly approachChoices: readonly MissionApproachChoice[];
+  readonly routeProfiles: Readonly<Record<MissionApproach, MissionRouteProfile>>;
   readonly locations: {
     readonly watchtower: { readonly wx: number; readonly wy: number };
+    readonly ridgeCache: { readonly wx: number; readonly wy: number };
   };
 }
 
@@ -77,8 +99,11 @@ export interface MissionState {
   readonly currentMission: MissionDefinition;
   readonly phase: MissionPhase;
   readonly approach: MissionApproach | null;
+  readonly routeLength: MissionRouteLength | null;
+  readonly exposure: MissionExposure | null;
   readonly primaryObjectiveProgress: ObjectiveProgress;
   readonly optionalObjectiveProgress: ObjectiveProgress;
+  readonly tacticalAdvantage: boolean;
   readonly escalationState: string;
   readonly outcome: MissionOutcome | null;
   readonly completed: boolean;
@@ -97,9 +122,9 @@ export const WATCHTOWER_MISSION: MissionDefinition = {
     description: "Reach the ruined watchtower and recover its signal beacon.",
   },
   optionalObjective: {
-    id: "take-ridge-approach",
-    title: "Take the safer ridge approach",
-    description: "Choose the ridge route before entering the watchtower approach.",
+    id: "ridge-supply-cache",
+    title: "Open the ranger supply cache",
+    description: "Find the abandoned cache on the ridge and secure its tactical supplies.",
   },
   startingState: {
     phase: "MISSION_BRIEFING",
@@ -107,7 +132,7 @@ export const WATCHTOWER_MISSION: MissionDefinition = {
   },
   successCondition: {
     primaryObjectiveId: "recover-signal-beacon",
-    optionalObjectiveId: "take-ridge-approach",
+    optionalObjectiveId: "ridge-supply-cache",
   },
   failureCondition: {
     trigger: "climax_defeat",
@@ -136,6 +161,18 @@ export const WATCHTOWER_MISSION: MissionDefinition = {
       description: "The old signal cannot be recovered until its guardian falls.",
       phase: "CLIMAX",
     },
+    {
+      id: "beacon-guarded-exposed",
+      title: "The beacon is guarded — exposed",
+      description: "The direct road leaves the party exposed as the guardian closes in.",
+      phase: "CLIMAX",
+    },
+    {
+      id: "beacon-guarded-with-advantage",
+      title: "The beacon is guarded — tactical opening",
+      description: "The ridge cache reveals a safer angle and gives the party a tactical opening.",
+      phase: "CLIMAX",
+    },
   ],
   completionOutcomeMapping: {
     optional_complete: "SUCCESS",
@@ -145,16 +182,31 @@ export const WATCHTOWER_MISSION: MissionDefinition = {
     {
       id: "direct",
       title: "Take the direct road",
-      description: "Reach the tower quickly, accepting that the approach is exposed.",
+      description: "Reach the tower quickly on a short, exposed road. Hostile pressure will find you sooner.",
     },
     {
       id: "ridge",
       title: "Take the safer ridge",
-      description: "Circle along the ridge before closing on the tower.",
+      description: "Take the longer ridge path. An abandoned ranger cache may offer an advantage before the tower.",
     },
   ],
+  routeProfiles: {
+    direct: {
+      routeLength: "short",
+      exposure: "exposed",
+      partySpawn: { wx: 17, wy: 8 },
+      hostileSpawn: { wx: 20, wy: 8 },
+    },
+    ridge: {
+      routeLength: "long",
+      exposure: "covered",
+      partySpawn: { wx: 8, wy: 8 },
+      hostileSpawn: { wx: 20, wy: 8 },
+    },
+  },
   locations: {
     watchtower: { wx: 20, wy: 8 },
+    ridgeCache: { wx: RIDGE_CACHE_LOCATION.wx, wy: RIDGE_CACHE_LOCATION.wy },
   },
 };
 
@@ -165,6 +217,8 @@ const VALID_APPROACHES: readonly MissionApproach[] = ["direct", "ridge"];
 const VALID_OUTCOMES: readonly MissionOutcome[] = [
   "SUCCESS", "SUCCESS_AT_COST", "PARTIAL_SUCCESS", "FAILURE", "RETREAT",
 ];
+const VALID_ROUTE_LENGTHS: readonly MissionRouteLength[] = ["short", "long"];
+const VALID_EXPOSURES: readonly MissionExposure[] = ["exposed", "covered"];
 
 /** Returns all contract violations; an empty list means the contract is valid. */
 export function validateMissionDefinition(definition: MissionDefinition): string[] {
@@ -196,11 +250,32 @@ export function validateMissionDefinition(definition: MissionDefinition): string
   if (!VALID_APPROACHES.every((id) => definition.approachChoices.some((choice) => choice.id === id))) {
     errors.push("both direct and ridge approaches are required");
   }
+  for (const approach of VALID_APPROACHES) {
+    const profile = definition.routeProfiles[approach];
+    if (!profile) {
+      errors.push(`route profile is missing: ${approach}`);
+      continue;
+    }
+    if (!VALID_ROUTE_LENGTHS.includes(profile.routeLength)) {
+      errors.push(`invalid route length: ${approach}`);
+    }
+    if (!VALID_EXPOSURES.includes(profile.exposure)) {
+      errors.push(`invalid route exposure: ${approach}`);
+    }
+    for (const point of [profile.partySpawn, profile.hostileSpawn]) {
+      if (!Number.isInteger(point.wx) || !Number.isInteger(point.wy)) {
+        errors.push(`route profile coordinates must be integers: ${approach}`);
+      }
+    }
+  }
   for (const outcome of Object.values(definition.completionOutcomeMapping)) {
     if (!VALID_OUTCOMES.includes(outcome)) errors.push(`invalid completion outcome: ${outcome}`);
   }
   if (!Number.isInteger(definition.locations.watchtower.wx) || !Number.isInteger(definition.locations.watchtower.wy)) {
     errors.push("watchtower location must use integer coordinates");
+  }
+  if (!Number.isInteger(definition.locations.ridgeCache.wx) || !Number.isInteger(definition.locations.ridgeCache.wy)) {
+    errors.push("ridge cache location must use integer coordinates");
   }
   return errors;
 }
@@ -216,8 +291,11 @@ export function createMissionState(definition: MissionDefinition = WATCHTOWER_MI
     currentMission: definition,
     phase: definition.startingState.phase,
     approach: null,
+    routeLength: null,
+    exposure: null,
     primaryObjectiveProgress: "not_started",
     optionalObjectiveProgress: "not_started",
+    tacticalAdvantage: false,
     escalationState: definition.startingState.escalationState,
     outcome: null,
     completed: false,
@@ -231,18 +309,36 @@ function withFlag(state: MissionState, flag: string): MissionState {
     : { ...state, consequenceFlags: [...state.consequenceFlags, flag] };
 }
 
-/** A route choice starts the finite mission and records its optional result. */
+/** A route choice starts the finite mission and records its route consequences. */
 export function chooseMissionApproach(state: MissionState, approach: MissionApproach): MissionState {
   if (state.phase !== "MISSION_BRIEFING") return state;
-  const optionalObjectiveProgress = approach === "ridge" ? "complete" : "in_progress";
-  return withFlag({
+  const profile = state.currentMission.routeProfiles[approach];
+  const next = withFlag({
     ...state,
     phase: "EXPLORATION",
     approach,
+    routeLength: profile.routeLength,
+    exposure: profile.exposure,
     primaryObjectiveProgress: "in_progress",
-    optionalObjectiveProgress,
+    optionalObjectiveProgress: approach === "ridge" ? "in_progress" : "not_started",
+    tacticalAdvantage: false,
     escalationState: "briefing",
-  }, approach === "ridge" ? "ridge-approach" : "direct-approach");
+  }, `${approach}-approach`);
+  return profile.exposure === "exposed" ? withFlag(next, "exposed-approach") : next;
+}
+
+/** The ridge reward is a one-time authored opportunity, not a generic quest. */
+export function completeRidgeOpportunity(state: MissionState): MissionState {
+  if (
+    state.phase !== "EXPLORATION" ||
+    state.approach !== "ridge" ||
+    state.optionalObjectiveProgress !== "in_progress"
+  ) return state;
+  return withFlag({
+    ...state,
+    optionalObjectiveProgress: "complete",
+    tacticalAdvantage: true,
+  }, "ridge-cache-advantage");
 }
 
 /** Reaching the authored watchtower location advances the escalation graph. */
@@ -260,11 +356,21 @@ export function advanceMissionAtWatchtower(state: MissionState, wx: number, wy: 
 /** The existing world-backed encounter is the mission's one climax. */
 export function beginMissionClimax(state: MissionState): MissionState {
   if (state.phase !== "ESCALATION") return state;
-  return {
+  const escalationState = state.tacticalAdvantage
+    ? "beacon-guarded-with-advantage"
+    : state.exposure === "exposed"
+      ? "beacon-guarded-exposed"
+      : "beacon-guarded";
+  const next: MissionState = {
     ...state,
     phase: "CLIMAX",
-    escalationState: "beacon-guarded",
+    escalationState,
   };
+  return state.tacticalAdvantage
+    ? withFlag(next, "tactical-climax")
+    : state.exposure === "exposed"
+      ? withFlag(next, "exposed-climax")
+      : next;
 }
 
 /** Victory resolves the primary objective and records the concrete outcome. */

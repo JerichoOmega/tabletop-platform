@@ -19,6 +19,8 @@ const LOCATION = '[data-testid="exploration-location"]';
 
 async function enterExploration(page: Page) {
   await page.goto("/?experience=rpg");
+  await expect(page.getByTestId("mission-briefing")).toBeVisible({ timeout: 8_000 });
+  await page.getByTestId("mission-approach-ridge").click();
   await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
 }
 

@@ -115,6 +115,11 @@ test.describe("Exploration mode — M1", () => {
   });
 
   test("normal play exposes no developer encounter navigation", async ({ page }) => {
+    // This assertion intentionally uses the real platform shell, not the
+    // practice-mode setup shared by the exploration behavior tests above.
+    await page.goto("/?experience=rpg");
+    await page.getByTestId("mission-approach-ridge").click();
+    await expect(page.locator(LOCATION)).toBeVisible({ timeout: 8_000 });
     // The old location-nav tab row (Return to Encounter / Ruined Crypt /
     // Training Yard) must NOT appear for normal players — locations are world
     // content, not navigation.
