@@ -1,0 +1,187 @@
+{
+  "project_title": "Tabletop Lounge - Multi-Game Digital Tabletop Platform Shell",
+  "archetype": "LUXURY_WARM_LOUNGE",
+  "theme": "DARK_WARM_CLUBHOUSE",
+  "meta": {
+    "design_philosophy": "Fusion of a classic high-end game lounge (mahogany, warm felt, brushed brass, warm candlelight) with modern digital platform precision. The platform shell acts as the neutral, welcoming clubhouse host, while individual games retain their distinct visual identity frames.",
+    "target_audience": "Digital tabletop players, board game enthusiasts, tactical RPG gamers, word game players",
+    "forbidden_colors": ["#7351B7", "#1B93A4", "pure #000000", "harsh #00ff00 neon"],
+    "forbidden_fonts": ["Inter", "Roboto", "Space Grotesk", "Open Sans", "Arial"]
+  },
+  "colors": {
+    "css_variables": {
+      "--bg-base": "#120e0c",
+      "--bg-surface-1": "#1a1411",
+      "--bg-surface-2": "#241c18",
+      "--bg-surface-card": "#2a201b",
+      "--border-subtle": "rgba(212, 175, 55, 0.12)",
+      "--border-medium": "rgba(212, 175, 55, 0.25)",
+      "--border-strong": "rgba(212, 175, 55, 0.45)",
+      "--primary-amber": "#e5a93c",
+      "--primary-amber-hover": "#f5ba4e",
+      "--primary-amber-glow": "rgba(229, 169, 60, 0.2)",
+      "--secondary-emerald": "#2d8a64",
+      "--secondary-crimson": "#b83a3a",
+      "--secondary-sapphire": "#3b72b0",
+      "--text-main": "#f3e9dc",
+      "--text-muted": "#b5a494",
+      "--text-dim": "#7e6d5e",
+      "--accent-gold": "#d4af37",
+      "--shell-chrome-bg": "rgba(22, 17, 14, 0.92)"
+    },
+    "palette_description": {
+      "base": "Deep Espresso Charcoal (#120e0c) and Dark Mahogany (#1a1411) for rich depth without cold blackness.",
+      "accents": "Warm Antique Gold/Amber (#e5a93c, #d4af37) for primary CTAs and active states.",
+      "game_status_indicators": "Emerald (#2d8a64) for Available / Live, Amber (#e5a93c) for In Progress, Crimson (#b83a3a) for Host/Urgent, Sapphire (#3b72b0) for Coming Soon."
+    }
+  },
+  "typography": {
+    "headings": {
+      "family": "Cinzel, 'Playfair Display', serif",
+      "weights": "600 (Semi-Bold), 700 (Bold)",
+      "usage": "Page titles, hero headers, game title cards, lounge section headers. Set tight tracking (tracking-tight)."
+    },
+    "subheadings_and_ui": {
+      "family": "'Outfit', 'Cabinet Grotesk', sans-serif",
+      "weights": "500 (Medium), 600 (Semi-Bold)",
+      "usage": "Navigation items, buttons, modal titles, player tags, tab triggers."
+    },
+    "body": {
+      "family": "'Satoshi', 'DM Sans', sans-serif",
+      "weights": "400 (Regular), 500 (Medium)",
+      "usage": "Game descriptions, session details, settings labels, player profile stats."
+    },
+    "mono_stats": {
+      "family": "'JetBrains Mono', monospace",
+      "usage": "Session IDs, player scores, latency/turn timer indicators, seed numbers."
+    },
+    "sizes_scale": {
+      "hero_title": "text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight",
+      "section_title": "text-2xl sm:text-3xl lg:text-4xl font-semibold",
+      "card_title": "text-xl sm:text-2xl font-bold",
+      "body_text": "text-base leading-relaxed",
+      "label_tiny": "text-xs font-semibold uppercase tracking-[0.18em]"
+    }
+  },
+  "layout_and_spacing": {
+    "philosophy": "Generous spacing (p-6, p-8, p-12). High contrast between section containers. Gold/Amber micro-borders (1px solid with 12%-25% opacity) give surfaces a tactile, tabletop-board edge.",
+    "shell_structure": {
+      "header": "Sticky glassmorphism nav bar (height 72px) with `--shell-chrome-bg` and backdrop-blur-md, 1px bottom border (`--border-subtle`). Contains Lounge Logo, Main Links (Lounge, Game Library, Sessions, Players, Settings), Quick Player Avatar badge, and Active Session indicator.",
+      "main_canvas": "Max-width container (max-w-7xl) with generous padding (px-4 sm:px-8 py-8).",
+      "game_host_frame": "When a game is active: Top Platform Bar with 'Back to Lounge', Session Status, Turn Indicator, Player Badges, Audio Toggle, and Quick Settings, framing the sub-game viewport."
+    },
+    "bento_grid_modes": {
+      "lounge_hero_bento": "grid-cols-1 md:grid-cols-12 gap-6. Hero game (RPG) takes col-span-8, Secondary game placeholder (Lexicon Hall) takes col-span-4, Session activity widget takes col-span-4, Player lounge quick-select takes col-span-8.",
+      "library_grid": "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 with rich cover art cards.",
+      "sessions_list": "Vertical stacked cards with high density metadata and quick 'Resume' action."
+    }
+  },
+  "game_identity_coexistence": {
+    "principle": "The Platform Shell is neutral warm luxury. Each game defines its internal card banner, accent gradient glow, cover art, and in-game theme within the Shell Frame.",
+    "game_1_tactical_rpg": {
+      "name": "Valora: Tactical Front",
+      "status": "AVAILABLE",
+      "theme_glow": "rgba(184, 58, 58, 0.35)",
+      "accent_color": "#b83a3a",
+      "tags": ["3D Tactical RPG", "Turn-Based", "1-4 Players", "Grid Combat"],
+      "cover_image": "https://images.unsplash.com/photo-1773216344341-e5ca0a1f0df9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwzfHxfYW50YXN5JTIwcnBnJTIwd2FycmlvciUyMHRhY3RpY2FsJTIwYXJ0d29ya3xlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85"
+    },
+    "game_2_lexicon_hall": {
+      "name": "Lexicon Hall",
+      "status": "COMING_SOON",
+      "theme_glow": "rgba(59, 114, 176, 0.35)",
+      "accent_color": "#3b72b0",
+      "tags": ["Word & Tile Master", "Scrabble-like", "2-4 Players", "Casual Strategy"],
+      "cover_image": "https://images.unsplash.com/photo-1676651471150-0e3a5f8de05e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwzfHx0YWJsZXRvcCUyMGdhbWluZyUyMGJvYXJkJTIwZ2FtZSUyMGxvdW5nZXxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85"
+    }
+  },
+  "key_views_spec": {
+    "lounge_landing": {
+      "sections": [
+        "Lounge Banner / Hero: Welcome to Tabletop Lounge, Featured Game spotlight with instant launch CTA.",
+        "Featured Games Bento: Game #1 (Tactical RPG) and Game #2 (Lexicon Hall Coming Soon).",
+        "Active Sessions Bar: Quick-resume active or recent tabletop matches.",
+        "Local Player Party Bar: Currently selected active player avatars ready to seat at the table."
+      ]
+    },
+    "game_library": {
+      "features": [
+        "Filter tabs: All Games, Available Now, Coming Soon, Multi-Player, Single-Player.",
+        "Search bar with live filtering.",
+        "Rich game cards with hover zoom cover image, player count badges, estimated play time, status pill, and detail modal/page trigger."
+      ]
+    },
+    "game_detail": {
+      "features": [
+        "Hero backdrop banner with subtle gradient mask.",
+        "Key specs metadata grid (Players 1-4, Playtime 30-45m, Complexity Medium, Local Pass & Play).",
+        "Action CTA: 'Launch Game' (for Game 1) or 'Wishlist / Coming Soon Info' (for Game 2).",
+        "How to Play overview & screenshots gallery."
+      ]
+    },
+    "players_profiles": {
+      "features": [
+        "Local player roster (Create Player, Select Active Seat, Edit Avatar/Name, Stats summary).",
+        "Custom avatar selector (6 visual presets + color tint pickers).",
+        "No login required — stored in persistent state / LocalStorage."
+      ]
+    },
+    "sessions_view": {
+      "features": [
+        "Active / Saved tabletop sessions list.",
+        "Session metadata: Game name, active turn, date created, duration, seated players.",
+        "Actions: Resume Session, Delete Session, Copy Session ID."
+      ]
+    },
+    "settings_view": {
+      "features": [
+        "Theme customizations (Mahogany Dark, Emerald Velvet, Onyx Slate).",
+        "Audio SFX & Ambient Music volume sliders.",
+        "Animation speed & Reduced Motion toggle.",
+        "Accessibility toggles (High Contrast Text, Screen Reader Friendly tooltips)."
+      ]
+    },
+    "game_shell_wrapper": {
+      "features": [
+        "Universal Platform Bar with '← Leave Table', Active Game Title badge, Seat status, Master Volume mute button, and Quick Settings drawer.",
+        "Embedded sub-game container that isolates game visuals while keeping shell chrome responsive."
+      ]
+    }
+  },
+  "image_urls": {
+    "lounge_hero_bg": "https://images.unsplash.com/photo-1698188667999-753bc61fcca4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwyfHx0YWJsZXRvcCUyMGdhbWluZyUyMGJvYXJkJTIwZ2FtZSUyMGxvdW5nZXxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+    "board_game_table": "https://images.unsplash.com/photo-1677188010559-0667a1ed33a0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwxfHx0YWJsZXRvcCUyMGdhbWluZyUyMGJvYXJkJTIwZ2FtZSUyMGxvdW5nZXxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+    "game_shelf": "https://images.unsplash.com/photo-1741321650126-32cbd6990f94?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHw0fHx0YWJsZXRvcCUyMGdhbWluZyUyMGJvYXJkJTIwZ2FtZSUyMGxvdW5nZXxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+    "tactical_rpg_cover": "https://images.unsplash.com/photo-1773216344341-e5ca0a1f0df9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHw3fHxfYW50YXN5JTIwcnBnJTIwd2FycmlvciUyMHRhY3RpY2FsJTIwYXJ0d29ya3xlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+    "tactical_rpg_hero": "https://images.unsplash.com/photo-1581337204818-5f755d7916dd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxmYW50YXN5JTIwcnBnJTIwd2FycmlvciUyMHRhY3RpY2FsJTIwYXJ0d29ya3xlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+    "lexicon_hall_cover": "https://images.unsplash.com/photo-1676651471150-0e3a5f8de05e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwzfHx0YWJsZXRvcCUyMGdhbWluZyUyMGJvYXJkJTIwZ2FtZSUyMGxvdW5nZXxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+    "avatars": [
+      "https://images.unsplash.com/photo-1772371272152-d1806d4351e0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzZ8MHwxfHNlYXJjaHw0fHxhdmF0YXIlMjBnYW1pbmclMjBjaGFyYWN0ZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1772371272218-d39eca1efdeb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzZ8MHwxfHNlYXJjaHwzfHxhdmF0YXIlMjBnYW1pbmclMjBjaGFyYWN0ZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1772371272141-0fbd644b65c4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzZ8MHwxfHNlYXJjaHwyfHxhdmF0YXIlMjBnYW1pbmclMjBjaGFyYWN0ZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1740252117012-bb53ad05e370?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxhdmF0YXIlMjBnYW1pbmclMjBjaGFyYWN0ZXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODg1NTY2ODR8MA&ixlib=rb-4.1.0&q=85"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Ensure all components use .js extensions (not .tsx) as specified in the project environment.",
+    "Implement data-testid attributes on ALL interactive elements (buttons, links, search inputs, tabs, avatars, session items, settings toggles). Example: data-testid='nav-game-library-link', data-testid='launch-game-1-button'.",
+    "Maintain strict separation between the Platform Shell architecture and Game Modules. The platform core should manage local player profiles, active sessions, audio settings, and shell navigation without hardcoding game #1 or game #2 logic into the core shell structure.",
+    "Use Lucide-React icons for UI indicators (Dices, Trophy, Users, Play, Pause, Settings, Compass, Sparkles, Shield, Bookmark, Volume2, HardDrive).",
+    "Custom scrollbar styling with warm amber thumb and subtle track to fit the game lounge atmosphere.",
+    "Use Sonner for toasts (e.g. 'Session saved', 'Player avatar updated', 'Lexicon Hall added to wishlist').",
+    "Include responsive mobile navigation menu that smoothly collapses into a floating lounge bar."
+  ],
+  "universal_guidelines_for_main_agent": [
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition (e.g. transition: all). Always add transitions for specific interactive elements excluding transforms.",
+    "You MUST NOT center align the app container (.App { text-align: center; }).",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER use AI assistant Emoji characters (🤖🧠💭💡🔮🎯) for icons. Use Lucide icons or custom SVG badges.",
+    "Every interaction needs micro-animations - hover states, transitions, entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap."
+  ]
+}
