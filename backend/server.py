@@ -87,6 +87,7 @@ class SessionUpdate(BaseModel):
     config: Optional[dict[str, Any]] = None
     state: Optional[dict[str, Any]] = None
     status: Optional[str] = None
+    turn: Optional[int] = None
 
 
 class Session(SessionBase):
